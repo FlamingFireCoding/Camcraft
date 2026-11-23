@@ -69,6 +69,7 @@ impl ParamsDto {
         match p {
             OpParams::Probe { .. } => ParamsDto::Probe(ProbeDto::from_params(p)),
             OpParams::PlasmaProfile(op) => ParamsDto::PlasmaProfile(PlasmaDto::from_op(op)),
+            OpParams::WaterjetProfile(op) => ParamsDto::WaterjetProfile(WaterjetDto::from_op(op)),
             OpParams::WireContour(op) => ParamsDto::WireContour(WireContourDto::from_op(op)),
             OpParams::SinkerBurn(op) => ParamsDto::SinkerBurn(SinkerDto::from_op(op)),
             OpParams::SinkerSideBurn(op) => ParamsDto::SinkerSideBurn(SinkerSideDto::from_op(op)),
@@ -191,6 +192,7 @@ impl ParamsDto {
                 rest,
                 corner_relief,
                 tilt,
+                pass_start,
             } => ParamsDto::Pocket {
                 links: links_to_dto(links, &p.default_links()),
                 stepover: *stepover,
@@ -226,6 +228,7 @@ impl ParamsDto {
                 rest: (*rest).map(Into::into),
                 corner_relief: cr_to_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             // The twins drop the strategy tag - the variant itself
             // says which ladder runs (M2.4 A).
@@ -248,8 +251,10 @@ impl ParamsDto {
                 troch,
                 blend_turns,
                 blend_radius,
+                rest,
                 corner_relief,
                 tilt,
+                pass_start,
             } => {
                 let (troch_return, lift) = match troch.ret {
                     None => (AdaptiveTrochReturnDto::Auto, None),
@@ -289,8 +294,10 @@ impl ParamsDto {
                     lift,
                     return_feed: troch.return_feed,
                     loop_width: troch.loop_width,
+                    rest: (*rest).map(Into::into),
                     corner_relief: cr_to_dto(corner_relief),
                     tilt: (*tilt).map(Into::into),
+                    pass_start: (*pass_start).into(),
                 }
             }
             OpParams::Offset2D {
@@ -311,6 +318,7 @@ impl ParamsDto {
                 blend_radius,
                 corner_relief,
                 tilt,
+                pass_start,
             } => ParamsDto::Offset2D {
                 links: links_to_dto(links, &p.default_links()),
                 stepover: *stepover,
@@ -334,6 +342,7 @@ impl ParamsDto {
                 blend_radius: *blend_radius,
                 corner_relief: cr_to_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             // The M2.4 B trio: the engrave twin rides the trace arm
             // verbatim, the chamfer states its two authored face
@@ -418,6 +427,7 @@ impl ParamsDto {
                 center,
                 radius,
                 vault,
+                pass_start,
                 stepover,
                 stock_to_leave,
                 clearance_z,
@@ -436,6 +446,7 @@ impl ParamsDto {
                 center: [center.x, center.y],
                 radius: *radius,
                 vault: *vault,
+                pass_start: (*pass_start).into(),
                 stepover: *stepover,
                 stock_to_leave: *stock_to_leave,
                 clearance_z: (*clearance_z).into(),
@@ -475,6 +486,7 @@ impl ParamsDto {
                 feed_opt,
                 shell,
                 method,
+                pass_start,
             } => ParamsDto::Pocket3D {
                 links: links_to_dto(links, &p.default_links()),
                 stepover: *stepover,
@@ -510,9 +522,11 @@ impl ParamsDto {
                 optimal_load: Some(*optimal_load),
                 feed_opt: *feed_opt,
                 shell: *shell,
+                pass_start: (*pass_start).into(),
             },
             OpParams::Finish3D {
                 pattern,
+                direction_angle,
                 stepover,
                 tolerance,
                 clearance_z,
@@ -530,8 +544,10 @@ impl ParamsDto {
                 pencil_reference,
                 fill_openings,
                 gap_link,
+                pass_start,
             } => ParamsDto::Finish3D {
                 pattern: (*pattern).into(),
+                direction_angle: *direction_angle,
                 stepover: *stepover,
                 tolerance: *tolerance,
                 clearance_z: (*clearance_z).into(),
@@ -549,6 +565,7 @@ impl ParamsDto {
                 pencil_reference: *pencil_reference,
                 fill_openings: *fill_openings,
                 gap_link: (*gap_link).into(),
+                pass_start: (*pass_start).into(),
             },
             // The deburr ride (M2.5 E B): the six keys are the kind's
             // whole content - no pattern, no retract, nothing derived
@@ -1063,20 +1080,26 @@ impl ParamsDto {
                 bar_unload,
                 bar_transfer,
                 inspect_tol,
-            } => ParamsDto::Part {
-                tolerance: *tolerance,
-                clearance_z: (*clearance_z).into(),
-                top_z: (*top_z).into(),
-                bottom_z: (*bottom_z).into(),
-                stepdown: *stepdown,
-                feed: *feed,
-                plunge_feed: *plunge_feed,
-                bar_load: *bar_load,
-                bar_advance: *bar_advance,
-                bar_unload: *bar_unload,
-                bar_transfer: *bar_transfer,
-                inspect_tol: *inspect_tol,
-            },
+                kerf,
+            } => {
+                let (kept, back_stock) = super::part_kerf_dto::kerf_dto(*kerf);
+                ParamsDto::Part {
+                    tolerance: *tolerance,
+                    clearance_z: (*clearance_z).into(),
+                    top_z: (*top_z).into(),
+                    bottom_z: (*bottom_z).into(),
+                    stepdown: *stepdown,
+                    feed: *feed,
+                    plunge_feed: *plunge_feed,
+                    bar_load: *bar_load,
+                    bar_advance: *bar_advance,
+                    bar_unload: *bar_unload,
+                    bar_transfer: *bar_transfer,
+                    inspect_tol: *inspect_tol,
+                    kept,
+                    back_stock,
+                }
+            }
             // The threading kind (M5.2 stage D): the wave's own three
             // numbers beside the blade trio of heights - and the
             // insert's V deliberately NOT here, because width and
@@ -1327,8 +1350,10 @@ impl ParamsDto {
                 tolerance,
                 holes,
                 break_through,
+                pass_start,
             } => ParamsDto::Bore {
                 break_through: *break_through,
+                pass_start: (*pass_start).into(),
                 links: links_to_dto(links, &p.default_links()),
                 clearance_z: (*clearance_z).into(),
                 retract_z: (*retract_z).map(Into::into),
@@ -1380,6 +1405,7 @@ impl ParamsDto {
         match self {
             ParamsDto::Probe(d) => d.to_params(),
             ParamsDto::PlasmaProfile(d) => d.to_params(),
+            ParamsDto::WaterjetProfile(d) => d.to_params(),
             ParamsDto::WireContour(d) => d.to_params(),
             ParamsDto::SinkerBurn(d) => d.to_params(),
             ParamsDto::SinkerSideBurn(d) => d.to_params(),
@@ -1510,6 +1536,7 @@ impl ParamsDto {
                 rest,
                 corner_relief,
                 tilt,
+                pass_start,
             } => OpParams::Pocket {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 stepover: *stepover,
@@ -1544,6 +1571,7 @@ impl ParamsDto {
                 rest: (*rest).map(Into::into),
                 corner_relief: cr_from_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             ParamsDto::Adaptive2D {
                 links,
@@ -1568,8 +1596,10 @@ impl ParamsDto {
                 loop_width,
                 blend_turns,
                 blend_radius,
+                rest,
                 corner_relief,
                 tilt,
+                pass_start,
             } => OpParams::Adaptive2D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 stepover: *stepover,
@@ -1612,8 +1642,10 @@ impl ParamsDto {
                 },
                 blend_turns: *blend_turns,
                 blend_radius: *blend_radius,
+                rest: (*rest).map(Into::into),
                 corner_relief: cr_from_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             ParamsDto::Offset2D {
                 links,
@@ -1633,6 +1665,7 @@ impl ParamsDto {
                 blend_radius,
                 corner_relief,
                 tilt,
+                pass_start,
             } => OpParams::Offset2D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 stepover: *stepover,
@@ -1656,6 +1689,7 @@ impl ParamsDto {
                 blend_radius: *blend_radius,
                 corner_relief: cr_from_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             // The M2.4 B trio back out of the wire, same shapes.
             ParamsDto::Engrave {
@@ -1737,6 +1771,7 @@ impl ParamsDto {
                 center,
                 radius,
                 vault,
+                pass_start,
                 stepover,
                 stock_to_leave,
                 clearance_z,
@@ -1755,6 +1790,7 @@ impl ParamsDto {
                 center: Point2::new(center[0], center[1]),
                 radius: *radius,
                 vault: *vault,
+                pass_start: (*pass_start).into(),
                 stepover: *stepover,
                 stock_to_leave: *stock_to_leave,
                 clearance_z: (*clearance_z).into(),
@@ -1795,6 +1831,7 @@ impl ParamsDto {
                 optimal_load,
                 feed_opt,
                 shell,
+                pass_start,
             } => OpParams::Pocket3D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::ROUGH3D),
                 stepover: *stepover,
@@ -1829,9 +1866,11 @@ impl ParamsDto {
                 optimal_load: load_from_file(*optimal_load, *max_engagement),
                 feed_opt: *feed_opt,
                 shell: *shell,
+                pass_start: (*pass_start).into(),
             },
             ParamsDto::Finish3D {
                 pattern,
+                direction_angle,
                 stepover,
                 tolerance,
                 clearance_z,
@@ -1849,8 +1888,10 @@ impl ParamsDto {
                 pencil_reference,
                 fill_openings,
                 gap_link,
+                pass_start,
             } => OpParams::Finish3D {
                 pattern: (*pattern).into(),
+                direction_angle: *direction_angle,
                 stepover: *stepover,
                 tolerance: *tolerance,
                 clearance_z: (*clearance_z).into(),
@@ -1868,6 +1909,7 @@ impl ParamsDto {
                 pencil_reference: *pencil_reference,
                 fill_openings: *fill_openings,
                 gap_link: (*gap_link).into(),
+                pass_start: (*pass_start).into(),
             },
             // Read back whole, the blade kinds' way - sane or
             // nothing, `validate_kind`'s door first (M2.5 E B):
@@ -2356,6 +2398,8 @@ impl ParamsDto {
                 bar_unload,
                 bar_transfer,
                 inspect_tol,
+                kept,
+                back_stock,
             } => OpParams::Part {
                 tolerance: *tolerance,
                 clearance_z: (*clearance_z).into(),
@@ -2369,6 +2413,7 @@ impl ParamsDto {
                 bar_unload: *bar_unload,
                 bar_transfer: *bar_transfer,
                 inspect_tol: *inspect_tol,
+                kerf: super::part_kerf_dto::kerf_of(*kept, *back_stock),
             },
             // Read back whole, the threading kind's way too - sane or
             // nothing, `validate_kind`'s door again first (M5.2 D).
@@ -2629,8 +2674,10 @@ impl ParamsDto {
                 tolerance,
                 holes,
                 break_through,
+                pass_start,
             } => OpParams::Bore {
                 break_through: *break_through,
+                pass_start: (*pass_start).into(),
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 clearance_z: (*clearance_z).into(),
                 retract_z: retract_z.map(Into::into),

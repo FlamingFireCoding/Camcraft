@@ -205,6 +205,13 @@ ignored, so a typo never reads as "done". The same reasons the window gives
 apply: see [Reading a refusal](@/guide/reference/refusals.md). An unexpected internal
 fault is caught and reported as a refusal; it does not end the session.
 
+`save_project` over the file last opened or saved is refused when that file
+on disk changed after the session opened or saved it. For example, a second
+CamCraft window, a `git pull` or a colleague in a shared folder wrote it.
+The error names the file. Save to a different path, or call the tool again
+with `overwrite: true` to replace the file. In the window, Save shows a
+prompt for the same case.
+
 ## Safety
 
 An agent is held to the same rules as you are. `verify` reports what would
