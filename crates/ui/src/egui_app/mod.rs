@@ -208,6 +208,7 @@ mod mill2d_page;
 mod rest_pocket_page;
 mod mill3d_page;
 mod multiaxis_page;
+mod multiaxis_deburr_page;
 mod op_page;
 // #144: macOS Cmd+Q / app-menu Quit routed through the guarded Quit.
 #[cfg(not(target_arch = "wasm32"))]
@@ -219,6 +220,8 @@ mod thread_infeed_page;
 mod turning_page;
 // #107: Save / Don't Save / Cancel over unsaved changes.
 mod unsaved_prompt;
+// #1874: the length unit of a STEP file that states none.
+pub(crate) mod step_units_prompt;
 // #3608: Save As / Cancel / Overwrite when the project file changed.
 mod overwrite_prompt;
 mod panes;
@@ -316,6 +319,8 @@ mod field_focus_tests;
 mod coolant_tests;
 #[cfg(test)]
 mod thread_hand_tests;
+#[cfg(test)]
+mod part_kerf_tests;
 #[cfg(test)]
 mod thread_mill_page_tests;
 #[cfg(test)]

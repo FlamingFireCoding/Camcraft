@@ -245,20 +245,52 @@ pub fn verify_avoid(path: &Toolpath, spec: &AvoidSpec) -> (Vec<Warning>, Vec<Str
     }
 }
 
-/// A Trace must follow the selected curve. An upright rapid may lift over a
-/// protected item, but a remaining contact must refuse the entire Trace.
-pub(super) fn protect_trace(
+/// Restrict finishing to centres whose full tool clears the protected items
+/// throughout every cut, lift and plunge up to the clearance plane.
+pub(super) fn finish_centre_area(
+    clip: Option<Region>,
+    region: &Region,
+    spec: Option<&AvoidSpec>,
+    fp: &Finish3DParams,
+    yaw: Option<super::wcs_yaw::WcsYaw>,
+) -> Result<Option<Region>, GenError> {
+    let Some(spec) = spec.filter(|s| !s.is_empty()) else { return Ok(clip) };
+    let keepout = spec.keepout_region(fp.bottom_z, fp.clearance_z, AVOID_PAD)
+        .map_err(|e| GenError::Invalid(format!("3D Finish cannot protect 'Do not touch' {}: {e}", spec.names_list())))?;
+    if keepout.is_empty() {
+        return Ok(clip);
+    }
+    // Material and the centre area already use the WCS generation frame.
+    // The independent final check keeps the original setup-frame spec.
+    let keepout = match yaw {
+        Some(yaw) => super::wcs_yaw::WcsYaw { origin: yaw.origin, yaw_rad: -yaw.yaw_rad }.exit_region(&keepout)?,
+        None => keepout,
+    };
+    let allowed = match &clip {
+        Some(c) => c.clone(),
+        None => region.offset(fp.tool_diameter * 0.5)?,
+    };
+    if allowed.intersect(&keepout)?.is_empty() {
+        return Ok(clip);
+    }
+    let allowed = allowed.difference(&keepout)?;
+    Ok(Some(allowed))
+}
+
+/// Elevate upright rapid links and refuse any remaining protected-item contact.
+pub(super) fn protect_path(
     path: &mut Toolpath,
     spec: &AvoidSpec,
     upright: bool,
     z_ceiling: Option<f64>,
+    kind: OpType,
 ) -> Result<(), GenError> {
     if upright {
         let notes = route_links(path, spec, z_ceiling);
         path.notes.extend(notes);
     }
     if let Some(problem) = clearance_problems(path, spec).first() {
-        return Err(GenError::Invalid(format!("Trace: {problem}")));
+        return Err(GenError::Invalid(format!("{kind}: {problem}")));
     }
     Ok(())
 }

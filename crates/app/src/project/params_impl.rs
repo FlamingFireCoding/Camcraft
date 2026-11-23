@@ -74,6 +74,52 @@ impl ParamsDto {
             OpParams::SinkerBurn(op) => ParamsDto::SinkerBurn(SinkerDto::from_op(op)),
             OpParams::SinkerSideBurn(op) => ParamsDto::SinkerSideBurn(SinkerSideDto::from_op(op)),
             OpParams::SlotUndercut(op) => ParamsDto::SlotUndercut(SlotUndercutDto::from_op(op)),
+            // #1894: the Deburr's keys and the axis keys.
+            OpParams::MultiAxisDeburr {
+                width,
+                clearance_z,
+                top_z,
+                bottom_z,
+                feed,
+                plunge_feed,
+                exclude_edges,
+                min_edge_angle_deg,
+                exclude_holes,
+                hole_min_diameter,
+                hole_max_diameter,
+                unreachable,
+                sizing,
+                axis_mode,
+                lead_deg,
+                lag_deg,
+                max_tilt_deg,
+                shank_avoid,
+            } => {
+                let (break_mode, break_depth, break_profile, passes) = break_dto(sizing);
+                ParamsDto::MultiAxisDeburr(MultiAxisDeburrDto {
+                    width: *width,
+                    clearance_z: (*clearance_z).into(),
+                    top_z: (*top_z).into(),
+                    bottom_z: (*bottom_z).into(),
+                    feed: *feed,
+                    plunge_feed: *plunge_feed,
+                    exclude_edges: super::area::sel_dto(exclude_edges),
+                    min_edge_angle_deg: *min_edge_angle_deg,
+                    exclude_holes: *exclude_holes,
+                    hole_min_diameter: *hole_min_diameter,
+                    hole_max_diameter: *hole_max_diameter,
+                    unreachable: (*unreachable).into(),
+                    break_mode,
+                    break_depth,
+                    break_profile,
+                    passes,
+                    axis_mode: (*axis_mode).into(),
+                    lead_deg: *lead_deg,
+                    lag_deg: *lag_deg,
+                    max_tilt_deg: *max_tilt_deg,
+                    shank_avoid: *shank_avoid,
+                })
+            }
             OpParams::TrochoidalSlot { .. } => ParamsDto::TrochoidalSlot(TrochoidDto::from_params(p)),
             OpParams::Face {
                 stepover,
@@ -251,6 +297,7 @@ impl ParamsDto {
                 troch,
                 blend_turns,
                 blend_radius,
+                rest,
                 corner_relief,
                 tilt,
                 pass_start,
@@ -293,6 +340,7 @@ impl ParamsDto {
                     lift,
                     return_feed: troch.return_feed,
                     loop_width: troch.loop_width,
+                    rest: (*rest).map(Into::into),
                     corner_relief: cr_to_dto(corner_relief),
                     tilt: (*tilt).map(Into::into),
                     pass_start: (*pass_start).into(),
@@ -1078,20 +1126,26 @@ impl ParamsDto {
                 bar_unload,
                 bar_transfer,
                 inspect_tol,
-            } => ParamsDto::Part {
-                tolerance: *tolerance,
-                clearance_z: (*clearance_z).into(),
-                top_z: (*top_z).into(),
-                bottom_z: (*bottom_z).into(),
-                stepdown: *stepdown,
-                feed: *feed,
-                plunge_feed: *plunge_feed,
-                bar_load: *bar_load,
-                bar_advance: *bar_advance,
-                bar_unload: *bar_unload,
-                bar_transfer: *bar_transfer,
-                inspect_tol: *inspect_tol,
-            },
+                kerf,
+            } => {
+                let (kept, back_stock) = super::part_kerf_dto::kerf_dto(*kerf);
+                ParamsDto::Part {
+                    tolerance: *tolerance,
+                    clearance_z: (*clearance_z).into(),
+                    top_z: (*top_z).into(),
+                    bottom_z: (*bottom_z).into(),
+                    stepdown: *stepdown,
+                    feed: *feed,
+                    plunge_feed: *plunge_feed,
+                    bar_load: *bar_load,
+                    bar_advance: *bar_advance,
+                    bar_unload: *bar_unload,
+                    bar_transfer: *bar_transfer,
+                    inspect_tol: *inspect_tol,
+                    kept,
+                    back_stock,
+                }
+            }
             // The threading kind (M5.2 stage D): the wave's own three
             // numbers beside the blade trio of heights - and the
             // insert's V deliberately NOT here, because width and
@@ -1402,6 +1456,7 @@ impl ParamsDto {
             ParamsDto::SinkerBurn(d) => d.to_params(),
             ParamsDto::SinkerSideBurn(d) => d.to_params(),
             ParamsDto::SlotUndercut(d) => d.to_params(),
+            ParamsDto::MultiAxisDeburr(d) => d.to_params(),
             ParamsDto::TrochoidalSlot(d) => d.to_params(),
             // Absent v5 keys decode (via serde defaults) to the legacy
             // single-level face, byte-exact; present ones land on the
@@ -1588,6 +1643,7 @@ impl ParamsDto {
                 loop_width,
                 blend_turns,
                 blend_radius,
+                rest,
                 corner_relief,
                 tilt,
                 pass_start,
@@ -1633,6 +1689,7 @@ impl ParamsDto {
                 },
                 blend_turns: *blend_turns,
                 blend_radius: *blend_radius,
+                rest: (*rest).map(Into::into),
                 corner_relief: cr_from_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
                 pass_start: (*pass_start).into(),
@@ -2388,6 +2445,8 @@ impl ParamsDto {
                 bar_unload,
                 bar_transfer,
                 inspect_tol,
+                kept,
+                back_stock,
             } => OpParams::Part {
                 tolerance: *tolerance,
                 clearance_z: (*clearance_z).into(),
@@ -2401,6 +2460,7 @@ impl ParamsDto {
                 bar_unload: *bar_unload,
                 bar_transfer: *bar_transfer,
                 inspect_tol: *inspect_tol,
+                kerf: super::part_kerf_dto::kerf_of(*kept, *back_stock),
             },
             // Read back whole, the threading kind's way too - sane or
             // nothing, `validate_kind`'s door again first (M5.2 D).

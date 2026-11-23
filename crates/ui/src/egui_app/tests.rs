@@ -137,6 +137,7 @@ mod catalog_filters;
 mod cycle_combo;
 mod holes_break_through;
 mod holes_fine_bore;
+mod ma_deburr_page;
 mod radial_step_field;
 mod auto_input_manual;
 // #1509: 2D Adaptive's Method choice on the Passes tab.
@@ -5240,6 +5241,7 @@ mod dropdown_theme;
 mod review_1710_evidence;
 mod guide_projects;
 mod guide_images;
+mod step_units_prompt;
 
 
 #[test]

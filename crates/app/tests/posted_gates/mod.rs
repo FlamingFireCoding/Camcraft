@@ -89,6 +89,7 @@ fn region_law(t: &Toolpath, region: &Region, tool: &ToolGeom, mode: Mode, top: f
             cutter: None,
             mode,
             stock_top_z: top,
+            rim_top_z: None,
             clearance_z: clear,
             stock_to_leave: leave,
             gouge_tol: 0.01,

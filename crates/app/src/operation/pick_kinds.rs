@@ -82,6 +82,7 @@ impl KindInfo {
             | OpType::Pocket3D
             | OpType::Finish3D
             | OpType::Deburr
+            | OpType::MultiAxisDeburr
             | OpType::Contour5D
             | OpType::Parallel5D
             | OpType::Swarf

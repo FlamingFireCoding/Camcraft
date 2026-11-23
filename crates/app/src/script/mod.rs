@@ -97,7 +97,7 @@ pub(crate) struct Env {
 pub(crate) const VERBS: &[Verb] = &[
     Verb::new("load", 1, api::v_load, "load(path: string): DocumentInfo"),
     Verb::new("save", -1, api::v_save, "save(path?: string | null, options?: { overwrite?: boolean }): { path: string }"),
-    Verb::new("import", -1, api::v_import, "import(path: string, name?: string | null, facetBudget?: number): { model: string; facets: number; facet_budget?: number; notes?: string[] }"),
+    Verb::new("import", -1, api::v_import, "import(path: string, name?: string | null, facetBudget?: number | null, units?: \"mm\" | \"in\"): { model: string; facets: number; facet_budget?: number; notes?: string[] }"),
     Verb::new("importDxf", -1, dxf::v_import_dxf, "importDxf(path: string, options?: { setup?: string; units?: \"mm\" | \"in\"; join_tol?: number; name?: string }): DxfProfile"),
     Verb::new("importSvg", -1, dxf::v_import_svg, "importSvg(path: string, options?: { setup?: string; units?: \"mm\" | \"in\"; join_tol?: number; name?: string }): DxfProfile"),
     Verb::new("insertText", -1, text::v_insert_text, "insertText(text: string, options: { height: number; position?: [number, number]; angle?: number; letter_spacing?: number; setup?: string; name?: string }): TextProfile"),
