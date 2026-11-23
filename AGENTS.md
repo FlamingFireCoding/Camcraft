@@ -592,6 +592,9 @@ the fonts. The UI must render them: each panel's draw code must use them.
   the dependency changes. Do not add an edge for fewer than five items: the
   caller passes the value in. (The maintainer has still to confirm the
   wording of the five-item clause.)
+- **Tests join a directory suite.** A new integration test goes into an
+  existing directory suite. The rule is in "Testing" (**New tests join a
+  directory suite**).
 - **Stays buildable everywhere.** No platform-specific assumptions in core
   code. Windows, Linux and macOS build from the same source.
 - **Neutral naming.** The product name is camcraft. No string, comment or
@@ -613,6 +616,15 @@ tests are in `crates/ui/tests/`; they start the real app through
   `crates/app/tests/` must import something that `crates/app/src` defines. A
   test that needs the output of a different crate reads a recorded file
   (`.cl`, `.cnc`); it does not import that crate's generator.
+- **New tests join a directory suite.** Add a new integration test to an
+  existing domain directory suite (`tests/<suite>/<submod>.rs`) before you
+  make a new top-level test binary (#3187).
+  - The suites in `ISOLATED` (`xtask/src/lanes.rs`) and `SLOW_BINARIES`
+    (`xtask/src/plan.rs`) are exempt. They must stay separate binaries.
+  - A new top-level file in `crates/*/tests/` needs a one-line reason in the
+    PR body.
+  - Why: each test binary of `camcraft-app` is about 100 MB. The count of
+    test binaries went from 412 to 1,020 in ten days.
 - **Three gate tiers - never hours per change.** One command on all
   systems: `cargo xtask gate <tier>`. `scripts/gate.ps1` and
   `scripts/gate.sh` are wrappers for it. The `gate` skill has the flags, the
