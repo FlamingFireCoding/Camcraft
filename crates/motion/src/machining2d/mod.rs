@@ -119,6 +119,7 @@ mod trace_avoid;
 mod slot_ends;
 mod slot_lap;
 mod slot_room;
+mod slot_turns;
 mod undercut;
 mod unreached;
 mod vcarve;

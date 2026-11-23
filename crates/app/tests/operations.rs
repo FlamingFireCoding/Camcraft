@@ -48,7 +48,7 @@ fn at(x: f64, y: f64, z: f64) -> Location {
 
 /// Face parameters for the 60x60x20 box stock with a 4 mm cutter.
 fn face_params() -> OpParams {
-    OpParams::Face { holes: Default::default(), blend_turns: false,
+    OpParams::Face { holes: Default::default(), blend_turns: false, blend_radius: None,
         tilt: None,
         stepover: 3.0,
         clearance_z: Height::fixed(25.0),
@@ -81,7 +81,7 @@ fn contour_params() -> OpParams {
         tab_height: 0.0,
         entry: camcraft_app::machining3d::Entry3D::Plunge,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         chain_overrides: Vec::new(),
     }
@@ -107,7 +107,7 @@ fn slot_params() -> OpParams {
         plunge_feed: 200.0,
         climb: true,
         entry: camcraft_app::machining3d::Entry3D::Plunge,
-        helix_radius: 1.0,
+        helix_radius: 1.0, blend_turns: false, blend_radius: None,
         tilt: None,
         extend_start: 0.0,
         extend_end: 0.0,
@@ -346,7 +346,7 @@ fn create_operation_validates_every_reference() {
             "O",
             "EM-0400-2FL",
             SrcRef::Stock,
-            OpParams::Face { holes: Default::default(), blend_turns: false,
+            OpParams::Face { holes: Default::default(), blend_turns: false, blend_radius: None,
                 tilt: None,
                 stepover: f64::NAN,
                 clearance_z: Height::fixed(25.0),
@@ -417,7 +417,7 @@ fn edit_params_clears_the_stamp_not_the_cache() {
     let (world, mut history) = face_world();
     let first = cache(&world, "Face1").expect("generated").path;
 
-    let lower = OpParams::Face { holes: Default::default(), blend_turns: false,
+    let lower = OpParams::Face { holes: Default::default(), blend_turns: false, blend_radius: None,
         tilt: None,
         stepover: 3.0,
         clearance_z: Height::fixed(25.0),
@@ -863,7 +863,7 @@ fn a_reimport_with_unchanged_geometry_keeps_operations_ok() {
 
 /// Face parameters for the 10 x 10 x 5 solid the stock tests below cut.
 fn face_params_5() -> OpParams {
-    OpParams::Face { holes: Default::default(), blend_turns: false,
+    OpParams::Face { holes: Default::default(), blend_turns: false, blend_radius: None,
         tilt: None,
         stepover: 3.0,
         clearance_z: Height::fixed(10.0),
@@ -1134,7 +1134,7 @@ fn stale_reason_names_a_height_whose_source_is_gone() {
         )
         .expect("box stock"),
     );
-    let params = OpParams::Face { holes: Default::default(), blend_turns: false,
+    let params = OpParams::Face { holes: Default::default(), blend_turns: false, blend_radius: None,
         tilt: None,
         stepover: 3.0,
         clearance_z: Height::of(HeightReference::TopOfStock, 5.0),
@@ -1681,7 +1681,7 @@ fn region_of_is_the_preview_of_what_generate_would_cut() {
     let face = Operation {
         tool: String::new(),
         src: SrcRef::Stock,
-        params: OpParams::Face { holes: Default::default(), blend_turns: false,
+        params: OpParams::Face { holes: Default::default(), blend_turns: false, blend_radius: None,
             tilt: None,
             stepover: 3.0,
             clearance_z: Height::fixed(25.0),
@@ -1796,7 +1796,7 @@ fn sel(entity: &str, feature: FeatureSel) -> SrcRef {
 }
 
 fn face_sel_params() -> OpParams {
-    OpParams::Face { holes: Default::default(), blend_turns: false,
+    OpParams::Face { holes: Default::default(), blend_turns: false, blend_radius: None,
         tilt: None,
         stepover: 3.0,
         clearance_z: Height::fixed(25.0),
@@ -2516,7 +2516,7 @@ fn a_closed_chain_routes_the_boundary_path_not_a_centerline() {
         tab_height: 0.0,
         entry: camcraft_app::machining3d::Entry3D::Plunge,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         chain_overrides: Vec::new(),
     };
@@ -3337,7 +3337,7 @@ fn selection_notes_report_stitching_and_extension() {
         tab_height: 0.0,
         entry: camcraft_app::machining3d::Entry3D::Plunge,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         chain_overrides: Vec::new(),
     };
@@ -3385,7 +3385,7 @@ fn contour_at(side: Side, z: f64) -> OpParams {
         tab_height: 0.0,
         entry: camcraft_app::machining3d::Entry3D::Plunge,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         chain_overrides: Vec::new(),
     }
