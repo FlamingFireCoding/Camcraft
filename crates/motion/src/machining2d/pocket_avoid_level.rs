@@ -14,11 +14,14 @@ use super::arc_cross::{CROSS_ROUNDS, crossing_arcs, own_keys, refuse};
 use super::arc_proof::ProofTally;
 use super::arcs::Seg;
 use super::corner_relief::{CornerRelief, ResolvedRelief, capsule_region, plan_corner_reliefs};
+use super::level_rings::ring_plan;
 use super::levels::{Cert, Motion, WalkState, walk_one_level};
-use super::pocket::{PocketParams, PocketStrategy, non_sliver_center, plan_passes_from, pocket_over_with_relief};
+use super::pass_start::StartSide;
+use super::pocket::{PocketParams, PocketStrategy, non_sliver_center, pocket_over_with_relief};
 use super::pocket_avoid::{AvoidSource, pocket_avoid_over};
 use super::pocket_emit::{PocketWalks, emit_pocket_passes};
 use super::pocket_hsm::EntryRoom;
+use super::pocket_hsm_start::adaptive_passes_from;
 use super::pocket_zigzag::rest_passes;
 use super::rest2d::{RELIEF_START_TOL, RestPlan};
 
@@ -56,11 +59,10 @@ pub(super) fn plan_avoid_level(
     notes: &mut Vec<String>,
 ) -> Result<Option<LevelPlan>, GenError> {
     match src {
-        AvoidSource::Plain { start, .. } => {
+        AvoidSource::Plain { region, side, .. } => {
             if strategy == PocketStrategy::Adaptive {
                 let what = format!("level at Z {z:.2}");
-                let (ps, anotes, act, rm, js) =
-                    super::pocket_hsm::adaptive_passes(level_center, p, &what, true, None)?;
+                let (ps, anotes, act, rm, js) = adaptive_passes_from(region, level_center, p, &what, side)?;
                 notes.extend(anotes);
                 Ok(Some((ps, act, rm, js, level_center.clone())))
             } else if matches!(strategy, PocketStrategy::Zigzag | PocketStrategy::Auto) {
@@ -72,13 +74,9 @@ pub(super) fn plan_avoid_level(
                     level_center.clone(),
                 )))
             } else {
-                Ok(Some((
-                    plan_passes_from(level_center, p.tiling_step(), p.climb, strategy, *start)?,
-                    strategy,
-                    None,
-                    Vec::new(),
-                    level_center.clone(),
-                )))
+                let (ps, pnotes) = ring_plan(region, level_center, p, strategy, side)?;
+                notes.extend(pnotes.into_iter().filter(|n| !notes.contains(n)).collect::<Vec<_>>());
+                Ok(Some((ps, strategy, None, Vec::new(), level_center.clone())))
             }
         }
         AvoidSource::Rest(plan) => {
@@ -164,6 +162,7 @@ pub(super) fn emit_rest_avoid(
 ) -> Result<Toolpath, GenError> {
     relief.validate()?;
     let off = p.tool_diameter * 0.5 + p.stock_to_leave;
+    let auto_side = StartSide::default();
     if !plan.previous_fits {
         let cr = plan_corner_reliefs(region, &plan.center, off, relief)?;
         if let Some(spec) = avoid.filter(|a| !a.is_empty()) {
@@ -174,7 +173,7 @@ pub(super) fn emit_rest_avoid(
                 true,
                 &cr.reliefs,
                 spec,
-                AvoidSource::Plain { region, start: super::PassStart::Auto, holes: &[] },
+                AvoidSource::Plain { region, side: &auto_side, holes: &[] },
             );
         }
         return pocket_over_with_relief(
@@ -185,7 +184,7 @@ pub(super) fn emit_rest_avoid(
             true,
             &[],
             &cr.reliefs,
-            super::PassStart::Auto,
+            &auto_side,
         );
     }
     let corner_reliefs: Vec<ResolvedRelief> = if relief.is_off() {
@@ -234,6 +233,7 @@ pub(super) fn emit_rest_avoid(
             hold_crossings: true,
             holes: &[],
             corner_reliefs: &corner_reliefs,
+            cleared_links: false,
         },
     )
 }

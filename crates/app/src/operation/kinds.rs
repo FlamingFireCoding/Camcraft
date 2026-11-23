@@ -793,6 +793,7 @@ fn seed_pocket(c: &Carried) -> OpParams {
         blend_turns: false,
         corner_relief: crate::machining2d::CornerRelief::default(),
         tilt: c.tilt,
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 
@@ -821,6 +822,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
         method: crate::machining2d::AdaptiveMethod::Spiral,
         troch: crate::machining2d::AdaptiveTrochParams::default(),
         tilt: c.tilt,
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 
@@ -892,6 +894,7 @@ fn seed_circular(c: &Carried) -> OpParams {
         center: Point2::new(0.0, 0.0),
         radius: 25.0,
         vault: false,
+        pass_start: crate::machining2d::PassStart::Auto,
         stepover: c.stepover,
         stock_to_leave: 0.0,
         clearance_z: c.clearance,
@@ -1018,6 +1021,7 @@ fn seed_standalone_bore(c: &Carried) -> OpParams {
         tolerance: 0.01,
         holes: Vec::new(),
         break_through: None,
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 
@@ -1106,12 +1110,15 @@ fn seed_pocket3d(c: &Carried) -> OpParams {
         // Off is the ladder exactly as it always generated; the shell
         // is the user's ask, not the fresh op's guess (M2.5 F).
         shell: false,
+        // #3361: the core-first order every earlier 3D pocket cut.
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 
 fn seed_finish3d(c: &Carried) -> OpParams {
     OpParams::Finish3D {
         pattern: FinishPattern::Parallel,
+        direction_angle: 0.0,
         // None = the stepover cos-law derives spacing from the
         // tolerance; the panel can override it per line set.
         stepover: None,
@@ -1149,6 +1156,8 @@ fn seed_finish3d(c: &Carried) -> OpParams {
         // Fresh finishes hop to clearance like every older file;
         // straight links are the machinist's opt-in (the linking menu).
         gap_link: crate::finishing3d::GapLink::Jump,
+        // #3362: the outside-in order every earlier finish cut.
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 

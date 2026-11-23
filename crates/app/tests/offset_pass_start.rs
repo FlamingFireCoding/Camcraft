@@ -3,23 +3,27 @@
 //! maintainer's heights (clearance top of stock +10, top of stock +0,
 //! bottom of the selection +1.5, stepdown 10, no hop below clearance)
 //! cut each level from the core of the band outward: the first ring is a
-//! full slot in the stock. Outside starts every level at the stock edge
-//! and ends it on the part wall. The option rides the undoable
+//! full slot in the stock. Outside starts every level at the stock edge,
+//! cuts no move with uncut stock on both flanks along the whole level,
+//! and ends it on the part wall. Inside names its part-wall start on the
+//! toolpath. The option rides the undoable
 //! EditOperationParams through MCP `edit_operation` and the project
 //! file, and Auto is absent from both. The #3319 law rides along: no
 //! lateral rapid below the clearance plane.
 //!
 //! Gate map: covers app::operation (generate, params digest), app::mcp
 //! (edit_operation, undo), app::project (params, params_impl),
-//! motion::machining2d (pass_start, waterscan), sim::verify.
+//! motion::machining2d (pass_start, level_rings, level_order), sim::verify.
 //! Provenance: our own regression of the maintainer's report; no vendor
 //! material consulted.
 
 mod area_support;
 mod common;
+#[path = "offset_pass_start/flanks.rs"]
+mod flanks;
 
 use area_support::*;
-use camcraft_app::machining2d::PassStart;
+use camcraft_app::machining2d::{PASS_START_NOTE, PassStart};
 use camcraft_app::mcp::Server;
 use camcraft_app::operation::HeightReference;
 use serde_json::{Value, json};
@@ -158,6 +162,7 @@ fn to_part(world: &World, name: &str, pt: Point3) -> f64 {
 /// below the clearance plane, and the verifier says no rapid crosses
 /// stock.
 #[test]
+#[ignore = "heavy lane (#3316 fig8 Outside): one generation and its verify run past the 60 s debug budget (about 170 s) - run with --release -- --ignored"]
 fn fig8_outside_offset_starts_each_level_at_the_stock_edge() {
     let (world, mut h, name, stock) = fig8_world();
     let (path, warnings) = offset_op(&world, &mut h, &name, stock.0.z, PassStart::Outside);
@@ -172,6 +177,101 @@ fn fig8_outside_offset_starts_each_level_at_the_stock_edge() {
     let clear_z = stock.1.z + CLEARANCE;
     assert_eq!(lateral_rapids_below(&path, clear_z), vec![], "#3319: a lateral rapid below Z {clear_z}");
     assert!(!warnings.iter().any(|w| w.starts_with("RapidInStock")), "#3319: a rapid through stock: {warnings:?}");
+}
+
+/// The part's outline and the material of the band: the stock box less
+/// the part, in XY.
+fn band_material(world: &World, name: &str, (lo, hi): (Point3, Point3)) -> camcraft_app::geo2d::Region {
+    use camcraft_app::geo2d::{Loop, Point2, Region};
+    let e = model::find_by_name(world, name).expect("part");
+    let facets = model::world_facets(world, &e).expect("facets");
+    let part = camcraft_app::geometry::slice::project(&facets, 64).expect("part outline");
+    let pts = vec![Point2::new(lo.x, lo.y), Point2::new(hi.x, lo.y), Point2::new(hi.x, hi.y), Point2::new(lo.x, hi.y)];
+    let stock = Region::new(vec![Loop::new(pts).expect("box")]).expect("stock");
+    stock.difference(&part).expect("band")
+}
+
+/// #3316 second read: along each WHOLE level (not only its ends), no
+/// Outside cut has uncut stock on both flanks - no cut takes the full
+/// tool width, where the band at the lobe tips splits the ring.
+#[test]
+#[ignore = "heavy lane (#3316 fig8 Outside): one generation and its verify run past the 60 s debug budget (about 170 s) - run with --release -- --ignored"]
+fn fig8_outside_offset_cuts_no_move_at_full_width() {
+    let (world, mut h, name, stock) = fig8_world();
+    let (path, _) = offset_op(&world, &mut h, &name, stock.0.z, PassStart::Outside);
+    let full = flanks::full_width_points(&path, &band_material(&world, &name, stock), R8);
+    assert!(full.is_empty(), "{} full-width cut point(s), the first at {:?}", full.len(), full.first());
+    let named: Vec<&String> = path.notes.iter().filter(|n| n.starts_with(PASS_START_NOTE)).collect();
+    assert!(named.is_empty(), "the band starts in air, so no pass start warning: {named:?}");
+}
+
+/// #3316: Inside on the Outside band starts each level on the part wall,
+/// a cut of the full tool width - the toolpath names that case.
+#[test]
+fn fig8_inside_offset_names_its_part_wall_start() {
+    let (world, mut h, name, stock) = fig8_world();
+    let (path, warnings) = offset_op(&world, &mut h, &name, stock.0.z, PassStart::Inside);
+    let named: Vec<&String> = path.notes.iter().filter(|n| n.starts_with(PASS_START_NOTE)).collect();
+    assert!(named.iter().any(|n| n.contains("the part wall")), "{named:?}");
+    // #3035: this band plans complete, so no fallback warning is posted.
+    assert!(!warnings.iter().any(|w| w.starts_with("StrategyFallback")), "no fallback expected: {warnings:?}");
+}
+
+/// #3316/#3035: the completeness guard's fallback note is an Offset-rings
+/// fallback, so `rings_fallbacks` counts one area and the op posts the
+/// advisory `Warning::StrategyFallback` (the posting law is pinned by
+/// `strategy_fallback`). The other "Pass start" notes count none.
+#[test]
+fn the_offset_guard_fallback_is_a_strategy_fallback() {
+    use camcraft_app::machining2d::{StartSide, rings_fallbacks};
+    let side = StartSide::from(PassStart::Outside);
+    let note = side.fallback_note(12.3);
+    assert!(note.starts_with(PASS_START_NOTE), "{note}");
+    assert_eq!(rings_fallbacks(std::slice::from_ref(&note)), 1, "{note}");
+    let wall = side.wall_first_note().unwrap_or_default();
+    assert_eq!(rings_fallbacks(std::slice::from_ref(&wall)), 0, "{wall}");
+}
+
+/// #3542: the guard's fallback on a 2D Offset names the "Pass starts at"
+/// choice and the Auto order, not the Adaptive plan the op does not use.
+/// An Adaptive note next to it (an Adaptive op on its ring fallback)
+/// keeps the Adaptive cause.
+#[test]
+fn the_offset_guard_fallback_warning_names_the_pass_start() {
+    use camcraft_app::operation::strategy_fallback;
+    use camcraft_app::verify::{FallbackCause, Warning};
+    let note = camcraft_app::machining2d::StartSide::from(PassStart::Outside).fallback_note(12.3);
+    let path = Toolpath { notes: vec![note.clone()], ..Default::default() };
+    let w = strategy_fallback(&path).expect("the guard's note posts a fallback warning");
+    assert_eq!(w, Warning::StrategyFallback { at: 0, areas: 1, cause: FallbackCause::PassStart });
+    assert_eq!(
+        w.to_string(),
+        "Pass starts at: the selected start side would leave material uncut in 1 area, so the Auto order was used there instead, from move 0: the notes name each one (the post is not held: the cut is verified)"
+    );
+    assert!(!w.blocks_post(), "{w}");
+    // #3542 review: 3D pocket writes the same note after its level
+    // ("Z <level>: "); the cause and the text are the same.
+    let level = Toolpath { notes: vec![format!("Z 1.000: {note}")], ..Default::default() };
+    let w3 = strategy_fallback(&level).expect("the 3D pocket guard note posts a fallback warning");
+    assert_eq!(w3, w, "the 3D pocket form reads as the same pass-start fallback");
+    let adaptive = "adaptive: Pass starts at Outside - the HSM plan failed - Offset rings cut the pocket in that order instead";
+    let mixed = Toolpath { notes: vec![adaptive.to_owned(), note], ..Default::default() };
+    let w = strategy_fallback(&mixed).expect("a fallback warning");
+    assert!(matches!(w, Warning::StrategyFallback { cause: FallbackCause::Adaptive, .. }), "{w:?}");
+}
+
+/// #3542: a warning saved before the cause existed reads as the Adaptive
+/// cause, and the serde name `strategy_fallback` does not change.
+#[test]
+fn a_strategy_fallback_saved_without_a_cause_reads_as_adaptive() {
+    use camcraft_app::verify::{FallbackCause, Warning};
+    let old: Warning = serde_json::from_value(json!({ "strategy_fallback": { "at": 4, "areas": 2 } })).expect("an old cache reads");
+    assert_eq!(old, Warning::StrategyFallback { at: 4, areas: 2, cause: FallbackCause::Adaptive });
+    let new = Warning::StrategyFallback { at: 4, areas: 2, cause: FallbackCause::PassStart };
+    let v = serde_json::to_value(new).expect("serializes");
+    assert_eq!(v, json!({ "strategy_fallback": { "at": 4, "areas": 2, "cause": "pass_start" } }));
+    let back: Warning = serde_json::from_value(v).expect("reads back");
+    assert_eq!(back, new);
 }
 
 /// #3319 guard on Auto, the maintainer's own setting: the order is the

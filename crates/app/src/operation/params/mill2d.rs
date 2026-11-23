@@ -67,13 +67,7 @@ impl OpParams {
                     }
                 }
                 digest::write_corner_relief(corner_relief, h);
-                // #3316: written only off Auto, so every earlier op keeps
-                // the digest it had.
-                match pass_start {
-                    crate::machining2d::PassStart::Auto => {}
-                    crate::machining2d::PassStart::Inside => h.write_u8(0xC1),
-                    crate::machining2d::PassStart::Outside => h.write_u8(0xC2),
-                }
+                digest::write_pass_start(*pass_start, h);
             }
             OpParams::Slot {
                 links: _,
@@ -251,6 +245,7 @@ impl OpParams {
                 center,
                 radius,
                 vault,
+                pass_start,
                 stepover,
                 stock_to_leave,
                 clearance_z,
@@ -285,6 +280,7 @@ impl OpParams {
                 });
                 wh_opt(h, *retract_z);
                 wt(h, *tilt);
+                digest::write_pass_start(*pass_start, h);
             }
             // The V-carve (#1443) digests each number the path reads:
             // the heights, the ladder, the feeds and the floor choice.

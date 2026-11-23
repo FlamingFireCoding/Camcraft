@@ -17,14 +17,14 @@ use super::equal_steps::cut_levels_for;
 use super::fillet::{Legal, fillet_corners};
 use super::fillet_tally::{FilletTally, corner_arc_radius, fillet_floor};
 use super::levels::{Cert, Motion, WalkState, walk_one_level};
-use super::pass_start::PassStart;
+use super::pass_start::{PassStart, StartSide};
 use super::pocket::{PocketParams, PocketStrategy, non_sliver_center};
 use super::pocket_avoid_level::{check_reliefs_avoid, enforce_level_crossing_free, plan_avoid_level};
 use super::predrilled::PreHole;
 use super::rest2d::RestPlan;
 
 pub(super) enum AvoidSource<'a> {
-    Plain { region: &'a Region, start: PassStart, holes: &'a [PreHole] },
+    Plain { region: &'a Region, side: &'a StartSide, holes: &'a [PreHole] },
     Rest(&'a RestPlan),
 }
 
@@ -67,10 +67,24 @@ pub fn pocket_avoid_started(
     relief: &CornerRelief,
     start: PassStart,
 ) -> Result<Toolpath, GenError> {
-    pocket_avoid_entered_started(region, p, &[], avoid, relief, start)
+    pocket_avoid_started_on(region, p, avoid, relief, &StartSide::from(start))
 }
 
-fn pocket_avoid_entered_started(
+/// [`pocket_avoid_started`] with the stock known (#3316): each level's
+/// keep-out edges are walls, cut after its rings.
+pub fn pocket_avoid_started_on(
+    region: &Region,
+    p: &PocketParams,
+    avoid: &AvoidSpec,
+    relief: &CornerRelief,
+    side: &StartSide,
+) -> Result<Toolpath, GenError> {
+    pocket_avoid_entered_on(region, p, &[], avoid, relief, side)
+}
+
+/// [`pocket_avoid_entered_with_relief`] with the side each level starts on
+/// (#3316, #3345).
+pub fn pocket_avoid_entered_started(
     region: &Region,
     p: &PocketParams,
     holes: &[PreHole],
@@ -78,8 +92,19 @@ fn pocket_avoid_entered_started(
     relief: &CornerRelief,
     start: PassStart,
 ) -> Result<Toolpath, GenError> {
+    pocket_avoid_entered_on(region, p, holes, avoid, relief, &StartSide::from(start))
+}
+
+fn pocket_avoid_entered_on(
+    region: &Region,
+    p: &PocketParams,
+    holes: &[PreHole],
+    avoid: &AvoidSpec,
+    relief: &CornerRelief,
+    side: &StartSide,
+) -> Result<Toolpath, GenError> {
     if avoid.is_empty() {
-        return super::pocket_started(region, p, holes, relief, start);
+        return super::pocket_started_on(region, p, holes, relief, side);
     }
     p.validate()?;
     relief.validate()?;
@@ -99,7 +124,7 @@ fn pocket_avoid_entered_started(
         false,
         &relief_plan.reliefs,
         avoid,
-        AvoidSource::Plain { region, start, holes },
+        AvoidSource::Plain { region, side, holes },
     )
 }
 
@@ -129,6 +154,7 @@ pub(super) fn pocket_avoid_over(
         AvoidSource::Plain { holes, .. } => holes,
         AvoidSource::Rest(_) => &[],
     };
+    let cleared_links = matches!(&src, AvoidSource::Plain { side, .. } if side.start != PassStart::Auto);
     let zs = cut_levels_for(p.top_z, &p.links.approach, p.bottom_z, p.stepdown)?;
     let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
     for n in initial_notes {
@@ -220,7 +246,8 @@ pub(super) fn pocket_avoid_over(
             .with_xy_arc(p.links.approach.arc_xy)
             .with_microlift(joins)
             .with_holes(holes)
-            .with_solid_restart();
+            .with_solid_restart()
+            .with_cleared_links(cleared_links);
         let cert_entry = room.as_ref().map(|rm| Cert::Region(&rm.tess));
         let cert_center = Cert::Region(&level_center);
         let cert_links = Cert::Region(&links_center);

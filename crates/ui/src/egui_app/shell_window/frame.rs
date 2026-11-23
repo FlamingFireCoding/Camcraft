@@ -122,6 +122,7 @@ impl Shell {
         // UI logic first: the dock reports the viewport tab's size, the GPU
         // passes follow (the imgui shell's ordering law - panels drive
         // extent).
+        let size_before_layout = *viewport_points;
         let mut full_output = egui_ctx.run_ui(raw_input, |ui| {
             shell_layout(
                 ui,
@@ -133,6 +134,9 @@ impl Shell {
                 left_press,
             );
         });
+        let win_px = window.inner_size();
+        *viewport_points =
+            view_pass::viewport_after_layout(size_before_layout, *viewport_points, (win_px.width, win_px.height));
         let egui_delay = full_output
             .viewport_output
             .get(&egui::ViewportId::ROOT)
