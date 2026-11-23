@@ -15,17 +15,25 @@ struct Draft {
     y: String,
 }
 
+fn agie_mounted(state: &State, ctx: Option<&str>) -> bool {
+    camcraft_app::setup_mount::machine_of(&state.world, ctx)
+        .1
+        .is_some_and(|m| m.model == "AGIECUT CLASSIC 2S")
+}
+
 pub(super) fn section(ui: &mut Ui, state: &mut State, ctx: Option<&str>) {
+    // A document without setups and without the Agie machine has nothing to
+    // offer here: draw no header, so the Post page keeps its layout.
+    if ctx.is_none() && !agie_mounted(state, ctx) {
+        return;
+    }
     egui::CollapsingHeader::new("Agie nominal inspection")
         .id_salt(("agie-inspection-section", ctx))
         .show(ui, |ui| fields(ui, state, ctx));
 }
 
 fn fields(ui: &mut Ui, state: &mut State, ctx: Option<&str>) {
-    if !camcraft_app::setup_mount::machine_of(&state.world, ctx)
-        .1
-        .is_some_and(|m| m.model == "AGIECUT CLASSIC 2S")
-    {
+    if !agie_mounted(state, ctx) {
         hint(
             ui,
             "Mount the AGIECUT CLASSIC 2S machine on this setup to create an inspection opening.",
