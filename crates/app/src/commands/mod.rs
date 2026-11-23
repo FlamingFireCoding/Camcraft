@@ -117,7 +117,7 @@ pub use load_machine::LoadMachine;
 pub use locate::{Locate, LocateFixture, LocatePart};
 pub use move_model::MoveModel;
 pub use operation::{
-    ChangeOperationKind, ClearToolpath, CreateOperation, DeleteOperation, EditOperationLinks,
+    ApplyCutRecipe, ChangeOperationKind, ClearToolpath, CreateOperation, DeleteOperation, EditOperationLinks,
     EditOperationParams, GenerateOperation, MarkOperationReviewed, PasteOperation, RegenerateAll,
     RenameOperation, ReorderOperation, SetOperationDoNotTouch, SetOperationGeometry,
     StagedGeneration,
