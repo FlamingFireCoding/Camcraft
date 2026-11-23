@@ -5,8 +5,10 @@ mm/min at three decimals, in/min at four, trailing zeros trimmed, the point
 always written (`F600.`, `F34.5`, `F133.2`, `F1.3583`). One formatter (`ff`)
 serves every Haas feed, not only G84. A G84 block whose written words
 (F and S) give a pitch more than 0.01 percent off the stream's pitch
-(feed / rpm) is refused by name through `msg()`; no partial file is
-written. This also settles #3692 (the mm feed precision) for Haas.
+(feed / rpm) is refused by name through `msg()`. In the app the counted
+warning blocks the write, so no partial file is written there; the
+standalone `post` binary writes the file with the warning, as for every
+other refusal of this post. This also settles #3692 (the mm feed precision) for Haas.
 
 **Why.** The control cuts the pitch F / S. The stream carries the tap feed
 pitch x rpm at 0.001 mm/min (`crates/cl/src/cl/text.rs`), and the old
