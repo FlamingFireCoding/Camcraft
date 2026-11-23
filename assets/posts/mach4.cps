@@ -740,7 +740,7 @@ function onCircular() {
     plane: machPlaneG === 18 ? "XZ" : (machPlaneG === 19 ? "YZ" : "XY"),
     ccw: (cw !== flipDir) === false,
     start: pt3(qS), end: pt3(qE), center: pt3(qC), rotary: false
-  }, function (k, v) { return fu(v); });
+  }, function (k, v) { return fu(v); }, arcIncOf(fu));  // #3474: I J K from the start
   if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   var centerWs = [];
   if (machPlaneG === 17) centerWs = ["I" + fu(qC[0] - qS[0]), "J" + fu(qC[1] - qS[1])];
