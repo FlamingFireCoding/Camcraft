@@ -1,4 +1,4 @@
-//! Provenance: Autodesk DXF SECTION, HEADER, TABLES and ENTITIES structure.
+//! Provenance: Autodesk DXF SECTION, HEADER, CLASSES, TABLES and ENTITIES structure.
 use super::Units;
 use super::blocks::Blocks;
 use super::dictionaries;
@@ -66,11 +66,26 @@ pub fn parse_with_limits(bytes: &[u8], limits: Limits) -> Result<Document, DxfEr
                         "TABLES" => tables(&mut input, &mut state, &mut blocks)?,
                         "BLOCKS" => blocks.read(&mut input, limits.max_entities)?,
                         "OBJECTS" => dictionaries::read(&mut input, limits.max_entities)?,
+                        "CLASSES" => skip_classes(&mut input)?,
                         _ => return Err(error(name, "unsupported SECTION")),
                     }
                 }
             }
             _ => return Err(error(record.kind, "expected SECTION or EOF")),
+        }
+    }
+}
+
+/// CLASSES lists application object classes and carries no geometry: consume it to its ENDSEC.
+fn skip_classes(input: &mut Pairs<'_>) -> Result<(), DxfError> {
+    loop {
+        let record = input
+            .record()?
+            .ok_or_else(|| error("CLASSES", "missing ENDSEC"))?;
+        match record.kind {
+            "ENDSEC" => return record.empty(),
+            "CLASS" => {}
+            _ => return Err(error("CLASSES", "expected CLASS or ENDSEC")),
         }
     }
 }
