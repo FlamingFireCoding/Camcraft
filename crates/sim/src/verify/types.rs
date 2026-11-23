@@ -260,6 +260,20 @@ pub enum FixturePart {
     Flute,
 }
 
+/// What fell back to the Offset rings in a [`Warning::StrategyFallback`]
+/// (#3542): the text names the operation's own choice. Absent in a cache
+/// saved before #3542: read as the Adaptive plan, the only cause then.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FallbackCause {
+    /// The Adaptive plan could not cut an area (#3035).
+    #[default]
+    Adaptive,
+    /// The selected "Pass starts at" side would leave material uncut, so
+    /// the area is cut in the Auto order (the completeness guard, #3316).
+    PassStart,
+}
+
 /// Serde derives: the operation layer persists warnings with the cached
 /// path (project v3 `OperationDto.cache`), so the enum is also a file
 /// format - variant names are that contract, keep them stable.
@@ -399,8 +413,14 @@ pub enum Warning {
     /// level) to the Offset rings (#3035), from the first cut at `at`.
     /// The notes name each one. Advisory: the rings are verified like any
     /// path, so the post is not held - but the strategy the user asked for
-    /// did not cut those areas, and the op says so.
-    StrategyFallback { at: usize, areas: usize },
+    /// did not cut those areas, and the op says so. `cause` (#3542): the
+    /// Adaptive plan, or a "Pass starts at" side cut in the Auto order.
+    StrategyFallback {
+        at: usize,
+        areas: usize,
+        #[serde(default)]
+        cause: FallbackCause,
+    },
     /// #3525: the operation cuts `depth_mm` below the stock top, deeper
     /// than the tool's `flute_mm` flute length, from the cutting move
     /// `at` on ([`super::flute_reach`]). Always advisory (#3525
@@ -554,9 +574,14 @@ impl core::fmt::Display for Warning {
                 f,
                 "undersize hole at move {at}: the hole is {hole_mm:.3} mm, and the {drill_mm:.3} mm drill makes it {drill_mm:.3} mm - use a {hole_mm:.3} mm drill, or follow with a Bore or a reamer (the post is not held: a pilot drill is a valid plan)"
             ),
-            Warning::StrategyFallback { at, areas } => write!(
+            Warning::StrategyFallback { at, areas, cause: FallbackCause::Adaptive } => write!(
                 f,
                 "Adaptive fell back to Offset rings on {areas} area{} from move {at}: the notes name each one and why (the post is not held: the rings are verified)",
+                if *areas == 1 { "" } else { "s" }
+            ),
+            Warning::StrategyFallback { at, areas, cause: FallbackCause::PassStart } => write!(
+                f,
+                "Pass starts at: the selected start side would leave material uncut in {areas} area{}, so the Auto order was used there instead, from move {at}: the notes name each one (the post is not held: the cut is verified)",
                 if *areas == 1 { "" } else { "s" }
             ),
             Warning::FluteShort { at, flute_mm, depth_mm } => write!(

@@ -362,3 +362,21 @@ pub(super) fn verify(env: &mut Env, a: &Map<String, Value>) -> Result<Value, Str
     report["findings"] = Value::Array(findings);
     Ok(report)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Warning, finding};
+    use crate::verify::FallbackCause;
+
+    /// #3542: the pass-start cause keeps the MCP kind `strategy_fallback`
+    /// and stays advisory; only its message names the other cause.
+    #[test]
+    fn a_pass_start_fallback_keeps_the_strategy_fallback_kind() {
+        for cause in [FallbackCause::Adaptive, FallbackCause::PassStart] {
+            let f = finding("op", &Warning::StrategyFallback { at: 3, areas: 1, cause });
+            assert_eq!(f["kind"], "strategy_fallback", "{f}");
+            assert_eq!(f["move"], 3, "{f}");
+            assert_eq!(f["blocks_post"], false, "{f}");
+        }
+    }
+}
