@@ -40,6 +40,14 @@ fn watchdog_helper() {
             let mut g = spawn("tick");
             g.wait().expect("wait");
         }
+        // As a build that starts the sccache server (#3675): a descendant that outlives the build holds
+        // its stdout, and the build exits at once.
+        "orphan" => {
+            #[expect(clippy::zombie_processes, reason = "the descendant must outlive this process; the test kills it by pid")]
+            let g = spawn("silent");
+            println!("{{\"reason\":\"build-finished\",\"success\":true}}");
+            println!("grandchild pid {}", g.id());
+        }
         _ => {}
     }
 }
@@ -102,6 +110,32 @@ fn output_of_the_child_or_a_descendant_keeps_the_step_alive() {
         assert!(matches!(end, End::Exited(st) if st.success()), "{mode}: the step writes output, so it must run to its end: {end:?}\n{text}");
         assert!(!text.contains(watchdog::LINE), "{mode}: no STALL line:\n{text}");
     }
+}
+
+/// #3675: a recording build ends when cargo exits, also when a descendant that outlives it (the
+/// sccache server) still holds its stdout. Before the fix the gate waited for that descendant, with no
+/// watchdog: the helper's descendant sleeps 120 s, so the old code took 120 s or more here.
+#[test]
+fn a_recording_build_ends_when_cargo_exits_not_when_its_descendants_do() {
+    let dir = std::env::temp_dir().join(format!("xtask-watchdog-orphan-{}", std::process::id()));
+    fs::create_dir_all(&dir).expect("dir");
+    let log = File::create(dir.join("step.log")).expect("log");
+    let me = std::env::current_exe().expect("exe");
+    let args: Vec<String> = ["--exact", "watchdog_tests::watchdog_helper", "--nocapture", "--test-threads=1"].map(String::from).to_vec();
+    let t0 = Instant::now();
+    let (code, json, stalled) = crate::direct::cargo(&me.to_string_lossy(), vec![(HELPER, "orphan".into())], &args, &dir, log, true, Duration::from_secs(60)).expect("run");
+    let took = t0.elapsed();
+    let json = json.unwrap_or_default();
+    let pid: Option<u32> = json.lines().find_map(|l| l.split_once("grandchild pid ").and_then(|(_, p)| p.trim().parse().ok()));
+    if let Some(pid) = pid.map(|p| p.to_string()) {
+        let (prog, kill) = if cfg!(windows) { ("taskkill", vec!["/F", "/PID", &pid]) } else { ("kill", vec!["-KILL", &pid]) };
+        let _ = Command::new(prog).args(kill).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    }
+    let _ = fs::remove_dir_all(&dir);
+    assert!(took < Duration::from_secs(30), "the step must end when cargo exits: {took:?}");
+    assert!(!stalled && code == 0, "the build exits green: code {code}, stalled {stalled}");
+    assert!(json.contains("\"reason\":\"build-finished\""), "the JSON of the build comes back: {json}");
+    assert!(pid.is_some(), "the helper names its descendant: {json}");
 }
 
 #[test]
