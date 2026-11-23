@@ -246,6 +246,11 @@ pub(super) fn emit_band(
             // pre-M11.2 shape) - unless the pass link keeps down, which
             // feeds straight over where proved (contour_link::ring_link).
             let ring_to_ring = k == 0 && same_level && !first_entry;
+            // A bore-side ring after another one is entered by the user's
+            // arm too (the entry on its first level, the transition below
+            // it), never by the pass link's plunge into material.
+            let ring_arm = if rzi == 0 { p.entry } else { arm };
+            let enter_ring = ring_to_ring && inside && !tabbed && ring_arm != Entry3D::Plunge;
             let wall_arc_on = !inside
                 && arm == Entry3D::Arc
                 && k == 0
@@ -285,19 +290,22 @@ pub(super) fn emit_band(
             }
             if arced {
                 // Engaged: the arc ends standing at (e2, z).
-            } else if ring_to_ring {
+            } else if ring_to_ring && {
                 // Ring to ring within one level: the pass link, proved
                 // against the rings and this level's dive links.
                 let cut = if dives.0.to_bits() == z.to_bits() { dives.1.as_slice() } else { &[] };
-                ring_link(b, p, &legal, &[&band.plan, cut, &link_leads], e2, z, hop_z, tabbed, &mut lifted);
+                ring_link(b, p, &legal, &[&band.plan, cut, &link_leads], e2, z, hop_z, tabbed, &mut lifted, enter_ring)
+            } {
+                // The pass link posted the move.
             } else if k == 0 {
                 // The level's first engagement: a crossing, or the path's
                 // first entry (prev_z falls back to clearance there).
                 let prev_z = if rzi == 0 { p.clearance_z } else { rz[rzi - 1] };
                 // #2004: the column of this descent is open down to prev_z
                 // when the descent one level up was the same arm.
+                let arm = if enter_ring { ring_arm } else { arm };
                 let opened = rzi >= 2 || (rzi == 1 && arm == p.entry);
-                let step = Step { arm, e2, z, prev_z, first: first_entry, opened, inside, tabbed, lead_top };
+                let step = Step { arm, e2, z, prev_z, first: first_entry, opened, inside, tabbed, lead_top, travel: enter_ring };
                 if let Some(d) = engage_level(b, &eng, &step, &lead, &walk, said) {
                     if dives.0.to_bits() != z.to_bits() {
                         dives = (z, Vec::new());

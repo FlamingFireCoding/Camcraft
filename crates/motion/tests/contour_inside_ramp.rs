@@ -122,3 +122,67 @@ fn a_bore_side_ring_too_short_to_ramp_dives_by_name_at_the_plunge_feed() {
     let (_, dives) = check(&t, "short ramp legs");
     assert!(dives > 0, "every level dives by name: {:?}", t.notes);
 }
+
+/// Three square bores side by side (half-width 8, centres 30 mm apart).
+fn three_bores() -> Region {
+    let sq = |cx: f64| {
+        let h = 8.0;
+        let pts = vec![Point2::new(cx - h, -h), Point2::new(cx + h, -h), Point2::new(cx + h, h), Point2::new(cx - h, h)];
+        Loop::new(pts).unwrap()
+    };
+    Region::new(vec![sq(-30.0), sq(0.0), sq(30.0)]).unwrap()
+}
+
+/// Descending feed moves of a path: (steepest in degrees, axial count).
+fn descents(t: &Toolpath) -> (f64, usize) {
+    let (mut worst, mut axial): (f64, usize) = (0.0, 0);
+    for m in t.moves.iter().filter(|m| m.kind != MoveKind::Rapid && m.from.z - m.to.z > 1e-9) {
+        let len = xy_len(m);
+        if len > 1e-9 {
+            worst = worst.max(((m.from.z - m.to.z) / len).atan().to_degrees());
+        } else {
+            axial += 1;
+        }
+    }
+    (worst, axial)
+}
+
+/// Every ring of a multi-ring bore-side contour takes the entry, on every
+/// level: the first ring did, and the rings after it plunged into solid
+/// through the pass link. Ramp at 5 deg caps each descent, the helix posts
+/// no axial dive, and the plunge entry still dives (the baseline).
+#[test]
+fn every_ring_of_a_multi_ring_bore_is_entered_by_the_stated_entry() {
+    let base = contour(&three_bores(), &ContourParams { entry: Entry3D::Plunge, ..params(true) }).expect("plunge bores");
+    let (_, plunged) = descents(&base);
+    assert!(plunged >= 9, "the plunge entry dives at each of 3 rings x 3 levels: {plunged}");
+
+    let mut ramp = params(true);
+    ramp.links.approach.ramp_angle = 5.0;
+    let t = contour(&three_bores(), &ramp).expect("ramped bores");
+    let (worst, axial) = descents(&t);
+    assert!(worst > 1.0 && worst <= 5.0 + 1e-3, "every ring ramps within 5 deg: {worst}");
+    assert_eq!(axial, 0, "no ring plunges: {:?}", t.notes);
+    assert!(!t.moves.iter().any(|m| m.kind == MoveKind::Plunge), "no plunge move at all");
+    assert!(t.is_chained() && t.all_finite());
+
+    let helix = contour(&three_bores(), &ContourParams { entry: Entry3D::Helix, helix_radius: 2.0, ..params(true) }).expect("helix bores");
+    let (_, axial) = descents(&helix);
+    assert_eq!(axial, 0, "no ring plunges under the helix: {:?}", helix.notes);
+    assert!(!helix.moves.iter().any(|m| m.kind == MoveKind::Plunge), "no plunge move at all");
+    let orbits = helix.moves.iter().filter(|m| m.arc.is_some() && m.from.z - m.to.z > 1e-9).count();
+    assert!(orbits >= 3 * 3, "each of 3 rings x 3 levels descends in helix arcs: {orbits}");
+    assert!(helix.is_chained() && helix.all_finite());
+}
+
+/// One ring is still entered by its ramp: no axial dive (the law above
+/// leaves the first ring alone).
+#[test]
+fn a_single_ring_bore_still_ramps_without_an_axial_dive() {
+    let one = Region::new(vec![Loop::new(vec![Point2::new(-8.0, -8.0), Point2::new(8.0, -8.0), Point2::new(8.0, 8.0), Point2::new(-8.0, 8.0)]).unwrap()]).unwrap();
+    let mut p = params(true);
+    p.links.approach.ramp_angle = 5.0;
+    let t = contour(&one, &p).expect("one bore");
+    assert_eq!(descents(&t).1, 0);
+}
+

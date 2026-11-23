@@ -281,7 +281,8 @@ pub(super) fn ring_link(
     hop_z: f64,
     tabbed: bool,
     lifted: &mut crate::links::LinkTally,
-) {
+    enter: bool,
+) -> bool {
     let cur = b.at();
     let at = Point2::new(cur.x, cur.y);
     if p.links.pass == Link::KeepDown {
@@ -289,10 +290,16 @@ pub(super) fn ring_link(
         match proof {
             Ok(()) => {
                 b.push(MoveKind::Feed, Point3::new(e2.x, e2.y, z), Some(p.feed));
-                return;
+                return true;
             }
             Err(why) => lifted.lift(why, at, z),
         }
+    }
+    // The new ring is entered by the entry the user chose (a ramp or a
+    // helix), not by this link's straight plunge into material: nothing is
+    // posted, the caller engages the level.
+    if enter {
+        return false;
     }
     if cur.z < hop_z {
         b.push(MoveKind::Feed, Point3::new(cur.x, cur.y, hop_z), Some(p.feed));
@@ -304,6 +311,7 @@ pub(super) fn ring_link(
     b.push(MoveKind::Rapid, Point3::new(e2.x, e2.y, hop_z), None);
     guard(b, p, e2, z, p.entry_top(), "the ring-to-ring dive at the lead-in");
     b.push(MoveKind::Plunge, Point3::new(e2.x, e2.y, z), Some(p.plunge_feed));
+    true
 }
 
 /// The contour's keep-down law: the cutter center on the legal side of

@@ -44,6 +44,10 @@ pub(super) struct Step {
     /// or the vertical lead-in's height over it (M11.3 C) - the lead then
     /// descends along itself.
     pub lead_top: f64,
+    /// A ring after another one at the same level: the tool stands at the
+    /// end of the earlier ring, so the lift is followed by a traverse over
+    /// to the lead-in, and the descent starts there.
+    pub travel: bool,
 }
 
 /// Structural refusals, each said once per path.
@@ -80,6 +84,9 @@ pub(super) fn engage_level(b: &mut PathBuilder, eng: &Engage, s: &Step, lead: &[
         b.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, tz), None);
     }
     let (e2, z) = (s.e2, s.z);
+    if s.travel && (cur.x != e2.x || cur.y != e2.y) {
+        b.push(MoveKind::Rapid, Point3::new(e2.x, e2.y, tz), None);
+    }
     if s.inside && s.tabbed {
         // M8.2 C: the arm stands down where a tab is material. dive_room
         // and chord_clears certify against the eroded region - the FULL-
