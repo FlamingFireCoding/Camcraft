@@ -2423,27 +2423,28 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             ..
         } => {
             let region = region_for_job(
-                    &mut picked_region,
-                    &mut section_z,
-                    &src,
-                    &params,
+                &mut picked_region,
+                &mut section_z,
+                &src,
+                &params,
                 m_gen,
                 frame.as_ref(),
             )?;
-            let path = machining2d::trace(
-                &region,
-                &TraceParams {
-                    clearance_z: hl.clearance,
-                    retract_z: hl.retract,
-                    top_z: req_z(hl.top, "Top of Part Z")?,
-                    bottom_z: req_z(hl.bottom, "Bottom of Part Z")?,
-                    stepdown: *stepdown,
-                    feed: *feed,
-                    plunge_feed: *plunge_feed,
-                    climb: *climb,
-                    stock_top: lk.approach.stock_top,
-                },
-            )?;
+            let tp = TraceParams {
+                clearance_z: hl.clearance,
+                retract_z: hl.retract,
+                top_z: req_z(hl.top, "Top of Part Z")?,
+                bottom_z: req_z(hl.bottom, "Bottom of Part Z")?,
+                stepdown: *stepdown,
+                feed: *feed,
+                plunge_feed: *plunge_feed,
+                climb: *climb,
+                stock_top: lk.approach.stock_top,
+            };
+            let path = match &avoid_spec {
+                Some(spec) => machining2d::trace_avoid(&region, &tp, spec)?,
+                None => machining2d::trace(&region, &tp)?,
+            };
             (region, path)
         }
         // V-carve (#1443): the picked closed region, carved by the
