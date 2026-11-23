@@ -135,6 +135,7 @@ class GuideIcons(unittest.TestCase):
 
         table = parse_icon_table()
         expected_stems = set(table.values())
+        expected_stems.update({"op-multiaxis-deburr", "op-waterjet-profile"})
         static_icons = SITE / "static/icons"
         self.assertTrue(static_icons.is_dir(), "Missing site/static/icons directory")
 
