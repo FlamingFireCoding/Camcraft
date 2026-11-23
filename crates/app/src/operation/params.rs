@@ -383,8 +383,7 @@ impl OpParams {
             | OpParams::SinkerBurn { .. }
             | OpParams::SinkerSideBurn { .. }
             | OpParams::SlotUndercut { .. }
-            | OpParams::PlasmaProfile { .. }
-            | OpParams::WaterjetProfile { .. } => self.stamp_cutting(world, setup, src, h),
+            | OpParams::PlasmaProfile { .. } | OpParams::WaterjetProfile { .. } => self.stamp_cutting(world, setup, src, h),
         }
         self.stamp_links(h);
     }
