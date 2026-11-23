@@ -137,6 +137,7 @@ pub fn region_z(
         // ride's only height (M2.4 B).
         | OpParams::Adaptive2D { top_z, .. }
         | OpParams::Offset2D { top_z, .. }
+        | OpParams::VCarve { top_z, .. }
         | OpParams::Engrave { top_z, .. }
         | OpParams::Chamfer2D { top_z, .. }
         | OpParams::Circular { top_z, .. }
@@ -181,6 +182,8 @@ pub fn region_z(
         OpParams::Probe { target, .. } => Some(target[2]),
         // The plasma cut rides the plate's top (#670).
         OpParams::PlasmaProfile(p) => resolve(p.top_z),
+        // The waterjet cut rides the sheet's top (#1883).
+        OpParams::WaterjetProfile(p) => resolve(p.top_z),
         // The wire's profile is read on the workpiece's top (#532).
         OpParams::WireContour(p) => resolve(p.top_z),
         // The electrode enters at the work top (#541).
@@ -268,6 +271,7 @@ pub fn resolve_params_with(
         // and the circular ladder do too (M2.4 B).
         | OpParams::Adaptive2D { clearance_z, retract_z, top_z, bottom_z, .. }
         | OpParams::Offset2D { clearance_z, retract_z, top_z, bottom_z, .. }
+        | OpParams::VCarve { clearance_z, retract_z, top_z, bottom_z, .. }
         | OpParams::Engrave { clearance_z, retract_z, top_z, bottom_z, .. }
         | OpParams::Circular { clearance_z, retract_z, top_z, bottom_z, .. }
         | OpParams::Slot { clearance_z, retract_z, top_z, bottom_z, .. }
@@ -410,6 +414,15 @@ pub fn resolve_params_with(
         // The plasma cut (#670): the torch-off plane, the plate's top
         // (the cut plane) and bottom (its thickness) - no hop plane.
         OpParams::PlasmaProfile(p) => (
+            req("Clearance Z", p.clearance_z)?,
+            Some(req("Top of Plate Z", p.top_z)?),
+            Some(req("Bottom of Plate Z", p.bottom_z)?),
+            None,
+            None,
+        ),
+        // The waterjet cut (#1883): the jet-off plane, the sheet's top
+        // (the cut plane) and bottom - no hop plane.
+        OpParams::WaterjetProfile(p) => (
             req("Clearance Z", p.clearance_z)?,
             Some(req("Top of Plate Z", p.top_z)?),
             Some(req("Bottom of Plate Z", p.bottom_z)?),

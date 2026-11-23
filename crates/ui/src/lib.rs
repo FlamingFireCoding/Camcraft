@@ -68,6 +68,7 @@ pub mod headless_gpu;
 #[cfg(not(target_arch = "wasm32"))]
 mod headless_open;
 pub mod interact;
+pub(crate) mod sketch_overlay;
 mod height_display;
 mod height_memo;
 pub mod locate_pick;
@@ -79,6 +80,7 @@ mod sketch_chip_memo;
 mod sketch_memo;
 mod floor;
 mod work_envelope;
+mod operator_side;
 pub mod view_frame;
 pub mod mcp_host;
 pub mod operations;
@@ -101,6 +103,10 @@ pub mod state;
 pub mod theme_dir;
 pub mod trace;
 pub mod unsaved;
+// #3608: a Save over a project file that changed after the open asks first.
+pub mod save_guard;
+#[cfg(test)]
+mod save_guard_tests;
 pub mod vertex_pick;
 pub mod viewport;
 pub mod wcs_circle_pick;

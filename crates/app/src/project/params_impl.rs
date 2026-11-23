@@ -69,6 +69,7 @@ impl ParamsDto {
         match p {
             OpParams::Probe { .. } => ParamsDto::Probe(ProbeDto::from_params(p)),
             OpParams::PlasmaProfile(op) => ParamsDto::PlasmaProfile(PlasmaDto::from_op(op)),
+            OpParams::WaterjetProfile(op) => ParamsDto::WaterjetProfile(WaterjetDto::from_op(op)),
             OpParams::WireContour(op) => ParamsDto::WireContour(WireContourDto::from_op(op)),
             OpParams::SinkerBurn(op) => ParamsDto::SinkerBurn(SinkerDto::from_op(op)),
             OpParams::SinkerSideBurn(op) => ParamsDto::SinkerSideBurn(SinkerSideDto::from_op(op)),
@@ -191,6 +192,7 @@ impl ParamsDto {
                 rest,
                 corner_relief,
                 tilt,
+                pass_start,
             } => ParamsDto::Pocket {
                 links: links_to_dto(links, &p.default_links()),
                 stepover: *stepover,
@@ -226,6 +228,7 @@ impl ParamsDto {
                 rest: (*rest).map(Into::into),
                 corner_relief: cr_to_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             // The twins drop the strategy tag - the variant itself
             // says which ladder runs (M2.4 A).
@@ -250,6 +253,7 @@ impl ParamsDto {
                 blend_radius,
                 corner_relief,
                 tilt,
+                pass_start,
             } => {
                 let (troch_return, lift) = match troch.ret {
                     None => (AdaptiveTrochReturnDto::Auto, None),
@@ -291,6 +295,7 @@ impl ParamsDto {
                     loop_width: troch.loop_width,
                     corner_relief: cr_to_dto(corner_relief),
                     tilt: (*tilt).map(Into::into),
+                    pass_start: (*pass_start).into(),
                 }
             }
             OpParams::Offset2D {
@@ -311,6 +316,7 @@ impl ParamsDto {
                 blend_radius,
                 corner_relief,
                 tilt,
+                pass_start,
             } => ParamsDto::Offset2D {
                 links: links_to_dto(links, &p.default_links()),
                 stepover: *stepover,
@@ -334,6 +340,7 @@ impl ParamsDto {
                 blend_radius: *blend_radius,
                 corner_relief: cr_to_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             // The M2.4 B trio: the engrave twin rides the trace arm
             // verbatim, the chamfer states its two authored face
@@ -358,6 +365,30 @@ impl ParamsDto {
                 feed: *feed,
                 plunge_feed: *plunge_feed,
                 climb: *climb,
+                tilt: (*tilt).map(Into::into),
+            },
+            // #1443: the V-carve arm.
+            OpParams::VCarve {
+                clearance_z,
+                retract_z,
+                top_z,
+                bottom_z,
+                stepdown,
+                feed,
+                plunge_feed,
+                flat_clear,
+                flat_stepover,
+                tilt,
+            } => ParamsDto::VCarve {
+                clearance_z: (*clearance_z).into(),
+                retract_z: (*retract_z).map(Into::into),
+                top_z: (*top_z).into(),
+                bottom_z: (*bottom_z).into(),
+                stepdown: *stepdown,
+                feed: *feed,
+                plunge_feed: *plunge_feed,
+                flat_clear: *flat_clear,
+                flat_stepover: *flat_stepover,
                 tilt: (*tilt).map(Into::into),
             },
             OpParams::Chamfer2D {
@@ -394,6 +425,7 @@ impl ParamsDto {
                 center,
                 radius,
                 vault,
+                pass_start,
                 stepover,
                 stock_to_leave,
                 clearance_z,
@@ -412,6 +444,7 @@ impl ParamsDto {
                 center: [center.x, center.y],
                 radius: *radius,
                 vault: *vault,
+                pass_start: (*pass_start).into(),
                 stepover: *stepover,
                 stock_to_leave: *stock_to_leave,
                 clearance_z: (*clearance_z).into(),
@@ -451,6 +484,7 @@ impl ParamsDto {
                 feed_opt,
                 shell,
                 method,
+                pass_start,
             } => ParamsDto::Pocket3D {
                 links: links_to_dto(links, &p.default_links()),
                 stepover: *stepover,
@@ -486,9 +520,11 @@ impl ParamsDto {
                 optimal_load: Some(*optimal_load),
                 feed_opt: *feed_opt,
                 shell: *shell,
+                pass_start: (*pass_start).into(),
             },
             OpParams::Finish3D {
                 pattern,
+                direction_angle,
                 stepover,
                 tolerance,
                 clearance_z,
@@ -506,8 +542,10 @@ impl ParamsDto {
                 pencil_reference,
                 fill_openings,
                 gap_link,
+                pass_start,
             } => ParamsDto::Finish3D {
                 pattern: (*pattern).into(),
+                direction_angle: *direction_angle,
                 stepover: *stepover,
                 tolerance: *tolerance,
                 clearance_z: (*clearance_z).into(),
@@ -525,6 +563,7 @@ impl ParamsDto {
                 pencil_reference: *pencil_reference,
                 fill_openings: *fill_openings,
                 gap_link: (*gap_link).into(),
+                pass_start: (*pass_start).into(),
             },
             // The deburr ride (M2.5 E B): the six keys are the kind's
             // whole content - no pattern, no retract, nothing derived
@@ -543,7 +582,10 @@ impl ParamsDto {
                 hole_min_diameter,
                 hole_max_diameter,
                 unreachable,
-            } => ParamsDto::Deburr {
+                sizing,
+            } => {
+                let (break_mode, break_depth, break_profile, passes) = break_dto(sizing);
+                ParamsDto::Deburr {
                 width: *width,
                 clearance_z: (*clearance_z).into(),
                 top_z: (*top_z).into(),
@@ -556,7 +598,12 @@ impl ParamsDto {
                 hole_min_diameter: *hole_min_diameter,
                 hole_max_diameter: *hole_max_diameter,
                 unreachable: (*unreachable).into(),
-            },
+                break_mode,
+                break_depth,
+                break_profile,
+                passes,
+                }
+            }
             // The 5-axis twins (M5.1 stage C): one shape, mirrored.
             // The contour arm has no stepover to name, so the pattern
             // reads it back (the or-pattern law again).
@@ -1295,8 +1342,10 @@ impl ParamsDto {
                 tolerance,
                 holes,
                 break_through,
+                pass_start,
             } => ParamsDto::Bore {
                 break_through: *break_through,
+                pass_start: (*pass_start).into(),
                 links: links_to_dto(links, &p.default_links()),
                 clearance_z: (*clearance_z).into(),
                 retract_z: (*retract_z).map(Into::into),
@@ -1348,6 +1397,7 @@ impl ParamsDto {
         match self {
             ParamsDto::Probe(d) => d.to_params(),
             ParamsDto::PlasmaProfile(d) => d.to_params(),
+            ParamsDto::WaterjetProfile(d) => d.to_params(),
             ParamsDto::WireContour(d) => d.to_params(),
             ParamsDto::SinkerBurn(d) => d.to_params(),
             ParamsDto::SinkerSideBurn(d) => d.to_params(),
@@ -1478,6 +1528,7 @@ impl ParamsDto {
                 rest,
                 corner_relief,
                 tilt,
+                pass_start,
             } => OpParams::Pocket {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 stepover: *stepover,
@@ -1512,6 +1563,7 @@ impl ParamsDto {
                 rest: (*rest).map(Into::into),
                 corner_relief: cr_from_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             ParamsDto::Adaptive2D {
                 links,
@@ -1538,6 +1590,7 @@ impl ParamsDto {
                 blend_radius,
                 corner_relief,
                 tilt,
+                pass_start,
             } => OpParams::Adaptive2D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 stepover: *stepover,
@@ -1582,6 +1635,7 @@ impl ParamsDto {
                 blend_radius: *blend_radius,
                 corner_relief: cr_from_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             ParamsDto::Offset2D {
                 links,
@@ -1601,6 +1655,7 @@ impl ParamsDto {
                 blend_radius,
                 corner_relief,
                 tilt,
+                pass_start,
             } => OpParams::Offset2D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 stepover: *stepover,
@@ -1624,6 +1679,7 @@ impl ParamsDto {
                 blend_radius: *blend_radius,
                 corner_relief: cr_from_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             // The M2.4 B trio back out of the wire, same shapes.
             ParamsDto::Engrave {
@@ -1645,6 +1701,30 @@ impl ParamsDto {
                 feed: *feed,
                 plunge_feed: *plunge_feed,
                 climb: *climb,
+                tilt: (*tilt).map(Into::into),
+            },
+            // #1443: the V-carve arm.
+            ParamsDto::VCarve {
+                clearance_z,
+                retract_z,
+                top_z,
+                bottom_z,
+                stepdown,
+                feed,
+                plunge_feed,
+                flat_clear,
+                flat_stepover,
+                tilt,
+            } => OpParams::VCarve {
+                clearance_z: (*clearance_z).into(),
+                retract_z: (*retract_z).map(Into::into),
+                top_z: (*top_z).into(),
+                bottom_z: (*bottom_z).into(),
+                stepdown: *stepdown,
+                feed: *feed,
+                plunge_feed: *plunge_feed,
+                flat_clear: *flat_clear,
+                flat_stepover: *flat_stepover,
                 tilt: (*tilt).map(Into::into),
             },
             ParamsDto::Chamfer2D {
@@ -1681,6 +1761,7 @@ impl ParamsDto {
                 center,
                 radius,
                 vault,
+                pass_start,
                 stepover,
                 stock_to_leave,
                 clearance_z,
@@ -1699,6 +1780,7 @@ impl ParamsDto {
                 center: Point2::new(center[0], center[1]),
                 radius: *radius,
                 vault: *vault,
+                pass_start: (*pass_start).into(),
                 stepover: *stepover,
                 stock_to_leave: *stock_to_leave,
                 clearance_z: (*clearance_z).into(),
@@ -1739,6 +1821,7 @@ impl ParamsDto {
                 optimal_load,
                 feed_opt,
                 shell,
+                pass_start,
             } => OpParams::Pocket3D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::ROUGH3D),
                 stepover: *stepover,
@@ -1773,9 +1856,11 @@ impl ParamsDto {
                 optimal_load: load_from_file(*optimal_load, *max_engagement),
                 feed_opt: *feed_opt,
                 shell: *shell,
+                pass_start: (*pass_start).into(),
             },
             ParamsDto::Finish3D {
                 pattern,
+                direction_angle,
                 stepover,
                 tolerance,
                 clearance_z,
@@ -1793,8 +1878,10 @@ impl ParamsDto {
                 pencil_reference,
                 fill_openings,
                 gap_link,
+                pass_start,
             } => OpParams::Finish3D {
                 pattern: (*pattern).into(),
+                direction_angle: *direction_angle,
                 stepover: *stepover,
                 tolerance: *tolerance,
                 clearance_z: (*clearance_z).into(),
@@ -1812,6 +1899,7 @@ impl ParamsDto {
                 pencil_reference: *pencil_reference,
                 fill_openings: *fill_openings,
                 gap_link: (*gap_link).into(),
+                pass_start: (*pass_start).into(),
             },
             // Read back whole, the blade kinds' way - sane or
             // nothing, `validate_kind`'s door first (M2.5 E B):
@@ -1829,6 +1917,10 @@ impl ParamsDto {
                 hole_min_diameter,
                 hole_max_diameter,
                 unreachable,
+                break_mode,
+                break_depth,
+                break_profile,
+                passes,
             } => OpParams::Deburr {
                 width: *width,
                 clearance_z: (*clearance_z).into(),
@@ -1842,6 +1934,7 @@ impl ParamsDto {
                 hole_min_diameter: *hole_min_diameter,
                 hole_max_diameter: *hole_max_diameter,
                 unreachable: (*unreachable).into(),
+                sizing: break_of(*break_mode, *break_depth, *break_profile, *passes),
             },
             // The 5-axis twins (M5.1 stage C): the same shape read
             // back - the contour has no stepover key to lose, and the
@@ -2568,8 +2661,10 @@ impl ParamsDto {
                 tolerance,
                 holes,
                 break_through,
+                pass_start,
             } => OpParams::Bore {
                 break_through: *break_through,
+                pass_start: (*pass_start).into(),
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 clearance_z: (*clearance_z).into(),
                 retract_z: retract_z.map(Into::into),

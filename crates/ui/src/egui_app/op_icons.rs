@@ -22,6 +22,7 @@ pub(crate) fn op_icon(kind: OpType) -> Icon {
         OpType::TrochoidalSlot => Icon::TrochoidalSlot,
         OpType::Trace => Icon::Trace,
         OpType::Engrave => Icon::Engrave,
+        OpType::VCarve => Icon::VCarve,
         OpType::Chamfer2D => Icon::Chamfer2D,
         OpType::Deburr => Icon::Deburr,
         OpType::Circular => Icon::Circular,
@@ -32,6 +33,8 @@ pub(crate) fn op_icon(kind: OpType) -> Icon {
         OpType::SinkerSideBurn => Icon::SinkerSideBurn,
         // #1444: a T-slot's section with the cutter in it.
         OpType::SlotUndercut => Icon::SlotUndercut,
+        // #1883: the nozzle and its jet - its own glyph.
+        OpType::WaterjetProfile => Icon::WaterjetProfile,
         OpType::Drill => Icon::Drill,
         OpType::Bore => Icon::Bore,
         OpType::Thread => Icon::Thread,
