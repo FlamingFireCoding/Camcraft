@@ -550,6 +550,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v77 -> v78 (#2772): a rotary op may state its own rotation
         // axis (`stated_axis`); absent stays absent and follows the
         // machine, else the fit, as every v77 file read its axis.
+        // v78 -> v79 (#2826): the Rotary Flow arm arrives; no v78
+        // file names it, so nothing seats or moves - pure step-up.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         if from < 68 {

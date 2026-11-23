@@ -346,6 +346,13 @@ pub enum OpType {
     /// [`crate::machining2d::v_carve`]). Appended: the declaration order
     /// is the table order (`OpType as usize` is the row everywhere).
     VCarve,
+    /// Rotary Flow (#2826, the second slice of #2804): the 4-axis
+    /// cylindrical flow-line finish - the caller PICKS the guide
+    /// chains (the edges of a helical band on a rotor) and the kind
+    /// blends flow passes between each adjacent pair about a STATED
+    /// rotation axis (see [`crate::multiaxis::rotary_flow`]).
+    /// Appended: stored kind ids never move.
+    RotaryFlow,
 }
 
 impl core::fmt::Display for OpType {

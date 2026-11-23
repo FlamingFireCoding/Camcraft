@@ -176,7 +176,13 @@ use super::*;
 /// off the model - so a v77 file steps up unchanged. An old reader must
 /// refuse a v78 file rather than drop the statement and turn the part
 /// about an axis the user never named.
-pub const PROJECT_VERSION: u32 = 78;
+/// v79 (#2826): the Rotary Flow operation arrives (`rotary_flow`, the
+/// picked guide chains' kind, its heights read as ball-center radii
+/// about the stated axis). No older file names the arm, so a v78 file
+/// steps up unchanged. An old reader must refuse a v79 file rather
+/// than drop the op it cannot read: the post would re-open a document
+/// whose flow band op vanished without a word.
+pub const PROJECT_VERSION: u32 = 79;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

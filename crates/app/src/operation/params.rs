@@ -362,7 +362,8 @@ impl OpParams {
             | OpParams::MultiAxisContour { .. }
             | OpParams::RotaryOffset { .. }
             | OpParams::MultiAxisRough { .. }
-            | OpParams::AdvancedSwarf { .. } => self.stamp_multiaxis(world, setup, src, h),
+            | OpParams::AdvancedSwarf { .. }
+            | OpParams::RotaryFlow { .. } => self.stamp_multiaxis(world, setup, src, h),
             OpParams::Facing { .. }
             | OpParams::ProfileRough { .. }
             | OpParams::ProfileFinish { .. }
