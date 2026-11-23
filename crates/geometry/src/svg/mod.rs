@@ -16,6 +16,7 @@
 //! Malformed input is refused by name. This module has no file I/O and no application state.
 
 mod emit;
+mod facts;
 mod number;
 mod path;
 mod shapes;
@@ -87,14 +88,7 @@ pub fn parse_with_limits(data: &[u8], unit: Option<Unit>, limits: Limits) -> Res
         max_vertices: limits.max_vertices,
         out: Vec::new(),
     };
-    let mut walk = walk::Walk {
-        tree: &tree,
-        sink,
-        summary: Default::default(),
-        max_entities: limits.max_entities,
-        max_cmds: limits.max_vertices,
-        visits: 0,
-    };
+    let mut walk = walk::Walk::new(&tree, sink, &limits);
     walk.root(view.map)?;
     walk.summary.vertices = walk.sink.out.len();
     Ok(Document {

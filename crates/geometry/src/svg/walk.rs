@@ -7,11 +7,12 @@
 
 use super::emit::Sink;
 use super::shapes::{self, Drawn};
-use super::style::{StyleDecl, inline_declarations};
-use super::transform::{self, Affine};
+use super::facts::Facts;
+use super::transform::Affine;
 use super::xml::{Node, Tree};
 use super::{SvgError, invalid};
-use crate::dxf::ImportSummary;
+use crate::dxf::{ImportSummary, Limits};
+use std::collections::HashMap;
 
 /// The deepest chain of `use` references followed.
 const MAX_USE_DEPTH: usize = 16;
@@ -28,83 +29,95 @@ const SILENT: &[&str] = &[
 /// The layer of elements outside any top-level group.
 pub(super) const DEFAULT_LAYER: &str = "0";
 
+/// The work budget in multiples of the byte budget. One pass over a file reads each attribute
+/// one time; `use` references can read an element again, and this bounds the total.
+const WORK_PER_BYTE: usize = 4;
+
 pub(super) struct Walk<'a> {
     pub tree: &'a Tree,
     pub sink: Sink,
     pub summary: ImportSummary,
-    pub max_entities: usize,
-    pub max_cmds: usize,
-    pub visits: usize,
-}
-
-fn parse_node_style(node: &Node) -> Vec<StyleDecl> {
-    node.attr("style").map(inline_declarations).unwrap_or_default()
-}
-
-fn hidden(node: &Node, style: &[StyleDecl]) -> bool {
-    let style_none = style.iter().any(|decl| {
-        // CSS property names and keywords are case-insensitive. An importance
-        // suffix must never make a hidden contour eligible for cutting.
-        decl.property.eq_ignore_ascii_case("display")
-            && decl.value.eq_ignore_ascii_case("none")
-            && (!decl.has_bang || decl.importance.eq_ignore_ascii_case("important"))
-    });
-    style_none || node.attr("display").is_some_and(|d| d.trim().eq_ignore_ascii_case("none"))
-}
-
-fn has_inline_property(style: &[StyleDecl], name: &str) -> bool {
-    style.iter().any(|decl| decl.property.eq_ignore_ascii_case(name))
-}
-
-/// Recognize unsupported effects in presentation attributes and inline declarations.
-fn has_property(node: &Node, style: &[StyleDecl], name: &str) -> bool {
-    node.attr(name).is_some() || has_inline_property(style, name)
-}
-
-/// Presentation attributes that move geometry and are not applied (CSS Transforms 1).
-const UNSUPPORTED_TRANSFORM_ATTRS: &[&str] = &["transform-origin", "transform-box"];
-
-/// Inline CSS properties that move geometry and are not applied (CSS Transforms 1 and 2,
-/// CSS Motion Path 1). The `rotate` SVG attribute of `<text>` is not one of these: only the
-/// CSS property is refused.
-const UNSUPPORTED_TRANSFORM_PROPERTIES: &[&str] = &[
-    "transform-origin", "transform-box", "transform", "translate", "rotate", "scale", "offset", "offset-path",
-];
-
-fn check_transform_sources(node: &Node, style: &[StyleDecl]) -> Result<(), SvgError> {
-    if let Some(attr) = UNSUPPORTED_TRANSFORM_ATTRS.iter().find(|a| node.attr(a).is_some()) {
-        return Err(invalid(format!("{attr} presentation attribute is not supported")));
-    }
-    if let Some(prop) = UNSUPPORTED_TRANSFORM_PROPERTIES.iter().find(|p| has_inline_property(style, p)) {
-        return Err(invalid(format!("inline CSS {prop} is not supported")));
-    }
-    Ok(())
+    max_entities: usize,
+    max_cmds: usize,
+    visits: usize,
+    /// The attribute bytes that the visits have read, and their limit.
+    work: usize,
+    max_work: usize,
+    /// The facts of each node, read at its first visit.
+    facts: Vec<Option<Facts>>,
+    /// The first element of each `id`: a search of all nodes for each `use` is quadratic.
+    ids: HashMap<&'a str, usize>,
 }
 
 impl<'a> Walk<'a> {
+    pub fn new(tree: &'a Tree, sink: Sink, limits: &Limits) -> Self {
+        let mut ids = HashMap::new();
+        for (index, node) in tree.nodes.iter().enumerate() {
+            if let Some(id) = node.attr("id") {
+                ids.entry(id).or_insert(index);
+            }
+        }
+        Walk {
+            tree,
+            sink,
+            summary: ImportSummary::default(),
+            max_entities: limits.max_entities,
+            max_cmds: limits.max_vertices,
+            visits: 0,
+            work: 0,
+            max_work: limits.max_bytes.saturating_mul(WORK_PER_BYTE),
+            facts: tree.nodes.iter().map(|_| None).collect(),
+            ids,
+        }
+    }
+
+    /// The facts of node `index`, read from its attributes at the first call only.
+    fn facts(&mut self, index: usize, node: &Node) -> Facts {
+        if let Some(Some(known)) = self.facts.get(index) {
+            return known.clone();
+        }
+        let read = Facts::read(node, index == 0);
+        if let Some(slot) = self.facts.get_mut(index) {
+            *slot = Some(read.clone());
+        }
+        read
+    }
+
+    /// Charge one visit for the attribute bytes that it reads again.
+    fn charge(&mut self, bytes: usize) -> Result<(), SvgError> {
+        self.work = self.work.saturating_add(bytes);
+        if self.work > self.max_work {
+            return Err(invalid(format!(
+                "references read more than {} bytes of element data: reference expansion exceeds the import budget",
+                self.max_work
+            )));
+        }
+        Ok(())
+    }
+
     fn note(&mut self, kind: &str) -> Result<(), SvgError> {
         self.count()?;
         *self.summary.skipped.entry(kind.to_owned()).or_default() += 1;
         Ok(())
     }
 
-    fn skip_visibility_or_hidden(&mut self, node: &Node, style: &[StyleDecl]) -> Result<bool, SvgError> {
+    fn skip_visibility_or_hidden(&mut self, facts: &Facts) -> Result<bool, SvgError> {
         // Visibility is inherited and permits child overrides. Refuse the whole
         // subtree until those rules can be evaluated without adding hidden cuts.
-        if has_property(node, style, "visibility") {
+        if facts.visibility {
             self.note("visibility")?;
             return Ok(true);
         }
-        if hidden(node, style) {
+        if facts.hidden {
             self.note("hidden")?;
             return Ok(true);
         }
         Ok(false)
     }
 
-    fn note_unsupported_effects(&mut self, node: &Node, style: &[StyleDecl]) -> Result<(), SvgError> {
-        for attr in ["clip-path", "mask"] {
-            if has_property(node, style, attr) {
+    fn note_unsupported_effects(&mut self, facts: &Facts) -> Result<(), SvgError> {
+        for (attr, present) in [("clip-path", facts.clip_path), ("mask", facts.mask)] {
+            if present {
                 self.note(attr)?;
             }
         }
@@ -129,12 +142,14 @@ impl<'a> Walk<'a> {
     /// Walk the children of the root element under the root transform.
     pub fn root(&mut self, root_map: Affine) -> Result<(), SvgError> {
         if let Some(root) = self.node(0) {
-            let style = parse_node_style(root);
-            if self.skip_visibility_or_hidden(root, &style)? {
+            let facts = self.facts(0, root);
+            if self.skip_visibility_or_hidden(&facts)? {
                 return Ok(());
             }
-            check_transform_sources(root, &style)?;
-            self.note_unsupported_effects(root, &style)?;
+            if let Some(refusal) = facts.refusal.clone() {
+                return Err(refusal);
+            }
+            self.note_unsupported_effects(&facts)?;
         }
         // Stylesheets inside <defs> or other silent elements still govern the file,
         // so count every <style> element once across the whole tree.
@@ -172,16 +187,19 @@ impl<'a> Walk<'a> {
         if SILENT.contains(&name.as_str()) {
             return Ok(());
         }
-        let style = parse_node_style(node);
-        if self.skip_visibility_or_hidden(node, &style)? {
+        let facts = self.facts(index, node);
+        if self.skip_visibility_or_hidden(&facts)? {
             return Ok(());
         }
-        check_transform_sources(node, &style)?;
-        let map = match node.attr("transform") {
-            Some(t) => parent.then(transform::parse(t)?),
+        if let Some(refusal) = facts.refusal.clone() {
+            return Err(refusal);
+        }
+        let map = match facts.transform.clone()? {
+            Some(t) => parent.then(t),
             None => parent,
         };
-        self.note_unsupported_effects(node, &style)?;
+        self.charge(facts.reread)?;
+        self.note_unsupported_effects(&facts)?;
         match name.as_str() {
             "g" | "a" => {
                 for child in node.children.clone() {
@@ -212,8 +230,7 @@ impl<'a> Walk<'a> {
     /// A `use` of an element in this file: drawn at its x, y; any other reference is noted.
     fn reference(&mut self, node: &'a Node, map: Affine, uses: usize, depth: usize) -> Result<(), SvgError> {
         let href = node.attr("href").or_else(|| node.attr("xlink:href")).unwrap_or("").trim();
-        let tree = self.tree;
-        let target = href.strip_prefix('#').and_then(|id| tree.nodes.iter().position(|n| n.attr("id") == Some(id)));
+        let target = href.strip_prefix('#').and_then(|id| self.ids.get(id).copied());
         let Some(target) = target else { return self.note("use") };
         if uses >= MAX_USE_DEPTH {
             return Err(invalid(format!("<use> references nest more than {MAX_USE_DEPTH} deep (a reference loop?)")));

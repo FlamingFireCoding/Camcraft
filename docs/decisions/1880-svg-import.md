@@ -39,6 +39,24 @@
 - A `transform-origin` presentation attribute or inline declaration is refused by name
   before geometry is drawn. Ignoring the origin can move the cut. Applying it was dropped
   from this fix because it needs CSS length, reference-box and inheritance rules.
+- An inline `style` is read against an allow-list (`SAFE_PROPERTIES` in `svg/facts.rs`):
+  paint, marker, text and rendering-hint properties, and `display`, `visibility`,
+  `clip-path` and `mask`, which the reader handles by name. `vector-effect` is permitted
+  only with `none` or `non-scaling-stroke`. Each other property is refused by name. Thus
+  a vendor-prefixed transform, an SVG 2 geometry property (`width`, `r`, `d`) and a
+  property that the reader does not know stop the import. They do not import a shape at
+  the wrong size. The check is on the root and on `g`, `a`, `use` and the shape elements.
+  An element that is skipped whole and counted (for example `text`) is not checked,
+  because nothing of it is imported. A declaration whose name is empty or has a space in
+  it is not CSS, and it is dropped as a browser drops it. Dropped: a list of refused
+  properties (each new property was a new silent case), and `filter` on the allow-list
+  (a filter can move what the user sees, so it is refused).
+- The style and the transform of an element are read one time and kept by node index, and
+  a map gives the element of an `id`. A `use` can draw an element again, but it does not
+  parse them again. The shape data (`d`, `points`, the lengths) is read at each visit, so
+  each visit charges those attribute bytes against a work budget of 4 x the byte budget.
+  A file that goes above it is refused by name. One pass over a file is never above 1 x.
+  Dropped: a cache of the parsed path commands (memory for each reused path).
 - `ImportSvg` is its own command in `commands/import_svg.rs`. It wraps an `ImportDxf` value
   (a new `ImportDxf::placed` constructor), so apply and invert are the same code. It repeats
   the 10-line setup and stock check of `ImportDxf::build` instead of a change to `build`:

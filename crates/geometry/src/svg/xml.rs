@@ -5,7 +5,7 @@
 //! Text content is not kept. Entity references other than the five predefined ones and
 //! character references stay as written: a DOCTYPE entity is never expanded.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use super::{SvgError, invalid};
 
@@ -15,14 +15,16 @@ pub(super) const MAX_DEPTH: usize = 256;
 pub(super) struct Node {
     /// The local name (`svg:path` reads `path`).
     pub name: String,
-    /// Qualified attribute names (`xlink:href`, `inkscape:label`) and decoded values.
-    pub attrs: Vec<(String, String)>,
+    /// Qualified attribute names (`xlink:href`, `inkscape:label`) and decoded values. A map:
+    /// the walk looks up attributes on each visit, and a scan of a long tag for each lookup
+    /// lets a hostile file hang the reader.
+    pub attrs: HashMap<String, String>,
     pub children: Vec<usize>,
 }
 
 impl Node {
     pub fn attr(&self, name: &str) -> Option<&str> {
-        self.attrs.iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str())
+        self.attrs.get(name).map(String::as_str)
     }
 }
 
@@ -204,10 +206,9 @@ pub(super) fn parse(text: &str, max_elements: usize) -> Result<Tree, SvgError> {
 }
 
 /// The attributes of a start tag; leaves the cursor on `>` or `/>`.
-fn attributes(cur: &mut Cursor<'_>, tag: &str) -> Result<Vec<(String, String)>, SvgError> {
-    let mut attrs: Vec<(String, String)> = Vec::new();
-    // The names read so far: a scan of `attrs` for each attribute is quadratic in one tag.
-    let mut seen: HashSet<String> = HashSet::new();
+fn attributes(cur: &mut Cursor<'_>, tag: &str) -> Result<HashMap<String, String>, SvgError> {
+    // A map: a scan of the earlier attributes for each attribute is quadratic in one tag.
+    let mut attrs: HashMap<String, String> = HashMap::new();
     loop {
         cur.skip_space();
         if cur.starts("/>") || cur.starts(">") {
@@ -235,8 +236,7 @@ fn attributes(cur: &mut Cursor<'_>, tag: &str) -> Result<Vec<(String, String)>, 
         let raw = cur.rest().get(..len).unwrap_or("");
         let value = decode(raw);
         cur.at += len + 1;
-        if seen.insert(name.clone()) {
-            attrs.push((name, value));
-        }
+        // The first value of a repeated attribute stays.
+        attrs.entry(name).or_insert(value);
     }
 }
