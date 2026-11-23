@@ -6688,7 +6688,6 @@ fn multiaxis_rough_refuses_nonsense_at_creation() {
 /// machine holds there (the last stated - the post keeps it modal;
 /// upright before any). The pivot law's invariant reads on these.
 fn balls_of(path: &camcraft_app::cl::Toolpath, r: f64) -> Vec<camcraft_app::geometry::Point3> {
-    let mut held = [0.0, 0.0, 1.0];
     // #3414: skip only the rotary indices - the zero-travel RAPIDS
     // whose axis changes off the pose held (see `no_swings`); a
     // zero-travel rapid that states no new pose stays.
