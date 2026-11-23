@@ -890,10 +890,19 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             troch,
             blend_turns,
             blend_radius,
+            rest,
             corner_relief,
             pass_start,
             ..
         } => {
+            // #1446: the rest group's refusals stand at generation too (a
+            // document written past the door): nothing is dropped, and
+            // the rest pass is never planned from an entered tool.
+            if rest.is_some()
+                && let Some(why) = super::rest_op::rest_refusal(&params)
+            {
+                return Err(GenError::Invalid(why));
+            }
             if *method == machining2d::AdaptiveMethod::Trochoidal && !corner_relief.is_off() {
                 return Err(GenError::Invalid(
                     "corner relief is not supported with the Trochoidal adaptive method".into(),
@@ -954,36 +963,53 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     neighbour_parts: &neighbour_parts,
                 },
             )?;
+            // #1446: with rest machining on, the stock that the program
+            // ahead leaves is read at every cut depth, and the passes are
+            // planned on it. No stock is refused by name by the planner.
+            let ahead = match rest {
+                Some(_) => Some(prior.take().ok_or_else(|| unreached("previous-operations rest stock"))??),
+                None => None,
+            };
+            let ahead_cols = ahead.as_ref().and_then(|p| p.grid.as_ref()).map(crate::stock_sim::Columns::of_grid);
             // #3355: Outside cuts an open side from the air past the
             // stock outline, read in the area's own frame the way the
             // Offset's pass start reads it (#3316). A tilted op takes
             // the projected footprint, or none (its plan says so and
-            // rides the rings).
+            // rides the rings). The rest pass (#1446) keeps its own
+            // order and says so below, the way the Pocket does (#3354).
             let side = machining2d::StartSide {
                 start: *pass_start,
-                stock: (*pass_start != machining2d::PassStart::Auto)
+                stock: (rest.is_none() && *pass_start != machining2d::PassStart::Auto)
                     .then(|| super::pass_start_stock::footprint(stock_region.as_ref(), frame.as_ref(), stock_facets.as_deref(), &src, &params, &material))
                     .flatten(),
                 around_part: around_band,
             };
             // #1509 / #1588: the method picks the planner; both cut the same
             // region, the one the op's source and boundary settings give.
-            let adaptive = |pp: &PocketParams| match method {
-                machining2d::AdaptiveMethod::Spiral => {
+            let adaptive = |pp: &PocketParams| match (rest, method) {
+                (Some(r), _) => machining2d::rest_adaptive_previous(&region, pp, r, ahead_cols.as_ref()),
+                (None, machining2d::AdaptiveMethod::Spiral) => {
                     machining2d::pocket_started_on(&region, pp, &[], corner_relief, &side)
                 }
                 // #1733: the loops are arcs already; the option is
                 // refused by name, never ignored (`sane` says it first).
-                machining2d::AdaptiveMethod::Trochoidal if *blend_turns => Err(GenError::Invalid(
+                (None, machining2d::AdaptiveMethod::Trochoidal) if *blend_turns => Err(GenError::Invalid(
                     "arc turns at corners are not available with the Trochoidal method".into(),
                 )),
-                machining2d::AdaptiveMethod::Trochoidal => machining2d::adaptive_trochoidal_with(&region, pp, troch),
+                (None, machining2d::AdaptiveMethod::Trochoidal) => {
+                    machining2d::adaptive_trochoidal_with(&region, pp, troch)
+                }
             };
             let mut path = adaptive(&pp)?;
             if let Some(m) = carry_need!(&relieved_region, &path) {
                 pp.links.approach.material_top = Some(m);
                 lk = pp.links;
                 path = adaptive(&pp)?;
+            }
+            // #1446 / #3355: the rest pass keeps its own order; a pass
+            // start choice is named as not used, never dropped silently.
+            if rest.is_some() && *pass_start != machining2d::PassStart::Auto {
+                super::predrilled_entry::say(&mut path, vec![machining2d::PASS_START_REST_NOTE.to_owned()]);
             }
             relief_zones = zones;
             (relieved_region, path)

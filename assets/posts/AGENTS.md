@@ -185,6 +185,9 @@ write (the gate), so the released program never carries one.
   Doosan posts write every length, angle, lead and feed-per-rev word with
   its point (`Z14.`); only the words the control documents as "no decimal
   point" (lathe G76 P Q, G83 Q) stay in whole least increments.
+  The Haas post writes each feed-per-minute word with its point too
+  (#3681, `F600.`): Haas Setting 77 (Scale Integer F) scales an F with no
+  point, and at its default an mm control reads `F600` as 0.6 mm/min.
 - **Refuse, never lie.** A record you cannot honor in this dialect
   gets a counted `message()` naming why (Fanuc's `tilt()` returns null
   after one refusal per program — a per-line refusal is noise, a
