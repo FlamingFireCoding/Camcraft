@@ -15,7 +15,8 @@
 //! assets/posts/grbl.cps, assets/posts/grblhal.cps, assets/posts/haas.cps,
 //! assets/posts/heidenhain.cps, assets/posts/heidenhain-klartext.cps,
 //! assets/posts/linuxcnc.cps, assets/posts/mach3.cps, assets/posts/mach4.cps,
-//! assets/posts/mazak.cps, assets/posts/sinumerik.cps,
+//! assets/posts/mazak.cps, assets/posts/richauto.cps,
+//! assets/posts/sinumerik.cps,
 //! assets/posts/tinyg.cps, assets/posts/tormach.cps,
 //! assets/posts/tormach-lathe.cps,
 //! camcraft_post::post::arc_guard, camcraft_post::post::engine.
@@ -42,6 +43,7 @@ const MILLS: &[&str] = &[
     "linuxcnc",
     "mach4",
     "mazak",
+    "richauto",
     "sinumerik",
     "tinyg",
     "tormach",
