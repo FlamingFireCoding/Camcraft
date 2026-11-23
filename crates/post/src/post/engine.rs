@@ -141,6 +141,9 @@ pub fn run_program_with(
     // #374: an inverted machine axis - the one place the stream is
     // mirrored into the controller's frame, or refused by name.
     let records = super::invert::apply(records, mch, &s)?;
+    // #3477: a section that opens upright after a tilted section, on a
+    // script that does not declare the return - refused by name below.
+    let upright = super::upright_after_tilt::refusal(&mut s, &records)?;
     s.set_machine(&machine::flatten(mch))?;
     // #542: whether the manifest's `serves` (#1266) names a sinker EDM -
     // the one script that may voice a sinker section (below).
@@ -593,6 +596,7 @@ pub fn run_program_with(
 
     let (out, msgs) = s.drain()?;
     warnings.extend(msgs);
+    warnings.extend(upright);
     if fail_on_warning && !warnings.is_empty() {
         return Err(PostError::Refused(warnings.join("; ")));
     }

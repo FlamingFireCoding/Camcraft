@@ -42,6 +42,8 @@ fn answer_request(state: &mut State, request: camcraft_app::mcp::Request, track_
         },
         selection: Some(state.selection_context()),
         read_only: state.project_read_only,
+        // #3608: an agent's save over the window's file meets the window's stamp.
+        doc_stamp: state.save_guard.stamp.clone(),
     };
     let answer = camcraft_app::mcp::answer_live_with(
         &state.world,
@@ -58,6 +60,11 @@ fn answer_request(state: &mut State, request: camcraft_app::mcp::Request, track_
         // the document version refetches, the same as after an undo.
         state.doc_version += 1;
         state.status = format!("agent: {tool}");
+    }
+    // #3608: after an agent's save over the window's file, the window keeps
+    // the new stamp, so its own next Save does not ask about our own write.
+    if let Some(stamp) = answer.doc_stamp.filter(|s| state.project_path.as_deref() == Some(s.path())) {
+        state.save_guard.stamp = Some(stamp);
     }
     request.answer(answer.reply);
 }

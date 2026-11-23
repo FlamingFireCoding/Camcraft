@@ -153,7 +153,7 @@ fn the_live_seam_refuses_an_approved_save_over_a_read_only_window_project() {
         let line = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
             "params": { "name": name, "arguments": args.clone() } })
         .to_string();
-        let options = LiveOptions { gate: LiveGate::allow_once(name, args), selection: None, read_only };
+        let options = LiveOptions { gate: LiveGate::allow_once(name, args), selection: None, read_only, doc_stamp: None };
         let answer = answer_live_with(&world, &mut history, Some(path.as_path()), &line, &options);
         serde_json::from_str(&answer.reply.expect("a reply")).expect("json")
     };
