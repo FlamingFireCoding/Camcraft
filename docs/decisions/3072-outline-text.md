@@ -11,6 +11,9 @@
 - The command is a new `InsertOutlineText`, with the new MCP tool `insert_outline_text`. We did not add a `font` field to `InsertText` or `insert_text`. The font is read once at construction, and the profile stores the shapes. The project file therefore needs no font and no format change.
 - Composite glyphs apply their component matrix to offsets when `SCALED_COMPONENT_OFFSET` is set. A component with both scaled and unscaled offset flags is refused.
 - Font reads use slices bounded by each declared table length. The `cmap` reader also checks each selected subtable length. Bytes after a short table cannot supply a missing field.
+- A hostile font gives a clean error, not a hang or an abort. One glyph can make at most 4096 component visits (`MAX_PARTS`). The flattened points of the whole text are limited to 2,000,000 (`MAX_VERTICES`, the primitive limit of the sketch chainer). The budget is charged before each point is made. A glyph coordinate outside the 16-bit range of the format is refused.
+- The reader places each glyph by its advance width only. It ignores kerning (`kern` and `GPOS`). It ignores the `USE_MY_METRICS` flag of a composite glyph: the advance is the composite's own `hmtx` entry. Text can therefore space differently from a word processor. Letter spacing adjusts the gap.
+- A font whose glyphs are made of overlapping contours is refused ("cross or touch"). This is safe and stated, but it refuses many real fonts, mostly variable fonts and fonts exported without an overlap removal. A boolean union step (see "Dropped") would accept them.
 - The tests use a font that is generated in memory (`outline_text::sample_font`, `#[doc(hidden)]`). It has our own box and curve glyphs. No font file is stored in the repository or licensed.
 - Final review verification uses a clean merge of current upstream. The GPU bounds loop iterates over dimensions to clear the reported Clippy warning. All bounds checks stay in place.
 
@@ -20,6 +23,7 @@
 
 - Clamping the number of curve pieces to 64. At large heights, this silently exceeds the chord tolerance. The higher limit permits ordinary large letters and still bounds the work.
 - Ignoring scaled component offsets. This moves the outline without a diagnostic. Applying the specified transform preserves the font placement.
+- Limits on depth and points only. An empty component adds no point, so a composite tree of empty parts walked 64^8 times. Text at a large height could allocate gigabytes of points before the chainer limit applied.
 - Checking table fields against the whole file. Trailing bytes can hide a corrupt table length. Bounded slices refuse these inputs.
 - A direct `ttf-parser` dependency. It would also read CFF outlines, but it needs a new dependency.
 - A CFF (Type 2 charstring) reader. This is a larger format. It can come later as its own issue if users ask for `.otf` CFF fonts.

@@ -14,13 +14,17 @@
 //! - `8`: a composite of two `O`s at half size, one over the other.
 //! - `X`: two bars that cross (an overlap that a pocket cannot take).
 
-type Contour = Vec<(i16, i16, bool)>;
+/// One contour: (x, y, on the curve) for each point.
+pub type Contour = Vec<(i16, i16, bool)>;
 
-enum Glyph {
+/// One glyph of a test font.
+pub enum Glyph {
     Empty,
     Simple(Vec<Contour>),
     /// (glyph index, x offset, y offset, scale in 2.14 fixed point) for each part.
     Composite(Vec<(u16, i16, i16, i16)>),
+    /// The `glyf` bytes as written, for a glyph that the other forms cannot state.
+    Raw(Vec<u8>),
 }
 
 fn rect(x0: i16, y0: i16, x1: i16, y1: i16, clockwise: bool) -> Contour {
@@ -72,6 +76,7 @@ fn glyph_bytes(glyph: &Glyph) -> Vec<u8> {
     let mut g = Vec::new();
     match glyph {
         Glyph::Empty => {}
+        Glyph::Raw(bytes) => g.extend_from_slice(bytes),
         Glyph::Simple(contours) => {
             let points: Vec<_> = contours.iter().flatten().copied().collect();
             let xs = points.iter().map(|p| p.0);
@@ -120,12 +125,18 @@ fn glyph_bytes(glyph: &Glyph) -> Vec<u8> {
 /// The font file's bytes.
 #[must_use]
 pub fn sample_font() -> Vec<u8> {
-    let table = glyphs();
+    build_font(&glyphs(), None)
+}
+
+/// A font of `table`: (character, advance, glyph) for each glyph, glyph 0 first. With
+/// `cap_height`, the font has an `OS/2` table of version 2 that states it.
+#[must_use]
+pub fn build_font(table: &[(Option<char>, u16, Glyph)], cap_height: Option<i16>) -> Vec<u8> {
     let n = len16(table.len());
     let mut glyf = Vec::new();
     let mut loca = Vec::new();
     let mut hmtx = Vec::new();
-    for (_, advance, glyph) in &table {
+    for (_, advance, glyph) in table {
         be32(&mut loca, len32(glyf.len()));
         glyf.extend(glyph_bytes(glyph));
         be16(&mut hmtx, *advance);
@@ -169,8 +180,14 @@ pub fn sample_font() -> Vec<u8> {
     let mut hhea = vec![0_u8; 36];
     hhea[34..36].copy_from_slice(&n.to_be_bytes());
 
-    let tables: [(&[u8; 4], Vec<u8>); 7] =
-        [(b"cmap", cmap), (b"glyf", glyf), (b"head", head), (b"hhea", hhea), (b"hmtx", hmtx), (b"loca", loca), (b"maxp", maxp)];
+    let mut tables: Vec<(&[u8; 4], Vec<u8>)> =
+        vec![(b"cmap", cmap), (b"glyf", glyf), (b"head", head), (b"hhea", hhea), (b"hmtx", hmtx), (b"loca", loca), (b"maxp", maxp)];
+    if let Some(cap) = cap_height {
+        let mut os2 = vec![0_u8; 96];
+        os2[0..2].copy_from_slice(&2_u16.to_be_bytes());
+        os2[88..90].copy_from_slice(&cap.to_be_bytes());
+        tables.push((b"OS/2", os2));
+    }
     let mut out = Vec::new();
     be32(&mut out, 0x0001_0000);
     be16(&mut out, len16(tables.len()));

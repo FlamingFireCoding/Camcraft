@@ -6,7 +6,8 @@
 //!
 //! Contract. Each read is bounds-checked: a short or corrupt table is a [`FontError`], never
 //! a panic and never an out-of-range index. A composite glyph is resolved to depth
-//! [`MAX_DEPTH`], and the points of one glyph are capped at [`MAX_POINTS`].
+//! [`MAX_DEPTH`] with at most [`MAX_PARTS`] component visits, and the points of one glyph are
+//! capped at [`MAX_POINTS`]. Each coordinate stays in the 16-bit range of the format.
 
 use super::FontError;
 
@@ -14,6 +15,15 @@ use super::FontError;
 pub const MAX_DEPTH: usize = 8;
 /// The most points that one resolved glyph can have.
 pub const MAX_POINTS: usize = 100_000;
+/// The most component visits that one resolved glyph can make. An empty part adds no point, so
+/// the point cap alone does not bound the work of a composite tree.
+pub const MAX_PARTS: usize = 4096;
+
+/// The work left for one glyph: component visits and points.
+struct Budget {
+    parts: usize,
+    points: usize,
+}
 
 /// One outline point in font units, and whether it lies on the curve.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -191,7 +201,8 @@ impl<'a> Font<'a> {
     /// space) has no contours.
     pub fn outline(&self, gid: u16) -> Result<Contours, FontError> {
         let mut out = Vec::new();
-        self.append(gid, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], 0, &mut out)?;
+        let mut budget = Budget { parts: MAX_PARTS, points: MAX_POINTS };
+        self.append(gid, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], 0, &mut budget, &mut out)?;
         Ok(out)
     }
 
@@ -200,6 +211,7 @@ impl<'a> Font<'a> {
         gid: u16,
         m: [f64; 6],
         depth: usize,
+        budget: &mut Budget,
         out: &mut Contours,
     ) -> Result<(), FontError> {
         if depth > MAX_DEPTH {
@@ -218,13 +230,14 @@ impl<'a> Font<'a> {
         let contours = i16_at(d, 0)?;
         if contours >= 0 {
             for contour in simple(d, usize::from(contours.unsigned_abs()))? {
+                budget.points = budget
+                    .points
+                    .checked_sub(contour.len())
+                    .ok_or(FontError::Corrupt("a glyph has too many points"))?;
                 out.push(contour.into_iter().map(|p| transform(m, p)).collect());
             }
         } else {
-            self.composite(d, m, depth, out)?;
-        }
-        if out.iter().map(Vec::len).sum::<usize>() > MAX_POINTS {
-            return Err(FontError::Corrupt("a glyph has too many points"));
+            self.composite(d, m, depth, budget, out)?;
         }
         Ok(())
     }
@@ -234,10 +247,15 @@ impl<'a> Font<'a> {
         d: &[u8],
         m: [f64; 6],
         depth: usize,
+        budget: &mut Budget,
         out: &mut Contours,
     ) -> Result<(), FontError> {
         let mut at = 10;
         loop {
+            budget.parts = budget
+                .parts
+                .checked_sub(1)
+                .ok_or(FontError::Corrupt("a composite glyph has too many parts"))?;
             let flags = u16_at(d, at)?;
             let child = u16_at(d, at + 2)?;
             at += 4;
@@ -294,7 +312,7 @@ impl<'a> Font<'a> {
                 m[0] * part[4] + m[2] * part[5] + m[4],
                 m[1] * part[4] + m[3] * part[5] + m[5],
             ];
-            self.append(child, joined, depth + 1, out)?;
+            self.append(child, joined, depth + 1, budget, out)?;
             if flags & 0x0020 == 0 {
                 return Ok(());
             }
@@ -348,6 +366,10 @@ fn simple(d: &[u8], contours: usize) -> Result<Contours, FontError> {
             } else if f & same == 0 {
                 v += i32::from(i16_at(d, at)?);
                 at += 2;
+            }
+            // Each sum stays in the i16 range, so the next delta cannot overflow the i32.
+            if i16::try_from(v).is_err() {
+                return Err(FontError::Corrupt("a glyph coordinate is outside the 16-bit range"));
             }
             out.push(f64::from(v));
         }

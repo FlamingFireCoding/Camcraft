@@ -7,9 +7,10 @@
 //!
 //! Gate map: covers camcraft_geometry::outline_text.
 
-use camcraft_geometry::outline_text::sample_font::sample_font;
+use camcraft_geometry::outline_text::sample_font::{Glyph, build_font, sample_font};
 use camcraft_geometry::outline_text::{
-    CHORD_TOLERANCE, FontError, OutlineSpec, OutlineTextError, check_font, outlines, sketch,
+    CHORD_TOLERANCE, FontError, MAX_VERTICES, OutlineSpec, OutlineTextError, check_font, outlines,
+    sketch,
 };
 use camcraft_geometry::sketch_chains::LoopRole;
 
@@ -297,4 +298,69 @@ fn declared_cmap_subtable_lengths_bound_reads() {
         sketch(&spec(&font, "H")),
         Err(OutlineTextError::Font(_))
     ));
+}
+
+/// Glyphs 1 to 8 are composites of 64 parts, each part the next glyph; glyph 9 is empty. A
+/// full walk is 64^8 visits that add no point. `H` is the tree below glyph 1, for the cap
+/// height (64^7 visits, inside the nesting limit).
+fn part_bomb() -> Vec<(Option<char>, u16, Glyph)> {
+    let mut table = vec![(None, 500, Glyph::Empty)];
+    for gid in 1..=8_u16 {
+        let ch = (gid == 1).then_some('A');
+        table.push((ch, 500, Glyph::Composite(vec![(gid + 1, 0, 0, 0x4000); 64])));
+    }
+    table.push((None, 500, Glyph::Empty));
+    table.push((Some('H'), 500, Glyph::Composite(vec![(2, 0, 0, 0x4000)])));
+    table
+}
+
+#[test]
+fn a_composite_tree_of_empty_parts_is_refused_without_a_walk() {
+    // With an OS/2 cap height, the text glyph walks the tree; without it, the cap height does.
+    for cap in [Some(700), None] {
+        let font = build_font(&part_bomb(), cap);
+        let err = outlines(&spec(&font, "A")).expect_err("a composite part bomb");
+        assert!(matches!(err, OutlineTextError::Font(FontError::Corrupt(_))), "{err}");
+        assert!(err.to_string().contains("too many parts"), "{cap:?}: {err}");
+    }
+}
+
+#[test]
+fn the_flattened_points_of_a_text_are_bounded_before_they_are_made() {
+    // A cap height of one unit at 1000 mm, and a zigzag of off-curve points 67 units deep,
+    // out and back: each curve needs about 2000 lines, so the text needs far more than the
+    // budget, and no single curve passes the per-curve limit.
+    let out = (0..2000_i16).map(|i| (i, 67 * (i % 2), false));
+    let back = (0..2000_i16).map(|i| (1999 - i, 150 + 67 * (i % 2), false));
+    let zigzag: Vec<_> = out.chain(back).collect();
+    let table = vec![(None, 500, Glyph::Empty), (Some('A'), 500, Glyph::Simple(vec![zigzag]))];
+    let font = build_font(&table, Some(1));
+    let big = OutlineSpec { height: 1000.0, ..spec(&font, "A") };
+    let err = outlines(&big).expect_err("a vertex bomb");
+    assert_eq!(err, OutlineTextError::TooManyVertices { max: MAX_VERTICES });
+    assert!(err.to_string().contains("outline points"), "{err}");
+    // The same glyph at a small height stays inside the budget.
+    assert!(outlines(&OutlineSpec { height: 0.5, ..big }).is_ok());
+}
+
+/// A simple glyph of one contour whose x deltas are written as words, as given.
+fn raw_glyph(dxs: &[i16]) -> Glyph {
+    let mut g = Vec::new();
+    for v in [1_i16, 0, 0, 0, 0, i16::try_from(dxs.len() - 1).unwrap(), 0] {
+        g.extend_from_slice(&v.to_be_bytes());
+    }
+    // On the curve, x a word, y the same as before.
+    g.extend(dxs.iter().map(|_| 0x01 | 0x20));
+    dxs.iter().for_each(|d| g.extend_from_slice(&d.to_be_bytes()));
+    Glyph::Raw(g)
+}
+
+#[test]
+fn a_coordinate_outside_the_16_bit_range_is_refused() {
+    let font = |dxs: &[i16]| build_font(&[(None, 500, Glyph::Empty), (Some('A'), 500, raw_glyph(dxs))], Some(700));
+    // Inside the range, the deltas read as written.
+    assert!(matches!(outlines(&spec(&font(&[0, 32767, -32767]), "A")), Err(OutlineTextError::NoShape)));
+    // Two deltas of +32767 sum to 65534: not a font coordinate, so not a silent wrap.
+    let err = outlines(&spec(&font(&[0, 32767, 32767]), "A")).expect_err("out of range");
+    assert!(err.to_string().contains("16-bit range"), "{err}");
 }

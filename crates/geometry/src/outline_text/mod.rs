@@ -37,6 +37,9 @@ pub const JOIN_TOLERANCE: f64 = 0.0005;
 const MIN_SEGMENT: f64 = 2.0 * JOIN_TOLERANCE;
 /// The most lines that one quadratic piece becomes.
 const MAX_PIECES: usize = 4096;
+/// The most flattened points of the whole text, the primitive limit of the sketch chainer.
+/// The budget is charged before each point is made, so a hostile font cannot allocate past it.
+pub const MAX_VERTICES: usize = crate::sketch_chains::MAX_PRIMITIVES;
 
 /// A font that cannot be used, by name.
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
@@ -92,6 +95,12 @@ pub enum OutlineTextError {
          Pick a different font"
     )]
     Winding { x: f64, y: f64 },
+    /// The flattened outlines need more points than [`MAX_VERTICES`].
+    #[error(
+        "the text needs more than {max} outline points at this height: make the text shorter \
+         or smaller, or pick a font with simpler curves"
+    )]
+    TooManyVertices { max: usize },
 }
 
 /// What to write: the font file's bytes, the string, the cap height in mm, and the extra gap
@@ -135,6 +144,7 @@ pub fn outlines(spec: &OutlineSpec) -> Result<Vec<Vec<Point2>>, OutlineTextError
     let scale = height / font.cap_height()?;
     let space = font.glyph_id(' ')?;
     let mut out = Vec::new();
+    let mut budget = MAX_VERTICES;
     let mut pen = 0.0_f64;
     for (index, ch) in text.chars().enumerate() {
         let gid = match font.glyph_id(ch)? {
@@ -147,7 +157,7 @@ pub fn outlines(spec: &OutlineSpec) -> Result<Vec<Vec<Point2>>, OutlineTextError
             None => return Err(OutlineTextError::NoGlyph { ch, position: index + 1 }),
         };
         for contour in font.outline(gid)? {
-            if let Some(line) = flatten(&contour, pen, scale)? {
+            if let Some(line) = flatten(&contour, pen, scale, &mut budget)? {
                 out.push(line);
             }
         }
@@ -162,10 +172,17 @@ pub fn outlines(spec: &OutlineSpec) -> Result<Vec<Vec<Point2>>, OutlineTextError
 /// One TrueType contour (on-curve points and quadratic control points, closed) as a closed
 /// polyline in mm, moved right by `pen`. A contour that flattens to fewer than three distinct
 /// points encloses nothing and is dropped.
-fn flatten(contour: &[OutlinePoint], pen: f64, scale: f64) -> Result<Option<Vec<Point2>>, OutlineTextError> {
+fn flatten(
+    contour: &[OutlinePoint],
+    pen: f64,
+    scale: f64,
+    budget: &mut usize,
+) -> Result<Option<Vec<Point2>>, OutlineTextError> {
     if contour.is_empty() {
         return Ok(None);
     }
+    // The start, its closing copy, and one point for each on point.
+    take(budget, contour.len().saturating_add(2))?;
     let at = |p: &OutlinePoint| Point2::new(pen + p.x * scale, p.y * scale);
     let mid = |a: Point2, b: Point2| Point2::new(0.5 * (a.x + b.x), 0.5 * (a.y + b.y));
     let n = contour.len();
@@ -192,14 +209,14 @@ fn flatten(contour: &[OutlinePoint], pen: f64, scale: f64) -> Result<Option<Vec<
             (false, Some(c)) => (mid(c, q), Some(q)),
         };
         match control {
-            Some(c) => quadratic(&mut line, last, c, end)?,
+            Some(c) => quadratic(&mut line, last, c, end, budget)?,
             None => push(&mut line, end),
         }
         last = end;
         control = next_control;
     }
     if let Some(c) = control {
-        quadratic(&mut line, last, c, start)?;
+        quadratic(&mut line, last, c, start, budget)?;
     }
     // Close exactly on the start point.
     while line.len() > 1 && line.last().is_some_and(|p| dist(*p, start) < MIN_SEGMENT) {
@@ -213,6 +230,12 @@ fn dist(a: Point2, b: Point2) -> f64 {
     (a.x - b.x).hypot(a.y - b.y)
 }
 
+/// Charge `n` points to the vertex budget of the text, or refuse the text.
+fn take(budget: &mut usize, n: usize) -> Result<(), OutlineTextError> {
+    *budget = budget.checked_sub(n).ok_or(OutlineTextError::TooManyVertices { max: MAX_VERTICES })?;
+    Ok(())
+}
+
 fn push(line: &mut Vec<Point2>, p: Point2) {
     if line.last().is_none_or(|q| dist(*q, p) >= MIN_SEGMENT) {
         line.push(p);
@@ -221,7 +244,13 @@ fn push(line: &mut Vec<Point2>, p: Point2) {
 
 /// The quadratic Bezier curve `a`, `c`, `b` as lines whose chord error is at most
 /// [`CHORD_TOLERANCE`]: the error of `n` even steps is |a - 2c + b| / (4 n^2).
-fn quadratic(line: &mut Vec<Point2>, a: Point2, c: Point2, b: Point2) -> Result<(), OutlineTextError> {
+fn quadratic(
+    line: &mut Vec<Point2>,
+    a: Point2,
+    c: Point2,
+    b: Point2,
+    budget: &mut usize,
+) -> Result<(), OutlineTextError> {
     let bend = (a.x - 2.0 * c.x + b.x).hypot(a.y - 2.0 * c.y + b.y);
     // Leave room for the displacement from dropping a point within MIN_SEGMENT.
     let pieces = (bend / (4.0 * (CHORD_TOLERANCE - MIN_SEGMENT))).sqrt().ceil();
@@ -229,6 +258,7 @@ fn quadratic(line: &mut Vec<Point2>, a: Point2, c: Point2, b: Point2) -> Result<
         return Err(FontError::Corrupt("a curve needs too many segments for the chord tolerance").into());
     }
     let pieces = (pieces as usize).max(1);
+    take(budget, pieces)?;
     for i in 1..=pieces {
         let t = i as f64 / pieces as f64;
         let s = 1.0 - t;
