@@ -16,13 +16,13 @@ pub const SLOW_BINARIES: &[&str] = &[
 ];
 /// Crate dirs in dependency order. kernel builds a C chain (truck dev-dep) and its debug suites take
 /// about 3 min: batch runs them since #1702, so the post-merge gate finds a kernel failure before a cut.
-pub const BATCH_CRATES: &[&str] = &["geometry", "kernel", "cl", "tools", "post", "sim", "motion", "app"];
+pub const BATCH_CRATES: &[&str] = &["geometry", "kernel", "cl", "tools", "post", "sim", "motion", "app", "gpu"];
 pub const ALL_CRATES: &[&str] = &[
-    "geometry", "kernel", "cl", "tools", "post", "sim", "motion", "app", "ui",
+    "geometry", "kernel", "cl", "tools", "post", "sim", "motion", "app", "gpu", "ui",
 ];
 /// A touch to a shared crate (or the workspace manifest) makes quick a batch.
 pub const SHARED: &[&str] = &["geometry", "cl"];
-pub const CLIPPY: &[&str] = &["geometry", "cl", "tools", "post", "sim", "motion", "app", "ui"];
+pub const CLIPPY: &[&str] = &["geometry", "cl", "tools", "post", "sim", "motion", "app", "gpu", "ui"];
 pub const J: &str = "6";
 pub const T: &str = "--test-threads=6";
 
@@ -189,22 +189,30 @@ pub fn batch(root: &Path) -> Plan {
 /// Crate dirs whose `#[ignore]`d tests run in release (the heavy lanes).
 pub const HEAVY_CRATES: &[&str] = &["kernel", "motion", "app"];
 
-/// True when the integration binary `b` can hold an `#[ignore]`d test: its source text names `ignore`, or it
-/// pulls in other files (`mod x;`, `include!`, `#[path]`) the entry file does not show. A binary with no
-/// ignored test has nothing for a heavy step to run, so it gets none (526 steps otherwise, one cargo
-/// start each); the test `heavy_steps_skip_only_binaries_without_ignored_tests` pins that no binary is
-/// skipped by mistake. Unreadable source counts as heavy: the gate never drops a binary by accident.
+/// True when the integration binary `b` can hold an `#[ignore]`d test. A flat suite (`tests/<b>.rs`) is
+/// heavy when its text names `ignore`, or when it pulls in other files (`mod x;`, `include!`, `#[path]`)
+/// the entry file does not show. A directory suite (`tests/<b>/main.rs`) is read through all its module
+/// files, so a `mod x;` line alone does not make it heavy (#3186); `include!` and `#[path]` still do.
+/// A binary with no ignored test has nothing for a heavy step to run, so it gets none (526 steps
+/// otherwise, one cargo start each); the test `heavy_steps_skip_only_binaries_without_ignored_tests` pins
+/// that no binary is skipped by mistake. Unreadable source, a module walk error or a declared module
+/// whose file is absent counts as heavy: the gate never drops a binary by accident.
 fn may_run_ignored(root: &Path, d: &str, b: &str) -> bool {
     let entry = crate::suites::entry(root, d, b);
-    let Ok(text) = std::fs::read_to_string(&entry) else { return true };
-    if text.contains("ignore") || text.contains("include!") || text.contains("#[path") {
-        return true;
+    let heavy_text = |t: &str| t.contains("ignore") || t.contains("include!") || t.contains("#[path");
+    if entry.file_name().is_some_and(|n| n == "main.rs") {
+        let Ok((sources, missing)) = crate::suites::sources_and_missing(&entry) else { return true };
+        return missing > 0
+            || sources.is_empty()
+            || sources.iter().any(|s| std::fs::read_to_string(&s.path).map_or(true, |t| heavy_text(&t)));
     }
-    text.lines().any(|l| {
-        let t = l.trim_start();
-        let t = t.strip_prefix("pub ").unwrap_or(t);
-        t.starts_with("mod ") && t.trim_end().ends_with(';')
-    })
+    let Ok(text) = std::fs::read_to_string(&entry) else { return true };
+    heavy_text(&text)
+        || text.lines().any(|l| {
+            let t = l.trim_start();
+            let t = t.strip_prefix("pub ").unwrap_or(t);
+            t.starts_with("mod ") && t.trim_end().ends_with(';')
+        })
 }
 
 /// The heavy lanes as one step for each test target (#1714): one release build of the heavy crates
