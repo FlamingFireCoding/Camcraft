@@ -1106,7 +1106,7 @@ function onLinear() {
 function onCircular() {
   startPreamble();
   // #3442: an arc whose written ends coincide is no arc block (arcFate, PRELUDE).
-  var fate = arcFate(arcWord);
+  var fate = arcFate(arcWord, arcIncOf(fu));  // #3474: I J K are increments from the start
   if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   if (chainCut() || !motionFor(properties, "arc move")) return;
   var p = properties;
