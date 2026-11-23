@@ -20,7 +20,7 @@ fn dist(a: Point2, b: Point2) -> f64 {
 /// Splice corner relief spurs `[start, end, start]` into pocket passes (or runs).
 ///
 /// A relief that gets no spur (no pass vertex at its start and no legal
-/// detour) is a silent miss (#3249): its start point is pushed onto
+/// detour) is a miss (#3249): its boundary corner is pushed onto
 /// `misses` so the caller can name the corner in a note.
 pub(super) fn inject_relief_spurs(
     passes: &mut [Vec<Point2>],
@@ -123,7 +123,7 @@ pub(super) fn inject_relief_spurs(
                 }
             }
         } else {
-            misses.push(r.start);
+            misses.push(r.corner);
         }
     }
 }
@@ -171,8 +171,8 @@ mod tests {
         let mut runs: Option<Vec<Vec<Seg>>> = None;
         let reliefs = [ResolvedRelief {
             corner: Point2::new(0.0, 0.0),
-            start: Point2::new(0.0, 0.0),
-            end: Point2::new(1.0, 0.0),
+            start: Point2::new(3.0, 3.0),
+            end: Point2::new(2.0, 3.0),
             radius: 3.0,
         }];
         let mut misses = Vec::new();
@@ -182,10 +182,10 @@ mod tests {
 
         // The same relief with a pass vertex at its start gets its spur, and
         // reports no miss.
-        let mut passes = vec![vec![Point2::new(5.0, 0.0), Point2::new(0.0, 0.0), Point2::new(0.0, 5.0)]];
+        let mut passes = vec![vec![Point2::new(5.0, 3.0), Point2::new(3.0, 3.0), Point2::new(3.0, 5.0)]];
         let mut misses = Vec::new();
         inject_relief_spurs(&mut passes, &mut None, &center, &reliefs, &mut misses);
         assert!(misses.is_empty(), "a reached relief is not a miss: {misses:?}");
-        assert!(passes[0].iter().any(|p| *p == Point2::new(1.0, 0.0)), "the spur end is in the pass");
+        assert!(passes[0].iter().any(|p| *p == Point2::new(2.0, 3.0)), "the spur end is in the pass");
     }
 }
