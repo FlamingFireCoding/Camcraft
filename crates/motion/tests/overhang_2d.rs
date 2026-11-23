@@ -221,7 +221,7 @@ fn a_ring_under_an_overhang_stops_above_it() {
     let w = depth_verify(&old, &region, &f, 20.0, 0.0);
     assert!(w.contains(&Warning::Gouge { at: hit }), "the solid law sees the slab: {w:?}");
     for wn in &w {
-        let (Warning::Gouge { at } | Warning::RapidInStock { at }) = wn else { panic!("{wn:?}") };
+        let (Warning::Gouge { at } | Warning::RapidInStock { at } | Warning::RapidInPart { at }) = wn else { panic!("{wn:?}") };
         assert!(old.moves[*at].from.z.min(old.moves[*at].to.z) < u(X1, 12.5) + T, "only moves under the slab: {:?}", old.moves[*at]);
     }
     let t = contour_on_part(&region, &f, &params(20.0, 0.0, 4.0, 0.0)).expect("contour");

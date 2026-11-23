@@ -99,18 +99,16 @@ const LEAN_60: [f64; 3] = [0.0, -0.866_025_403_784_438_6, 0.5];
 const LEAN_30: [f64; 3] = [0.0, -0.5, 0.866_025_403_784_438_6];
 
 #[test]
-fn a_posed_rapid_through_the_ledges_underside_solid_is_a_rapid_in_stock() {
+fn a_posed_rapid_through_the_ledges_underside_names_part_and_stock_laws() {
     // Tip at Z 8 under the ledge: the flute's top at Z 11.46 stands
     // inside the ledge (Z [10, 12]) along the whole rapid.
     let w = judge(&rapid(9.0, 8.0, Some(LEAN_30)), 12.0, 15.0);
-    only_rapid_in_stock(&w);
+    assert_eq!(w, vec![Warning::RapidInPart { at: 0 }, Warning::RapidInStock { at: 0 }], "{w:?}");
 }
 
-/// Every warning is `RapidInStock` at move 0, and there is one: the
-/// solid law (b2) and law (d) each name the same rapid.
-fn only_rapid_in_stock(w: &[Warning]) {
-    assert!(!w.is_empty(), "no verdict");
-    assert!(w.iter().all(|w| matches!(w, Warning::RapidInStock { at: 0 })), "{w:?}");
+/// The upright assembly meets the part; the stock law also convicts it.
+fn part_and_stock_rapid(w: &[Warning]) {
+    assert_eq!(w, [Warning::RapidInPart { at: 0 }, Warning::RapidInStock { at: 0 }], "{w:?}");
 }
 
 #[test]
@@ -127,9 +125,9 @@ fn the_upright_twin_under_the_ledge_keeps_the_hidden_stock_verdict() {
     // The same rapid stating no pose: the column law and its hidden
     // backstop read the air under the ledge as uncut stock, as they
     // always did - a 3-axis program's verdict does not move.
-    only_rapid_in_stock(&judge(&rapid(9.0, 5.0, None), 12.0, 15.0));
+    part_and_stock_rapid(&judge(&rapid(9.0, 5.0, None), 12.0, 15.0));
     // And a stated upright is the same program.
-    only_rapid_in_stock(&judge(&rapid(9.0, 5.0, Some([0.0, 0.0, 1.0])), 12.0, 15.0));
+    part_and_stock_rapid(&judge(&rapid(9.0, 5.0, Some([0.0, 0.0, 1.0])), 12.0, 15.0));
 }
 
 #[test]
