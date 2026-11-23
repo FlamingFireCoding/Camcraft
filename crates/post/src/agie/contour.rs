@@ -198,8 +198,10 @@ fn check_punch_envelope(ring: &[Point], job: &AgieJob) -> Result<(), String> {
         // the latter loses precision when the punch corner is very sharp.
         let bisector = [a[0] + b[0], a[1] + b[1]];
         let norm2 = bisector[0] * bisector[0] + bisector[1] * bisector[1];
-        if !(norm2 > f64::EPSILON) {
-            return Err("The rough pass cannot be bounded at a nearly reversed punch corner".into());
+        if norm2.is_nan() || norm2 <= f64::EPSILON {
+            return Err(
+                "The rough pass cannot be bounded at a nearly reversed punch corner".into(),
+            );
         }
         for axis in 0..2 {
             if corner[axis] - STOCK_MARGIN < lo[axis] || corner[axis] + STOCK_MARGIN > hi[axis] {
@@ -211,7 +213,10 @@ fn check_punch_envelope(ring: &[Point], job: &AgieJob) -> Result<(), String> {
             let miter = 2.0 * ROUGH_OFFSET * bisector[axis] / norm2;
             let left = (lo[axis] - corner[axis]) as f64;
             let right = (hi[axis] - corner[axis]) as f64;
-            if !(miter - wire_and_allowance >= left && miter + wire_and_allowance <= right) {
+            if !miter.is_finite()
+                || miter - wire_and_allowance < left
+                || miter + wire_and_allowance > right
+            {
                 return Err(
                     "The rough corner and wire can reach outside the stock at a punch vertex"
                         .into(),
