@@ -85,7 +85,8 @@ pub fn rotate_about_axis(
             if !error.is_finite() || error > chord_tol {
                 return Err(TransformError::ArcChordTolerance);
             }
-            if chord.from != chord.to {
+            // A standing tip still moves when the tool axis changes.
+            if chord.from != chord.to || moves.last().and_then(|m| m.axis) != chord.axis {
                 moves.push(chord);
             }
         }

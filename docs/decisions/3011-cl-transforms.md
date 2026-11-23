@@ -54,6 +54,14 @@ map stays on the lattice bit for bit.
   derivative bound. This keeps the work bounded and includes coordinate
   rounding in the requested tolerance. Increasing the sampler budget was
   dropped because a named refusal meets the contract without more work.
+- Review #3308, collapsed arcs: a rotary chord with equal rounded
+  endpoints is dropped only when its tool axis matches the last emitted
+  pose. A changed pose is retained as a straight move at the standing
+  tip, with its feed and move kind. A distance tolerance cannot permit
+  removal of a required rotation. A named refusal was considered and
+  dropped because the existing no-motion law permits this pose change.
+  Changing this choice later is local to the rotary chord filter and
+  its regression test; the public API does not change.
 
 **Why.** The issue asks for a pure module shared by patterns, mirror
 folders and nesting (#2166). One matrix rule is easier to prove than four

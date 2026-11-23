@@ -274,6 +274,44 @@ fn rotate_about_a_refuses_rounding_beyond_the_chord_tolerance() {
 }
 
 #[test]
+fn rotate_about_a_preserves_the_axis_when_an_arc_collapses() {
+    let angle = 1e-7_f64;
+    let endpoint = p(angle.cos(), angle.sin(), 0.0);
+    for use_arc in [false, true] {
+        let mut b = PathBuilder::new(p(1.0, 0.0, 1.0));
+        b.set_axis(Some([1.0, 0.0, 0.0]));
+        b.push(MoveKind::Rapid, p(1.0, 0.0, 0.0), None);
+        b.set_axis(Some([0.0, 0.0, 1.0]));
+        if use_arc {
+            b.push_arc(MoveKind::Feed, endpoint, Some(100.0), Point2::new(0.0, 0.0), true);
+        } else {
+            b.push(MoveKind::Feed, endpoint, Some(100.0));
+        }
+        let src = b.finish();
+        assert_eq!(src.has_arcs(), use_arc);
+        let out = rotate_about_axis(&src, RotaryAxis::A, p(0.0, 0.0, 0.0), 90.0, 0.01)
+            .expect("finite transform");
+        assert!(out.is_chained() && !out.has_arcs());
+        assert_eq!(out.moves.len(), 2, "arc={use_arc}: the pose change is real motion");
+        assert_eq!(out.moves[0].axis, Some([1.0, 0.0, 0.0]));
+        let last = out.moves.last().expect("the pose change remains");
+        assert_eq!((last.from, last.to), (p(1.0, 0.0, 0.0), p(1.0, 0.0, 0.0)));
+        assert_eq!(last.axis, Some([0.0, -1.0, 0.0]));
+        assert_eq!((last.kind, last.feed), (MoveKind::Feed, Some(100.0)));
+    }
+
+    // A collapsed chord at an unchanged pose remains redundant.
+    let mut b = PathBuilder::new(p(1.0, 0.0, 1.0));
+    b.set_axis(Some([0.0, 0.0, 1.0]));
+    b.push(MoveKind::Rapid, p(1.0, 0.0, 0.0), None);
+    b.push_arc(MoveKind::Feed, endpoint, Some(100.0), Point2::new(0.0, 0.0), true);
+    let out = rotate_about_axis(&b.finish(), RotaryAxis::A, p(0.0, 0.0, 0.0), 90.0, 0.01)
+        .expect("finite transform");
+    assert_eq!(out.moves.len(), 1, "an unchanged pose adds no motion");
+    assert_eq!(out.moves[0].axis, Some([0.0, -1.0, 0.0]));
+}
+
+#[test]
 fn rotate_about_an_axis_by_zero_is_the_identity() {
     let src = contour();
     let out = rotate_about_axis(&src, RotaryAxis::A, p(3.0, 3.0, 3.0), 360.0, 0.01).expect("identity");
