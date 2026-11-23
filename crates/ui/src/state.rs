@@ -4782,7 +4782,7 @@ impl State {
                 if !posted.bundle_files.is_empty() {
                     self.post_view = None;
                     self.status = format!(
-                        "Agie job prepared in {} ({} controller files, zero working steps)",
+                        "Native wire EDM job prepared in {} ({} controller files, zero working steps)",
                         path.display(), posted.bundle_files.len()
                     );
                     if let Some(review) = posted.controller_review {
