@@ -269,6 +269,12 @@ pub enum OpParams {
         blend_turns: bool,
         /// The corner arc's radius, mm; `None` is the tool radius.
         blend_radius: Option<f64>,
+        /// Rest machining (#1446): cut only what the previous operations
+        /// of the setup left, read from the stock they leave
+        /// (`machining2d::rest_adaptive_previous`). `None` is off - every
+        /// earlier file. Only `RestSource::PreviousOperations` is taken:
+        /// an entered previous tool is refused by name (`rest_op`).
+        rest: Option<crate::machining2d::RestParams>,
         /// Corner relief (#2400): dogbone or T-bone inside-corner relief.
         corner_relief: crate::machining2d::CornerRelief,
         /// 3+2 index; see [`OpParams::Face`]'s field.
@@ -1143,7 +1149,9 @@ pub enum OpParams {
     ///   blades leave, so a rough's promise is only silent once a
     ///   finish answers for it). The verdict as a re-run decision,
     ///   not a report tail. 0 is silence, like every signal's off
-    ///   state.
+    ///   state. `kerf` (#3469) names the piece kept (the cut-off piece
+    ///   by default, or the piece in the chuck) and the back stock the
+    ///   whole kerf stands off the plane, into the scrap side.
     Part {
         tolerance: f64,
         clearance_z: Height,
@@ -1157,6 +1165,7 @@ pub enum OpParams {
         bar_unload: bool,
         bar_transfer: bool,
         inspect_tol: f64,
+        kerf: crate::turning::PartKerf,
     },
     /// Threading (M5.2 stage D): the helical ladder on a MODELED
     /// thread. `pitch` is that thread's lead - the lattice of V's
