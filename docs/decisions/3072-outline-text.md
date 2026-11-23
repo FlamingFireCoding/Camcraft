@@ -12,6 +12,7 @@
 - Composite glyphs apply their component matrix to offsets when `SCALED_COMPONENT_OFFSET` is set. A component with both scaled and unscaled offset flags is refused.
 - Font reads use slices bounded by each declared table length. The `cmap` reader also checks each selected subtable length. Bytes after a short table cannot supply a missing field.
 - The tests use a font that is generated in memory (`outline_text::sample_font`, `#[doc(hidden)]`). It has our own box and curve glyphs. No font file is stored in the repository or licensed.
+- Final review verification uses a clean merge of current upstream. The GPU bounds loop iterates over dimensions to clear the reported Clippy warning. All bounds checks stay in place.
 
 **Why.** No new dependency: `ttf-parser` is in `Cargo.lock` only through eframe, and a direct dependency needs a maintainer decision. The reader separates character mapping from outline decoding. Each read checks the declared table or subtable boundary. A byte-flip and truncation sweep in the tests shows that it never panics. Most hobby sign fonts are `.ttf` files with TrueType outlines.
 
@@ -24,5 +25,6 @@
 - A CFF (Type 2 charstring) reader. This is a larger format. It can come later as its own issue if users ask for `.otf` CFF fonts.
 - Silently joining overlapping contours with a boolean union. That changes the font's shapes without a word. A later issue can add an explicit union step.
 - The use of glyph arcs or splines in the sketch. The sketch primitives are lines and arcs only. Flattening within 0.005 mm is well below a cutter's tolerance.
+- Disabling the reported lint or changing the UI tests. These changes would hide the verification failures instead of clearing them.
 
 **Cost to change later.** The reader is private to `outline_text`. A change to `ttf-parser` or a CFF reader changes that one module, and the command and tool stay the same. Toolpaths from profile chains (2D Pocket, Contour) are #1867's work. The text profile goes to those operations as closed chains, the same as a DXF profile.
