@@ -250,6 +250,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             if tab == SEC_LEADS {
                 lead_page::leads_tab(ui, u, "p", Some((&mut *entry, helix_radius)), links);
                 super::approach_page::pocket_arc_group(ui, u, *entry, &mut links.approach);
+                super::approach_page::approach_distance_group(ui, u, *pass_start, &mut links.approach);
                 super::predrilled_page::predrilled_group(ui, &mut links.approach, rest.is_some());
             }
             if tab == SEC_HEIGHTS {

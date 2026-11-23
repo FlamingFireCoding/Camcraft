@@ -14,7 +14,7 @@
 use egui::Ui;
 
 use camcraft_app::links::{Approach, Compensation};
-use camcraft_app::machining2d::Lead;
+use camcraft_app::machining2d::{Lead, PassStart};
 use camcraft_app::machining3d::Entry3D;
 use camcraft_app::units::Unit;
 
@@ -82,6 +82,25 @@ pub(super) fn plunge_group(ui: &mut Ui, u: Unit, a: &mut Approach) {
     if g.toggled {
         a.plunge_height = if on { 2.0 } else { 0.0 };
     }
+}
+
+/// The row's label (#3745).
+pub(crate) const APPROACH_DISTANCE_LABEL: &str = "Approach distance";
+
+/// The row's hover text (#3745).
+pub(crate) const APPROACH_DISTANCE_HINT: &str =
+    "how far outside the stock edge the tool goes down to the cut depth, in air, before it moves in to the first cut";
+
+/// Where the entry of an Inside or Outside pass starts (#3745): a
+/// distance outside the stock edge. Auto keeps the kind's own entry, so
+/// the group shows only for Inside and Outside.
+pub(super) fn approach_distance_group(ui: &mut Ui, u: Unit, start: PassStart, a: &mut Approach) {
+    if start == PassStart::Auto {
+        return;
+    }
+    group(ui, "Approach", None, |ui| {
+        prop_row_hint(ui, APPROACH_DISTANCE_LABEL, APPROACH_DISTANCE_HINT, |ui| num(ui, u, &mut a.approach_distance));
+    });
 }
 
 /// The entry moves' own feeds.
