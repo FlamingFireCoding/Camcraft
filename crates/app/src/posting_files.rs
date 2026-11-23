@@ -51,6 +51,8 @@ pub const BUILTINS: &[(&str, AssetFile)] = &[
     ("Doosan DNM", AssetFile("doosan-dnm.cps")),
     ("Makera Carvera", AssetFile("carvera.cps")),
     ("Mach4", AssetFile("mach4.cps")),
+    // #1914: RichAuto DSP A11 routers (Laguna Swift, Grizzly) - one tool, drilling as plain moves, the .mmg block format.
+    ("RichAuto DSP A11", AssetFile("richauto.cps")),
     // #2482: Mach3 Mill, 3-axis - canned cycles with G98, T M6 + G43 H, dwell unit by option.
     ("Mach3", AssetFile("mach3.cps")),
     ("Heidenhain Klartext", AssetFile("heidenhain-klartext.cps")),
@@ -350,6 +352,7 @@ fn embedded(kind: &str, file: &str) -> Option<&'static str> {
         ("posts", "doosan-dnm.cps") => Some(include_str!("../../../assets/posts/doosan-dnm.cps")),
         ("posts", "carvera.cps") => Some(include_str!("../../../assets/posts/carvera.cps")),
         ("posts", "mach4.cps") => Some(include_str!("../../../assets/posts/mach4.cps")),
+        ("posts", "richauto.cps") => Some(include_str!("../../../assets/posts/richauto.cps")),
         ("posts", "mach3.cps") => Some(include_str!("../../../assets/posts/mach3.cps")),
         ("posts", "fanuc-lathe.cps") => Some(include_str!("../../../assets/posts/fanuc-lathe.cps")),
         ("posts", "tormach-lathe.cps") => Some(include_str!("../../../assets/posts/tormach-lathe.cps")),

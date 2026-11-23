@@ -283,7 +283,7 @@ fn header_notes_use_each_shipped_dialect_and_keep_the_full_surface_bound() {
             let error = result.expect_err("the native Agie job must refuse a single-file program");
             assert!(
                 matches!(&error, camcraft_post::post::PostError::Script(message) if message.contains(
-                    "Agie native wire EDM requires the desktop or CLI One program post to a new job directory"
+                    "Native wire EDM job files require the desktop or CLI One program post to a new job directory"
                 )),
                 "{stem}: {error}"
             );
@@ -318,6 +318,6 @@ fn header_notes_use_each_shipped_dialect_and_keep_the_full_surface_bound() {
         }
         text_posts += 1;
     }
-    assert_eq!(text_posts, 22, "every shipped text post writes both notes");
+    assert_eq!(text_posts, 23, "every shipped text post writes both notes");
     assert_eq!(native_refusals, 1, "the native Agie dispatcher refused the notes");
 }

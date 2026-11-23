@@ -335,6 +335,10 @@ pub enum ParamsDto {
         /// earlier file - no version step.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         blend_radius: Option<f64>,
+        /// #1446 rest machining: absent is off on every earlier file -
+        /// no version step. Only `source: previous_operations` is taken.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rest: Option<RestDto>,
         /// #2400 corner relief: absent is off on every earlier file.
         #[serde(default, skip_serializing_if = "CornerReliefDto::is_default")]
         corner_relief: CornerReliefDto,
@@ -631,6 +635,10 @@ pub enum ParamsDto {
         /// IS the old behavior.
         #[serde(default)]
         shell: bool,
+        /// #3361 where each level's rings start: absent is `auto`, the
+        /// order every earlier file cut - no version step.
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
     },
     /// Declared at v15 with the waterline. The rename states the tag
     /// for the same reason `pocket3d` does - the automatic snake_case
@@ -707,6 +715,10 @@ pub enum ParamsDto {
         /// grammar, so no version step-up.
         #[serde(default)]
         gap_link: GapLinkDto,
+        /// #3362 where the nested offset loops start: absent is
+        /// `auto`, the order every earlier file cut - no version step.
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
     },
     /// Declared at v48 with the deburr ride (M2.5 E B). `Deburr`'s
     /// automatic snake_case tag IS the clean word - no rename needed -
@@ -1118,6 +1130,14 @@ pub enum ParamsDto {
         bar_transfer: bool,
         #[serde(default)]
         inspect_tol: f64,
+        /// #3469: the piece kept. Absent is the cut-off piece - the
+        /// #3452 kerf every earlier file cut; written only when not.
+        #[serde(default, skip_serializing_if = "PartKeptDto::is_default")]
+        kept: PartKeptDto,
+        /// #3469: the back stock (mm) the kerf stands off the plane.
+        /// Absent is 0; written only when not 0.
+        #[serde(default, skip_serializing_if = "super::part_kerf_dto::no_back_stock")]
+        back_stock: f64,
     },
     /// Declared at v36 with the threading kind (M5.2 stage D): the
     /// window of turns' three heights and the wave's own numbers -
@@ -1291,6 +1311,8 @@ pub enum ParamsDto {
     SinkerSideBurn(SinkerSideDto),
     /// The slot undercut (#1444): appended the same way.
     SlotUndercut(SlotUndercutDto),
+    /// The waterjet profile (#1883): additive - no older file names it.
+    WaterjetProfile(WaterjetDto),
 }
 
 /// The angle an absent `ramp_angle` means: 45°, the ground the
