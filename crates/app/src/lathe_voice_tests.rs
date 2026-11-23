@@ -139,7 +139,9 @@ fn want(ty: OpType) -> Want {
         // #1444: a mill kind, like the Slot.
         | OpType::SlotUndercut
         // #1883: a waterjet profile has no spindle either.
-        | OpType::WaterjetProfile => Want::Refused,
+        | OpType::WaterjetProfile
+        // #1894: a multi-axis mill kind.
+        | OpType::MultiAxisDeburr => Want::Refused,
     }
 }
 
@@ -185,7 +187,7 @@ fn every_kind_is_work_spindle_live_tool_or_refused_by_name() {
         // The post's own order: a path stating C is live-tool work.
         assert_eq!(voice(&params, &stating_c(meridian()), ORIGIN), LatheVoice::LiveTool, "{}", info.label);
     }
-    assert_eq!((turns, holes, refused), (12, 1, 34), "the table covers every kind");
+    assert_eq!((turns, holes, refused), (12, 1, 35), "the table covers every kind");
     assert_eq!(turns + holes + refused, KindInfo::ALL.len());
 }
 

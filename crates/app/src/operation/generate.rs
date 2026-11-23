@@ -1589,6 +1589,28 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             )?;
             (region, path)
         }
+        // #1894: the Deburr's edges and size with the axis tilted onto
+        // each break; the kernel poses, dodges the holder and refuses.
+        OpParams::MultiAxisDeburr { .. } => {
+            // The posed cone guard reads only its source mesh. Other
+            // kept parts have no chamfer grant and must not pass unjudged.
+            if !keep_parts.is_empty() || !neighbour_parts.is_empty() {
+                return Err(GenError::Invalid("Multi-Axis Deburr cannot judge the posed cutter against other kept parts; use a document with only the source part".into()));
+            }
+            super::multiaxis_deburr_op::audit_stock(stock_facets.as_deref(), m_gen, frame.as_ref())?;
+            let cone_d = super::multiaxis_deburr_op::cone_diameter(&tool, &tool_name)?;
+            let region = region_for_job(&mut picked_region, &mut section_z, &src, &params, m_gen, frame.as_ref())?;
+            let chains = drive_chains.take().ok_or_else(|| unreached("deburr chains"))??;
+            let (include, exclude) = chains.split_at(super::deburr_picks::picked(&src).min(chains.len()));
+            let window = (hl.clearance, req_z(hl.top, "Window Top Z")?, req_z(hl.bottom, "Window Bottom Z")?);
+            let kp = super::multiaxis_deburr_op::kernel_params(&params, window, tool.tip_angle, cone_d, shank_of(&tool))
+                .ok_or_else(|| unreached("multi-axis deburr params"))?;
+            let path = crate::multiaxis::multiaxis_deburr(&material.facets, &kp, &finishing3d::DeburrEdges { include, exclude })?;
+            super::plunge_solid::audit_posed(
+                "Multi-Axis Deburr", tool.center_cutting, stock_facets.as_deref(), m_gen, frame.as_ref(), &path, d * 0.5,
+            )?;
+            (region, path)
+        }
         // The simultaneous-axis kinds (M5.1 stage C). The ball-center
         // path is the finish's own - a sphere's envelope is rotation-
         // invariant, so leaning the spindle changes what the SHANK
@@ -3582,7 +3604,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                         // edges: its boundary law reads the mesh
                         // at the tip's plane, never the flat
                         // footprint's silhouette wall (M2.5 E B).
-                        | OpParams::Deburr { .. }
+                        | OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. }
                         | OpParams::Contour5D { .. }
                         | OpParams::Parallel5D { .. }
                         | OpParams::Swarf { .. }
@@ -4367,7 +4389,7 @@ pub(super) fn stock_to_leave_of(params: &OpParams) -> f64 {
         // The deburr cone owns its break outright, same grammar as
         // its 2D twin one row up: the ride IS the finished edge, and
         // a leave number could only move the rest verdict (M2.5 E B).
-        | OpParams::Deburr { .. }
+        | OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. }
         | OpParams::Drill { .. }
         | OpParams::Finish3D { .. }
         // The 5-axis kinds leave no stock - the ball path is the

@@ -1587,6 +1587,12 @@ impl HeightRefs for OpParams {
                 top_z,
                 bottom_z,
                 ..
+            }
+            | OpParams::MultiAxisDeburr {
+                clearance_z,
+                top_z,
+                bottom_z,
+                ..
             } => vec![clearance_z, top_z, bottom_z],
             // The wrap ladder's three - no hop plane exists to ask
             // about; the kernel's rapids ride the skin, not a height
