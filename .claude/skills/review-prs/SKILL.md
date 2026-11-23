@@ -254,6 +254,26 @@ running session reloads `AGENTS.md`, `.claude/agents/` and
 `.claude/skills/`, and a fork runs `fork-sync`. That comment is
 how fork maintainers subscribed to #681 hear about it.
 
+## 2e. Targeted tests at review, no heavy lanes for each PR (#3556)
+
+AGENTS.md "Heavy lanes at review". A review runs small targeted tests:
+the pinning tests, the touched test binaries (the quick plan), the example
+catalog suites by name where a post or a toolpath changed, and the light
+lane. The `PR-reviewer` agent does this in steps 4 and 5.
+
+- No PR gets the full heavy lanes. They run at the cut, in the cut gate on
+  the cut runner.
+- A diff that reaches a heavy lane is not "not ready" for that reason. No
+  PR is "owed heavy" (**Owed heavy result** is retired).
+- A `P1` PR under the safety floor gets one targeted heavy step: the
+  binary that holds the named heavy tests of the changed code
+  (`cargo xtask gate heavy --only "<crate> heavy: <target>"`). If it cannot
+  run, "targeted heavy step not run" is a blocker, and the PR does not get
+  `merge-ready`. A `P2` or lower PR gets no heavy step.
+- A `<!-- heavy-wave: <tree hash> -->` record (the `merge-ready` skill,
+  step 4a) is optional. Its absence is not a finding.
+- "Not run" is never a pass for a step that the rule requires.
+
 ## 3. Report
 
 One short line per PR: number, author, verdict, link to the posted review.

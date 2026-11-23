@@ -99,6 +99,7 @@ fn params_sanity_gates() {
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
         corner_relief: Default::default(),
+        pass_start: Default::default(),
     };
     assert!(!bad.is_sane());
     // A depth range that runs upward is nonsense, refused at command
@@ -456,6 +457,7 @@ fn multiaxis_rough_stamp_moves_with_its_ladder_and_cone() {
     assert_ne!(digest(&rough(0.0, 0.0, 90.0)), digest(&rough(0.0, 7.0, 90.0)), "lag is the stamp's too");
     assert_ne!(digest(&rough(0.0, 0.0, 90.0)), digest(&rough(0.0, 0.0, 45.0)), "the cone caps the lean");
     let pocket = OpParams::Pocket3D {
+        pass_start: Default::default(),
         links: crate::links::Links::ROUGH3D,
         stepover: 4.0,
         stock_to_leave: 0.0,
@@ -519,6 +521,7 @@ fn the_arc_entry_splits_the_stamp_and_leaves_the_others_alone() {
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
         corner_relief: Default::default(),
+        pass_start: Default::default(),
     };
     let digest = |p: &OpParams| {
         let mut h = std::hash::DefaultHasher::new();

@@ -729,7 +729,7 @@ fn finish3d_scallop_plateau() {
 
 #[test]
 fn finish3d_ramp_parallel_plateau() {
-    use camcraft_app::finishing3d::{parallel, Finish3DParams, FinishPattern};
+    use camcraft_app::finishing3d::{parallel, parallel_with_angle, Finish3DParams, FinishPattern};
     use camcraft_app::geometry::{Point3, Triangle};
     let p3 = |x: f64, y: f64, z: f64| Point3::new(x, y, z);
     // The scallop golden's block again: 20x20x10, top at z 10, no bottom.
@@ -748,30 +748,28 @@ fn finish3d_ramp_parallel_plateau() {
     facets.extend(quad([b, c, g, f]));
     facets.extend(quad([c, d, h, g]));
     facets.extend(quad([d, a, e, h]));
-    let t = parallel(
-        &facets,
-        &Finish3DParams {
-            gap_link: camcraft_motion::finishing3d::GapLink::Jump,
-            pattern: FinishPattern::Parallel,
-            stepover: None,
-            tool_diameter: 6.0,
-            tolerance: 0.1,
-            clearance_z: 25.0,
-            retract_z: None,
-            top_z: 10.0,
-            bottom_z: 0.0,
-            feed: 500.0,
-            plunge_feed: 100.0,
-            climb: true,
-            ramp: true,
-            min_step: None,
-            ramp_angle: 45.0,
-            entry_ramp: false,
-            steep_stepover: None,
-            pencil_reference: None,
-        },
-    )
-    .unwrap();
+    let params = Finish3DParams {
+        gap_link: camcraft_motion::finishing3d::GapLink::Jump,
+        pattern: FinishPattern::Parallel,
+        stepover: None,
+        tool_diameter: 6.0,
+        tolerance: 0.1,
+        clearance_z: 25.0,
+        retract_z: None,
+        top_z: 10.0,
+        bottom_z: 0.0,
+        feed: 500.0,
+        plunge_feed: 100.0,
+        climb: true,
+        ramp: true,
+        min_step: None,
+        ramp_angle: 45.0,
+        entry_ramp: false,
+        steep_stepover: None,
+        pencil_reference: None,
+    };
+    let t = parallel_with_angle(&facets, &params, 0.0).unwrap();
+    assert_eq!(t.moves, parallel(&facets, &params).unwrap().moves);
     write_golden("finish3d_ramp_parallel_plateau.cl", &gen_to_cltext(&t));
 }
 
@@ -1264,6 +1262,7 @@ fn circular_ring_arcs_matches_golden() {
     // shows up here as a diff.
     let c = Point2::new(-35.0, 2.9);
     let p = camcraft_app::machining2d::CircularParams {
+        pass_start: Default::default(),
         links: camcraft_app::links::Links::PLANAR,
         center: c,
         radius: 3.0,

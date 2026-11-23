@@ -37,6 +37,7 @@ use crate::machining2d::{
     crossing_free, in_air, fit_proved, microlift_link, plan_passes, push_segs, zigzag_ringed_passes,
     SeamWrap,
 };
+use super::level_side::{side_rings, start_side};
 
 /// Said once per path where the rest pass runs under Adaptive.
 pub const REST_RINGS: &str =
@@ -136,6 +137,8 @@ pub(super) fn plan_level(
     stock: Option<&Region>,
 ) -> Result<LevelPlan, GenError> {
     let step = p.tiling_step();
+    // #3361: Pass starts at (Waterline and Offset rings only).
+    let side = start_side(b, p, (rest, shell, seam.is_some()), stock);
     if matches!(p.strategy, PocketStrategy::Zigzag | PocketStrategy::Auto) {
         // #3129: the level's rows close with a ring on each boundary loop,
         // so no cusp stands between row ends on a wall or an island.
@@ -145,16 +148,18 @@ pub(super) fn plan_level(
         // the seam edges and keeps one period per arc: the rows cut the
         // seam columns, and no azimuth is cut twice. A loop that spans
         // a period mid-cover touches no cover end and closes as the
-        // no-seam case does.
+        // no-seam case does. (The merge drops main's `seam.is_none()`
+        // guard: it kept seam levels off the ring path while the ring
+        // code could not wrap a seam - this PR makes it wrap.)
         let seam_wrap = seam.map(|s| SeamWrap { lo: s.lo, hi: s.hi, period: s.period, reach: s.reach });
         return Ok(LevelPlan::rings(zigzag_ringed_passes(center, step, p.climb, seam_wrap)?, p.helix_radius));
     }
     if p.strategy != PocketStrategy::Adaptive {
-        return Ok(LevelPlan::rings(plan_passes(center, step, p.climb, p.strategy)?, p.helix_radius));
+        return Ok(LevelPlan::rings(side_rings(b, center, p, p.strategy, &side, z)?, p.helix_radius));
     }
     if rest || shell {
         b.note_once(if rest { REST_RINGS } else { SHELL_RINGS });
-        let passes = plan_passes(center, step, p.climb, PocketStrategy::OffsetRings)?;
+        let passes = side_rings(b, center, p, PocketStrategy::OffsetRings, &side, z)?;
         return Ok(LevelPlan::rings(passes, p.helix_radius));
     }
     let what = match seam {

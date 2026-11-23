@@ -201,6 +201,7 @@ impl OpParams {
                 optimal_load,
                 blend_turns,
                 tilt,
+                pass_start,
             } => {
                 w(h, *stepover);
                 w(h, *stock_to_leave);
@@ -260,6 +261,7 @@ impl OpParams {
                     }
                 }
                 write_corner_relief(corner_relief, h);
+                digest::write_pass_start(*pass_start, h); // #3354: only off Auto
             }
             // The roughing twins (M2.4 A): the pocket's digest minus
             // the strategy byte - the kind tag at the head already
@@ -286,6 +288,7 @@ impl OpParams {
                 method,
                 troch,
                 tilt,
+                pass_start,
             } => {
                 w(h, *stepover);
                 w(h, *stock_to_leave);
@@ -337,6 +340,7 @@ impl OpParams {
                     }
                 }
                 write_corner_relief(corner_relief, h);
+                digest::write_pass_start(*pass_start, h);
             }
             OpParams::Offset2D { .. }
             | OpParams::Slot { .. }
