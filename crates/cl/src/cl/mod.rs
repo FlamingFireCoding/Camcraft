@@ -35,6 +35,7 @@ mod pose;
 mod rotary;
 mod rotary_unwind;
 pub mod text;
+pub mod transform;
 mod thread;
 mod torch;
 mod touch;
