@@ -1214,6 +1214,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         }
         OpParams::Finish3D {
             pattern,
+            direction_angle,
             stepover,
             tolerance,
             feed,
@@ -1328,8 +1329,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 finishing3d::FinishPattern::Waterline => {
                     finishing3d::waterline(drive, fp)?
                 }
-                finishing3d::FinishPattern::Parallel
-                | finishing3d::FinishPattern::ParallelMulti
+                finishing3d::FinishPattern::Parallel => {
+                    finishing3d::parallel_with_angle(drive, fp, *direction_angle)?
+                }
+                finishing3d::FinishPattern::ParallelMulti
                 | finishing3d::FinishPattern::Scallop
                 | finishing3d::FinishPattern::SteepShallow => {
                     finishing3d::parallel(drive, fp)?
