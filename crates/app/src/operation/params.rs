@@ -1,7 +1,6 @@
 //! The digest of an operation's parameters (`OpParams::stamp_with`).
 //! The pocket family's arms live here; the other families' arms and the
 //! shared writers live in the child modules (#1849 split).
-//! Provenance: our own digest law over this repo's operation registry.
 
 use super::*;
 use digest::{w, write_corner_relief, wt};
