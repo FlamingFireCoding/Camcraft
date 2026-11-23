@@ -122,6 +122,7 @@ mod camera_target;
 mod structural;
 // #2181: the transport row of the calculation before playback.
 mod transport_precalc;
+mod sim_op_steps;
 mod page_layout;
 mod page_layout_windows;
 mod anchors;
@@ -188,6 +189,8 @@ mod setup_eye;
 mod program_entry;
 // #2055: "Do not touch" protected faces/edges in Boundaries.
 mod do_not_touch;
+// #3349: Engrave takes "Do not touch" protected faces/edges.
+mod do_not_touch_engrave;
 // #3335: real viewport clicks into the "Do not touch" group.
 mod do_not_touch_click;
 // #371: the tool editor's Body section.
@@ -1051,7 +1054,7 @@ fn every_field_lives_on_exactly_one_section() {
             vec![
                 ("Geometry", vec!["Click selects:"]),
                 ("Heights", vec!["Clearance Z", "Cut Z", "Levels"]),
-                ("Passes", vec!["Stepover (Y spacing)"]),
+                ("Passes", vec!["Stepover (Y spacing)", "Pass starts at"]),
                 ("Feeds", vec!["Feed", "Plunge feed", "Climb milling"]),
             ],
         ),
@@ -1079,7 +1082,7 @@ fn every_field_lives_on_exactly_one_section() {
             vec![
                 ("Geometry", vec!["Click selects:"]),
                 ("Heights", vec!["Clearance Z", "Levels", "Top Z", "Bottom Z", "Stepdown"]),
-                ("Passes", vec!["Stepover", "Stock to leave", "Strategy", "Rest machining"]),
+                ("Passes", vec!["Stepover", "Stock to leave", "Strategy", "Pass starts at", "Rest machining"]),
                 ("Lead in / Lead out", vec!["Entry", "Level to level", "Between levels", "Between passes", "Plunge", "Ramp / helix / arc feed", "Entry plunge feed", "Lead-in feed", "Engagement", "Minimum radius", "Helix pitch"]),
                 ("Feeds", vec!["Feed", "Plunge feed", "Climb milling"]),
             ],
@@ -1255,7 +1258,7 @@ fn every_field_lives_on_exactly_one_section() {
                         "Stepdown",
                     ],
                 ),
-                ("Passes", vec!["Stock to leave", "Tolerance"]),
+                ("Passes", vec!["Pass starts at", "Stock to leave", "Tolerance"]),
                 ("Lead in / Lead out", vec!["Level to level", "Between levels", "Between passes"]),
                 ("Feeds", vec!["Feed", "Plunge feed", "Climb milling"]),
             ],
@@ -1286,6 +1289,7 @@ fn every_field_lives_on_exactly_one_section() {
                     "Stepover",
                     "Stock to leave",
                     "Strategy",
+                    "Pass starts at",
                     "Offset shells",
                     "Rest roughing",
                     "Feed optimization",
@@ -1316,6 +1320,7 @@ fn every_field_lives_on_exactly_one_section() {
                 ),
                 ("Passes", vec![
                     "Pattern",
+                    "Pass starts at",
                     "Stepover",
                     "Minimum step",
                     "Ramp between lines",
@@ -1977,6 +1982,7 @@ fn origin_page_shows_the_anchor_grid_and_arms_pick_mode() {
 /// including the View3D readback and the fallback-adapter law).
 #[test]
 fn headless_run_succeeds() {
+    let _gpu = super::gpu_test_lock::gpu_guard(); // #3589
     headless::run(None).map_err(|err| panic!("egui headless run failed: {err}")).ok();
 }
 
@@ -2889,6 +2895,8 @@ fn tips_match_the_imgui_table() {
             == camcraft_app::operation::Family::WireEdm;
         let is_sinker = camcraft_app::operation::KindInfo::ALL[i].family()
             == camcraft_app::operation::Family::Sinker;
+        let is_waterjet = camcraft_app::operation::KindInfo::ALL[i].family()
+            == camcraft_app::operation::Family::Waterjet;
         let want = if is_turn {
             "The document's machine is a mill - turning operations do not drive it; mount a lathe or a mill-turn (Setup > Machine)".to_owned()
         } else if is_wire {
@@ -2900,6 +2908,9 @@ fn tips_match_the_imgui_table() {
         } else if is_sinker {
             // #541: nor the electrode's.
             "The document's machine is a mill - sinker EDM operations do not drive it; mount a sinker EDM (Setup > Machine)".to_owned()
+        } else if is_waterjet {
+            // #1883: nor the jet's.
+            "The document's machine is a mill - waterjet operations do not drive it; mount a waterjet (Setup > Machine)".to_owned()
         } else if let Some(reason) = tool_law {
             // M10.1 B: the demo's one flat end mill cannot cut every
             // mill kind - those cells say which tool kind is missing.
@@ -5231,6 +5242,7 @@ mod dropdown_theme;
 mod review_1710_evidence;
 mod guide_projects;
 mod guide_images;
+mod step_units_prompt;
 
 
 #[test]

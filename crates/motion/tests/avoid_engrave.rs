@@ -5,9 +5,9 @@
 use camcraft_motion::cl::MoveKind;
 use camcraft_motion::geo2d::{Loop, Point2, Region};
 use camcraft_motion::geometry::{Point3, Triangle};
-use camcraft_motion::machining2d::{trace, trace_avoid, TraceParams};
+use camcraft_motion::machining2d::{on_boundary, trace, trace_avoid, TraceParams};
 use camcraft_motion::tools::ToolGeom;
-use camcraft_motion::verify::{avoid_hits, AVOID_VERIFY_TOL, AvoidItem, AvoidSpec, Cutter};
+use camcraft_motion::verify::{avoid_hits, AVOID_PAD, AVOID_VERIFY_TOL, AvoidItem, AvoidSpec, Cutter};
 
 fn rect_loop(x0: f64, y0: f64, x1: f64, y1: f64) -> Loop {
     Loop::new(vec![
@@ -157,6 +157,45 @@ fn trace_avoid_rotates_closed_loop_seam_around_overhead_plunge_blocker() {
     assert!(path.moves.iter().any(|m| {
         m.kind == MoveKind::Feed && (m.to.x - seam.x).abs() < 1e-6 && (m.to.y - seam.y).abs() < 1e-6
     }));
+}
+
+#[test]
+fn trace_avoid_trims_open_run_endpoints_under_overhead_clearance_blocker() {
+    // The protected edge breaks the square's north side at cut depth, so the
+    // level becomes one open run. The overhead bridge is above the cut but in
+    // the hold of the clearance plunge and retract. The planner must trim the
+    // open run's blocked ends (`endpoints_blocked` -> `trim_open_run`).
+    let reg = Region::new(vec![rect_loop(-20.0, -20.0, 20.0, 20.0)]).unwrap();
+    let spec = AvoidSpec {
+        items: vec![AvoidItem {
+            label: "broken edge & overhead bridge".into(),
+            tris: box_facets([3.0, 12.0, 38.0], [14.0, 28.0, 42.0]),
+            edges: vec![([-2.0, 20.0, -1.0], [2.0, 20.0, -1.0])],
+        }],
+        cutter: stepped_cutter(),
+        clearance: 1.0,
+    };
+
+    let path = trace_avoid(&reg, &base_trace(), &spec).expect("trace_avoid succeeds");
+    let hits = avoid_hits(&path, &spec, AVOID_VERIFY_TOL).expect("verify");
+    assert!(hits.is_empty(), "open-run ends must stay clear of the bridge: {hits:?}");
+
+    // The planner trims to the clearance keep-out: the z sweep of the level.
+    let ko = spec.keepout_region(-2.0, 20.0, AVOID_PAD).expect("clearance keep-out");
+    let clear = |p: Point3| {
+        let xy = Point2::new(p.x, p.y);
+        !(ko.contains(xy) && !on_boundary(&ko, xy))
+    };
+    for m in path.moves.iter().filter(|m| m.kind == MoveKind::Plunge) {
+        assert!(clear(m.from) && clear(m.to), "plunge inside the overhead bridge keep-out: {m:?}");
+    }
+    let retract = path
+        .moves
+        .iter()
+        .rev()
+        .find(|m| m.kind == MoveKind::Rapid && m.from.z < 0.0)
+        .expect("retract from the cut");
+    assert!(clear(retract.from), "retract inside the overhead bridge keep-out: {retract:?}");
 }
 
 #[test]

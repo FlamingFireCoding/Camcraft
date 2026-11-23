@@ -81,6 +81,7 @@ bound it to a smaller area.
 | Heights | Stage down to Cut Z (Top Z, Stepdown) | off: one level |
 | Passes | Stepover (Y spacing) | 3 |
 | Passes | Holes | Lift over (or Cut across air, lift over islands; Cut straight through) |
+| Passes | Pass starts at | Auto, not used: the rows run edge to edge, so there is no inside or outside order |
 
 **Common refusals:** "staged facing needs a positive stepdown";
 "staged top below the finished height"; "clearance plane not above the
@@ -186,6 +187,7 @@ for an include or exclude boundary.
 | Passes | Stepover | 3 |
 | Passes | Stock to leave | 0 |
 | Passes | Optimal load (% of D) | about 14.6 (used by Adaptive and Offset rings) |
+| Passes | Pass starts at | Auto (Inside, Outside); used by Waterline and Offset rings |
 | Heights | Stepdown | 5 |
 | Lead in / Lead out | Entry | Helix, radius 1 (Plunge, Ramp, Arc) |
 
@@ -210,6 +212,19 @@ for an include or exclude boundary.
 *After: Helix entry spirals down along the programmed radius.*
 
 </div>
+
+**Pass starts at** (Passes tab) sets where each level of rings starts.
+It is the same option as on 2D Offset:
+
+- **Auto** cuts the rings from the middle of the area outward. This is
+  the order that 2D Pocket always cut.
+- **Outside** starts at the outer edge of the area and works in. With an
+  Outside containment, the outer edge is the stock edge.
+- **Inside** starts at the island or part wall and works out.
+
+Only the ring strategies (Waterline, Offset rings) have a ring order.
+Zigzag rows and rest machining keep their own order. When you set Inside
+or Outside on them, the path notes say that the option is not used.
 
 **Common refusals:** "pocket is narrower than the tool"; "stepover leaves
 bands the tool cannot reach"; a pick that "projects to a line from above
@@ -298,7 +313,26 @@ A microlift above clearance is refused.
 Choose Retract when the return must rise higher. These controls do not
 apply to Spiral.
 
-**Common refusals:** as Pocket.
+**Pass starts at** (Passes tab) sets where each level starts. It is the
+same option as on 2D Offset:
+
+- **Auto** is the plan that 2D Adaptive always cut.
+- **Outside** starts at the outer edge of the area and works in. Where
+  the area reaches past the stock edge with room for an entry in air,
+  the adaptive plan cuts the band from the air inward and ends on the
+  part wall. Where it does not (for example an Outside containment that
+  stops where the tool touches the stock, or a closed pocket), Offset
+  rings cut the area from its outer edge in, and the operation's notes
+  say so.
+- **Inside** starts in the middle of a pocket without islands and grows
+  out to its wall (the adaptive plan). An area with islands or a part in
+  it is cut with Offset rings from the island or part wall out, and the
+  notes say so.
+
+The Trochoidal method has no ring order: it refuses Inside and Outside.
+
+**Common refusals:** as Pocket. With **Method = Trochoidal**, a **Pass
+starts at** other than Auto.
 
 ## 2D Offset
 
@@ -383,8 +417,13 @@ typed in or seeded from suitable picked slot geometry;
 | Geometry | Slot width | 4 |
 | Geometry | Extend past A / Extend past B | 0 / 0 |
 | Passes | Stepover / Stock to leave | 3 / 0 |
+| Passes | Pass starts at | Auto (fixed) |
 | Heights | Stepdown | 5 |
 | Lead in / Lead out | Entry | Plunge, helix radius 1 |
+
+Slot cuts one continuous pass at each depth. It follows the centreline
+when the cutting width equals the tool diameter. A wider cut joins the
+rows and finishes with a lap along the walls.
 
 The A and B fields sit in their own **Manual** section on the Geometry tab;
 Slot width and the extension rows stay outside it. While the Geometry tab
@@ -427,7 +466,13 @@ when a full-width slotting cut would overload the tool.
 | Passes | Max engagement | 90 deg |
 | Passes | Return | Microlift, height 0.3 (or Retract) |
 | Passes | Smoothing radius | 1 |
+| Passes | Pass starts at | Auto (fixed) |
 | Feeds | Return feed | 2 x the cutting feed |
+
+At each depth, the tool opens an entry bore and cuts overlapping loops
+along the slot. A Microlift return retraces the arc it just cut at a
+slightly higher Z. The cut advances in this sequence so each loop starts
+from material cleared by the preceding cut.
 
 **Common refusals:** "the channel ... is too narrow for a ... tool to loop
 in - cut it as a plain Slot"; "a loop width of ... leaves the channel";
@@ -740,8 +785,15 @@ Drill boring cycle when there is no boring bar of the right size.
 |---|---|---|
 | Heights | Stepdown | 5 |
 | Heights | Bottom Z | each hole's own floor |
+| Passes | Pass starts at | Auto |
 | Passes | Stock to leave | 0 |
 | Passes | Tolerance | 0.01 |
+
+**Pass starts at** sets the order of the rings at each level. **Auto**
+cuts from the centre out and ends on the wall. A hole has no inner wall,
+so **Inside** is the same order. **Outside** cuts the wall ring first and
+then works in to the centre. Each level still starts with the dive at the
+centre.
 
 **Common refusals:** "boring needs at least one hole"; "clearance plane
 below a hole entry".

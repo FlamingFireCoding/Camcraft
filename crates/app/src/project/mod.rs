@@ -126,6 +126,9 @@ mod plate_dto;
 mod modvise_dto;
 pub use vise_dto::ViseDto;
 mod thread_dto;
+// #3469: the part-off's kept piece and back stock.
+mod part_kerf_dto;
+pub use part_kerf_dto::PartKeptDto;
 mod break_dto;
 mod unreachable_dto;
 use unreachable_dto::UnreachableDto;
@@ -149,6 +152,9 @@ mod plasma_dto;
 mod cutting_rows_dto;
 pub use cutting_rows_dto::{CuttingRowDto, MaterialWord, StockMaterialWord};
 pub use plasma_dto::*;
+// #1883: the waterjet profile's file mirror.
+mod waterjet_dto;
+pub use waterjet_dto::*;
 mod wire_edm_dto;
 pub use wire_edm_dto::*;
 // #541: the sinker burn's file mirror.
@@ -171,6 +177,9 @@ pub use links::*;
 pub use entity::*;
 mod wire;
 pub use wire::*;
+// #3608: the project file's size and modification time, for the overwrite guard of a save.
+mod disk_stamp;
+pub use disk_stamp::DiskStamp;
 mod json;
 pub use json::*;
 mod apply;

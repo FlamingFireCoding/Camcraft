@@ -19,7 +19,7 @@ the property table there is the vocabulary, this file is the grammar.
 
 Manifest: top-level assignments only — `description`, `vendor`, `legal`,
 `certificationLevel`, `minimumRevision`, `extension`, `setCodePage`,
-`capabilities`, `serves`, `coolantModes`, `programUnits`, `endUnits`, `liveTooling`, `afterModes`, `axisInversion`, `probeAxisInversion`, `threadHands`, `workOffsetIndex`, `workOffsetMax`, `continuousThreading`, `rotariesBeforeTraverse`. All but `serves` and the last eleven are
+`capabilities`, `serves`, `coolantModes`, `programUnits`, `endUnits`, `liveTooling`, `afterModes`, `axisInversion`, `probeAxisInversion`, `threadHands`, `workOffsetIndex`, `workOffsetMax`, `continuousThreading`, `rotariesBeforeTraverse`, `uprightReturn`. All but `serves` and the last twelve are
 text the engine reads none of; `serves = ["plasma"];` (#1266; one word or a list of kind words: mill, lathe, mill-turn, plasma, wire_edm, sinker_edm) names the machine kinds a script of the user's own posts to - the app refuses it by name on any other kind, and a script that states none is accepted only on a mill (non-turning dialect), a lathe (turning) or a mill-turn, never on a plasma table or an EDM; shipped posts are judged by registry name and need no `serves`; `programUnits = "mm inch"` (#902) says
 the script writes the program in the document's unit -
 `postOptions.Units`, `"mm"` or `"inch"`, absent = mm: the dialect's
@@ -61,7 +61,7 @@ and tormach-lathe.cps: the LinuxCNC G-code reference's G59.1-G59.3);
 `threadHands = true` (#629) says the script
 reads `PARAM SpindleDirection` and states a thread's hand (M04 when the
 helix needs the spindle reversed) - without it the engine refuses a
-reverse-spindle thread section by name (fanuc-lathe.cps and tormach-lathe.cps set it); `rotariesBeforeTraverse = true` (#3100) says the script turns the rotaries to each section's pose at the safe Z before its first X/Y traverse - the first-traverse law then reads the work at the operation's own pose, not at every pose the previous program can leave; a script without it is read the strict way, a user's own script that declares it is taken at its word with a note on the path, and each shipped post that declares it has a posting test of the real order (tormach.cps sets it); `liveTooling = true` (issue #33) says the
+reverse-spindle thread section by name (fanuc-lathe.cps and tormach-lathe.cps set it); `rotariesBeforeTraverse = true` (#3100) says the script turns the rotaries to each section's pose at the safe Z before its first X/Y traverse - the first-traverse law then reads the work at the operation's own pose, not at every pose the previous program can leave; a script without it is read the strict way, a user's own script that declares it is taken at its word with a note on the path, and each shipped post that declares it has a posting test of the real order (tormach.cps sets it); `uprightReturn = true` (#3477) says the script retracts to a safe height and commands the rotaries to zero at the start of each section that follows a tilted section, before its first X/Y traverse - without it the engine refuses by name a section that opens with no stated angle after a section that left a rotary off zero, and each shipped post that declares it has a posting test of the real order (`crates/post/tests/upright_after_tilt.rs`; fanuc, doosan-dnm, mach4 and tormach set it); `liveTooling = true` (issue #33) says the
 script voices a `PARAM LiveTool` section - C-axis live-tool work, the
 stream's X Y Z the part-frame tip and C the stated spindle angle - and
 without it the engine refuses such a section by name (only
@@ -185,6 +185,9 @@ write (the gate), so the released program never carries one.
   Doosan posts write every length, angle, lead and feed-per-rev word with
   its point (`Z14.`); only the words the control documents as "no decimal
   point" (lathe G76 P Q, G83 Q) stay in whole least increments.
+  The Haas post writes each feed-per-minute word with its point too
+  (#3681, `F600.`): Haas Setting 77 (Scale Integer F) scales an F with no
+  point, and at its default an mm control reads `F600` as 0.6 mm/min.
 - **Refuse, never lie.** A record you cannot honor in this dialect
   gets a counted `message()` naming why (Fanuc's `tilt()` returns null
   after one refusal per program — a per-line refusal is noise, a

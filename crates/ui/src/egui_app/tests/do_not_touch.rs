@@ -4,11 +4,11 @@
 //! Gate map (M4.4): covers ui::egui_app::boundary, ui::avoid_viz, ui::boundary_draft.
 
 use super::*;
-use camcraft_app::commands::ImportModel;
+use camcraft_app::commands::{AddTool, ImportModel};
 use camcraft_app::geometry::{Point3, cube};
 use camcraft_app::operation::{FeatureSel, GeoSel, OpType, SrcRef, retype_params};
 
-fn seed_part_and_offset(st: &mut State, kind: OpType) -> (GeoSel, GeoSel, GeoSel) {
+pub(super) fn seed_part_and_offset(st: &mut State, kind: OpType) -> (GeoSel, GeoSel, GeoSel) {
     let part = ImportModel::from_mesh("block", cube(Point3::new(0.0, 0.0, 0.0), Point3::new(30.0, 30.0, 15.0)));
     st.history.execute(&st.world, part);
     let feats = camcraft_app::model::find_by_name(&st.world, "block")
@@ -25,10 +25,17 @@ fn seed_part_and_offset(st: &mut State, kind: OpType) -> (GeoSel, GeoSel, GeoSel
     let chain_id = camcraft_app::operation::run_pick(&st.world, "block", 0).expect("edge run").feature;
     let edge = GeoSel { entity: "block".into(), feature: chain_id };
 
-    let tool = camcraft_app::model::named_entities(&st.world)
-        .into_iter()
-        .find_map(|(n, e)| camcraft_app::model::tool_of(&st.world, &e).map(|_| n))
-        .expect("seeded tool");
+    let tool = if kind == OpType::Finish3D {
+        let ball = camcraft_app::tools::catalog().into_iter()
+            .find(|(name, _)| *name == "BN-0600").expect("catalog ball tool").1;
+        st.history.execute(&st.world, AddTool::new(&st.world, "ProtectedBall", ball).expect("add ball tool"));
+        "ProtectedBall".to_owned()
+    } else {
+        camcraft_app::model::named_entities(&st.world)
+            .into_iter()
+            .find_map(|(n, e)| camcraft_app::model::tool_of(&st.world, &e).map(|_| n))
+            .expect("seeded tool")
+    };
     let op = retype_params(&st.op_ui.params, kind as usize);
     st.pending.push_back(CommandKind::CreateOperation {
         name: "OpTest".into(),
@@ -37,11 +44,14 @@ fn seed_part_and_offset(st: &mut State, kind: OpType) -> (GeoSel, GeoSel, GeoSel
         params: op,
     });
     st.drain_actions();
+    let saved = camcraft_app::model::find_by_name(&st.world, "OpTest")
+        .and_then(|e| camcraft_app::model::operation_of(&st.world, &e)).expect("created operation");
+    assert_eq!(saved.params.kind(), kind, "the fixture creates the requested operation kind");
     crate::actions::target(st, UiTarget::Operation("OpTest".into()));
     (face_top, face_other, edge)
 }
 
-fn expand_boundary(h: &mut Harness<'static, ShellUi>) {
+pub(super) fn expand_boundary(h: &mut Harness<'static, ShellUi>) {
     let rect = h.get_by_label("Boundary").rect();
     let p = egui::pos2(rect.left() - 10.0, rect.center().y);
     h.input_mut().events.push(Event::PointerMoved(p));
@@ -168,59 +178,30 @@ fn unsupported_op_shows_do_not_touch_note_without_pick_button() {
     }
     h.run_steps(3);
     expand_boundary(&mut h);
-    assert!(h.query_by_label_contains("2D Offset, 3D Pocket, Face and Engrave").is_some());
+    assert!(h.query_by_label_contains("2D Offset, 3D Pocket, Face, 3D Finish and Engrave").is_some());
     assert!(h.query_by_label("Pick protected").is_none());
 }
 
 #[test]
-fn engrave_boundaries_shows_do_not_touch_controls_and_takes_picks() {
+fn finish3d_shows_pick_protected_button() {
     let _g = snapshot_guard();
     let mut h = Harness::builder()
-        .with_size(Vec2::new(1400.0, 1200.0))
+        .with_size(Vec2::new(1400.0, 1100.0))
         .build_ui_state(frame, ShellUi::seeded());
     h.run_steps(2);
-    let (_face_top, face_other, edge) = {
-        let st = &mut h.state_mut().state;
-        seed_part_and_offset(st, OpType::Engrave)
-    };
+    seed_part_and_offset(&mut h.state_mut().state, OpType::Finish3D);
     h.run_steps(3);
     expand_boundary(&mut h);
-
-    assert!(h.query_by_label_contains("Do not touch").is_some());
-    assert!(h.query_by_label("Pick protected").is_some(), "Engrave must expose Pick protected");
-    assert!(h.query_by_label_contains("operations only so far").is_none());
-
-    h.get_by_label("Pick protected").click();
-    h.run_steps(2);
-    assert_eq!(h.state().state.boundary_pick, Some(crate::state::BoundaryPick::DoNotTouch));
-
-    {
-        let st = &mut h.state_mut().state;
-        let pick = crate::state::BoundaryPick::DoNotTouch;
-        let mods = crate::boundary_draft::PickMods::default();
-        crate::boundary_draft::take_pick(st, pick, face_other.clone(), mods);
-        crate::boundary_draft::take_pick(st, pick, edge.clone(), mods);
-        let marks = crate::avoid_viz::avoid_marks(st, 1.4);
-        assert!(!marks.faces.is_empty(), "protected face must highlight for Engrave");
-        assert!(!marks.edges.is_empty(), "protected edge must highlight for Engrave");
-    }
-    h.run_steps(2);
-    assert!(h.query_by_label(&camcraft_app::operation::describe_sel(&face_other)).is_some());
-    assert!(h.query_by_label(&camcraft_app::operation::describe_sel(&edge)).is_some());
-
-    h.get_by_label("Apply").click();
-    h.run_steps(2);
-    let saved = camcraft_app::model::find_by_name(&h.state().state.world, "OpTest")
-        .and_then(|e| camcraft_app::model::operation_of(&h.state().state.world, &e))
-        .expect("saved engrave op");
-    assert_eq!(saved.area.do_not_touch.picks, vec![face_other, edge]);
+    assert!(h.query_by_label("Pick protected").is_some());
+    assert!(h.query_by_label("Clearance").is_some());
 }
 
 #[test]
 fn face_op_shows_pick_protected_button() {
+    // #3343: a Face operation takes protected items like 2D Offset does.
     let _g = snapshot_guard();
     let mut h = Harness::builder()
-        .with_size(Vec2::new(1400.0, 1200.0))
+        .with_size(Vec2::new(1400.0, 1100.0))
         .build_ui_state(frame, ShellUi::seeded());
     h.run_steps(2);
     {
