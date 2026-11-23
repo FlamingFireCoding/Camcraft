@@ -122,9 +122,19 @@ function fn(v) {  // a length as text (comments): mm at three decimals, or inch 
 }
 function fu(v) { return pt(fn(v)); }  // a length word, with its point
 function fa(v) { return pt(has(v) ? trimNum(Number(v).toFixed(3)) : "0"); }  // angle (deg) at 3 decimals with point
+// #3681: a feed word always carries its decimal point too (`F600.`, never
+// `F600`). Haas Setting 77 (Scale Integer F; Haas Mill Operator's Manual
+// 96-8000, Settings, "77 - Scale Integer F") scales an F word with no
+// point: at its default an mm control reads F600 as 0.6 mm/min. With the
+// point, every value of Setting 77 reads the same feed.
 function ff(v) {  // a feed: whole mm/min, or in/min at two decimals
-  if (!(has(v) && v > 0)) return "0";
-  return inch ? trimNum((v / 25.4).toFixed(2)) : String(Math.round(v));
+  if (!(has(v) && v > 0)) return "0.";
+  var s = inch ? trimNum((v / 25.4).toFixed(2)) : String(Math.round(v));
+  // A positive feed that rounds to zero keeps its fraction; a feed below
+  // even that step is refused, never written as F0.
+  if (Number(s) === 0) s = trimNum(Number(inch ? v / 25.4 : v).toFixed(inch ? 4 : 3));
+  if (Number(s) === 0) msg("feed rate " + v + " mm/min is below the smallest feed this post writes");
+  return pt(s);
 }
 function eps() { return inch ? "0.0001" : "0.001"; } // one output step, the probe checks' band
 function ni(v) { return has(v) ? String(Math.round(v)) : "0"; } // integer word
