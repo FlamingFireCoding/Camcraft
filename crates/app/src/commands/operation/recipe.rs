@@ -79,7 +79,7 @@ fn has_saved_geometry(params: &OpParams) -> bool {
         OpParams::Drill { holes, cross, .. } => !holes.is_empty() || !cross.is_empty(),
         OpParams::Bore { holes, .. } | OpParams::Thread { holes, .. } => !holes.is_empty(),
         OpParams::Contour { chain_overrides, .. } => !chain_overrides.is_empty(),
-        OpParams::Deburr { exclude_edges, .. } => !exclude_edges.is_empty(),
+        OpParams::Deburr { exclude_edges, .. } | OpParams::MultiAxisDeburr { exclude_edges, .. } => !exclude_edges.is_empty(),
         OpParams::Circular { .. }
         | OpParams::Slot { .. }
         | OpParams::TrochoidalSlot { .. }
