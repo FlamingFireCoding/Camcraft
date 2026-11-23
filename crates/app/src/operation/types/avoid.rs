@@ -74,8 +74,6 @@ pub fn do_not_touch_unsupported(kind: OpType) -> Option<String> {
             "'Do not touch' is supported on Trace, 2D Offset, 2D Adaptive, 3D Pocket, Face, 3D Finish and Engrave operations - clear it on {kind}"
         ))
     }
-        ))
-    }
 }
 
 /// Format one `GeoSel` for refusal messages and UI diagnostics.
