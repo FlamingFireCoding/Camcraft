@@ -74,7 +74,33 @@ turn from ends that are equal in the stream, not from ends within 1e-5
 mm. The merge keeps main's exact equality and this branch's `_arcSweep`
 helper for the sweep.
 
+**The stream writer decides when the stream has no sweep (second review
+of PR #3500).** The app posts through `cnc::serialize`, which writes
+whole micrometres. A mm post with three decimals writes those numbers
+again. For the arc of the issue the stream then has start X10.011 Y5,
+end X10.010 Y5 and centre X10 Y5: a zero sweep. The post rule above keeps
+a zero stream sweep as a full-turn arc, so Fanuc mm still wrote `G03
+X10.01 Y5. I-0.011 J0.` for a program from the app. The post cannot
+decide this: the same record can be a turn of 359.99 degrees. Only the
+writer knows the true sweep. `cnc_arc_lattice::short_arc_on_lattice` now
+has the same rule on the lattice: the rounded ends differ, they are on
+one ray from the rounded centre (or one is on it), and the true sweep is
+positive and not more than half a turn. The writer then gives a `Feed`
+to the rounded end. A turn of more than half a circle keeps its arc
+record. The test is exact: integer cross product zero, integer dot
+product positive. Pinned by
+`the_arc_of_3474_through_the_stream_writer_posts_as_a_straight_move_on_fanuc`
+(a `Toolpath` through `dump` and `serialize`, mm and inch),
+`every_mill_post_writes_the_arc_of_3474_through_the_stream_writer_as_its_straight_move`,
+the lathe test of `same_angle_stream.rs`, and two tests of
+`cnc_arc_lattice.rs`. The post rule stays: it covers a post whose words
+are coarser than the stream (inch, or fewer decimals).
+
 **Dropped (continued).**
+- A change of the post rule to read a zero stream sweep as a short arc.
+  A hand-written stream and the 359.99 degree record of `radius_arcs.rs`
+  state a full turn in that form.
+
 - A refusal of the record: it would block a legal program for a move
   under the output step.
 
