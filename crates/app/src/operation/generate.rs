@@ -1251,6 +1251,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             pencil_reference,
             fill_openings,
             gap_link,
+            pass_start,
             ..
         } => {
             // Ball jurisdiction: the rings are the tangent locus of a
@@ -1362,9 +1363,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 }
                 finishing3d::FinishPattern::Radial => finishing3d::radial(drive, fp)?,
                 finishing3d::FinishPattern::Spiral => finishing3d::spiral(drive, fp)?,
-                finishing3d::FinishPattern::Contour => finishing3d::contour(drive, fp)?,
+                finishing3d::FinishPattern::Contour => {
+                    finishing3d::contour_from(drive, fp, *pass_start)?
+                }
                 finishing3d::FinishPattern::Project => finishing3d::project(drive, fp)?,
-                finishing3d::FinishPattern::Flat => finishing3d::flat(drive, fp)?,
+                finishing3d::FinishPattern::Flat => {
+                    finishing3d::flat_from(drive, fp, *pass_start)?
+                }
                 // The crease pair (M2.5 B): the same locus walk in
                 // pencil.rs, and the band filter's reference is the
                 // only thing that differs - Corner asks its own

@@ -37,6 +37,12 @@ pub(crate) const SLOT_NO_PASS_ORDER: &str =
 pub(crate) const POCKET3D_NO_RING_ORDER: &str =
     "Not used with this strategy: Zigzag rows and the Adaptive spiral have no inside or outside order. Only Waterline and Offset rings use it";
 
+/// The line under the 3D Finish row (#3362) when its pattern has no
+/// inside or outside order: the value is kept, and it changes no move.
+pub(crate) fn finish3d_no_ring_order(pattern: &str) -> String {
+    format!("Not used with {pattern}: this pattern has no inside or outside ring order. Only Contour and Flat use it")
+}
+
 /// The names of the combo, in its order (`PassStart::ALL`).
 pub(crate) fn pass_start_names() -> Vec<&'static str> {
     PassStart::ALL.iter().map(|s| s.label()).collect()

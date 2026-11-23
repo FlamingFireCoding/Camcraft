@@ -313,13 +313,15 @@ fn list_operation_types_and_skill_match_wire_contour_dto_and_tool_law() {
         "AGIECUT Classic 2S (template)",
         "Generic ISO Wire EDM",
         "Sodick Wire EDM (Mark 21)",
-        "Agie native wire EDM",
+        "Native wire EDM job files",
         "AGIE_QN2",
     ] {
         assert!(skill.contains(required), "SKILL.md missing `{required}`");
     }
     assert!(!skill.contains("today the Wire Contour"), "SKILL.md still claims Wire Contour mounts no tool");
     assert!(!skill.contains("the wire post is #533"), "SKILL.md still claims wire post does not exist");
+    // #3537: the old post name is a hidden alias, never a listed name.
+    assert!(!skill.contains("Agie native wire EDM"), "SKILL.md still lists the hidden alias post name");
 
     // Omitting `tool` on add_operation for Wire Contour must refuse by name,
     // and listed fields are accepted by edit_operation.

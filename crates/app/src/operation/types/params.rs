@@ -692,6 +692,10 @@ pub enum OpParams {
         /// own diagonal certifies the break.
         /// See [`crate::finishing3d::GapLink`].
         gap_link: finishing3d::GapLink,
+        /// Where the nested offset loops start (#3362, the shared
+        /// parameter of #3316): read by Contour and Flat only. `Auto`
+        /// is every earlier file, byte for byte.
+        pass_start: crate::machining2d::PassStart,
     },
     /// Deburr (M2.5 E B): the cone-ruled edge break in 3D. The ONE
     /// authored number is `width` - the chamfer's chord across the
