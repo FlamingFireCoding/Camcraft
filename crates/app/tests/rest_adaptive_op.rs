@@ -88,6 +88,7 @@ fn rough(bottom: f64) -> OpParams {
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
         corner_relief: Default::default(),
+        pass_start: Default::default(),
         tilt: None,
     }
 }
@@ -124,6 +125,7 @@ fn adaptive_with(
         method,
         troch: AdaptiveTrochParams::default(),
         corner_relief,
+        pass_start: Default::default(),
         tilt,
     }
 }
@@ -264,6 +266,28 @@ fn the_rest_adaptive_pass_cuts_what_the_simulated_roughing_pass_left() {
         assert!(dx < 14.0 && dy < 14.0, "a feed at ({}, {}) is outside the corners", m.to.x, m.to.y);
     }
     assert!(feed_len(&p) > 0.0);
+}
+
+/// #1446 / #3355: the rest pass keeps its own order of the rest areas.
+/// A pass start other than Auto does not change its moves, and the path
+/// names the choice as not used (the Pocket's rule, #3354).
+#[test]
+fn a_pass_start_beside_rest_machining_is_named_as_not_used() {
+    use camcraft_app::machining2d::{PASS_START_REST_NOTE, PassStart};
+    let (world, mut h, _) = job(FLOOR);
+    generate(&world, &mut h, "R1");
+    let auto = generate(&world, &mut h, "A2");
+    assert!(!auto.notes.iter().any(|n| n == PASS_START_REST_NOTE), "Auto has no note: {:?}", auto.notes);
+    for side in [PassStart::Inside, PassStart::Outside] {
+        let mut p = adaptive(Some(from_ops()));
+        if let OpParams::Adaptive2D { pass_start, .. } = &mut p {
+            *pass_start = side;
+        }
+        h.execute(&world, EditOperationParams::new(&world, "A2", p).unwrap_or_else(|e| panic!("{side:?}: {e}")));
+        let got = generate(&world, &mut h, "A2");
+        assert!(got.notes.iter().any(|n| n == PASS_START_REST_NOTE), "{side:?}: the rest note: {:?}", got.notes);
+        assert_eq!(got.moves.len(), auto.moves.len(), "{side:?}: the rest pass keeps its own moves");
+    }
 }
 
 #[test]

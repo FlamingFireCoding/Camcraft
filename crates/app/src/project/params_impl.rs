@@ -191,6 +191,7 @@ impl ParamsDto {
                 rest,
                 corner_relief,
                 tilt,
+                pass_start,
             } => ParamsDto::Pocket {
                 links: links_to_dto(links, &p.default_links()),
                 stepover: *stepover,
@@ -226,6 +227,7 @@ impl ParamsDto {
                 rest: (*rest).map(Into::into),
                 corner_relief: cr_to_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             // The twins drop the strategy tag - the variant itself
             // says which ladder runs (M2.4 A).
@@ -251,6 +253,7 @@ impl ParamsDto {
                 rest,
                 corner_relief,
                 tilt,
+                pass_start,
             } => {
                 let (troch_return, lift) = match troch.ret {
                     None => (AdaptiveTrochReturnDto::Auto, None),
@@ -293,6 +296,7 @@ impl ParamsDto {
                     rest: (*rest).map(Into::into),
                     corner_relief: cr_to_dto(corner_relief),
                     tilt: (*tilt).map(Into::into),
+                    pass_start: (*pass_start).into(),
                 }
             }
             OpParams::Offset2D {
@@ -313,6 +317,7 @@ impl ParamsDto {
                 blend_radius,
                 corner_relief,
                 tilt,
+                pass_start,
             } => ParamsDto::Offset2D {
                 links: links_to_dto(links, &p.default_links()),
                 stepover: *stepover,
@@ -336,6 +341,7 @@ impl ParamsDto {
                 blend_radius: *blend_radius,
                 corner_relief: cr_to_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             // The M2.4 B trio: the engrave twin rides the trace arm
             // verbatim, the chamfer states its two authored face
@@ -420,6 +426,7 @@ impl ParamsDto {
                 center,
                 radius,
                 vault,
+                pass_start,
                 stepover,
                 stock_to_leave,
                 clearance_z,
@@ -438,6 +445,7 @@ impl ParamsDto {
                 center: [center.x, center.y],
                 radius: *radius,
                 vault: *vault,
+                pass_start: (*pass_start).into(),
                 stepover: *stepover,
                 stock_to_leave: *stock_to_leave,
                 clearance_z: (*clearance_z).into(),
@@ -1329,8 +1337,10 @@ impl ParamsDto {
                 tolerance,
                 holes,
                 break_through,
+                pass_start,
             } => ParamsDto::Bore {
                 break_through: *break_through,
+                pass_start: (*pass_start).into(),
                 links: links_to_dto(links, &p.default_links()),
                 clearance_z: (*clearance_z).into(),
                 retract_z: (*retract_z).map(Into::into),
@@ -1512,6 +1522,7 @@ impl ParamsDto {
                 rest,
                 corner_relief,
                 tilt,
+                pass_start,
             } => OpParams::Pocket {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 stepover: *stepover,
@@ -1546,6 +1557,7 @@ impl ParamsDto {
                 rest: (*rest).map(Into::into),
                 corner_relief: cr_from_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             ParamsDto::Adaptive2D {
                 links,
@@ -1573,6 +1585,7 @@ impl ParamsDto {
                 rest,
                 corner_relief,
                 tilt,
+                pass_start,
             } => OpParams::Adaptive2D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 stepover: *stepover,
@@ -1618,6 +1631,7 @@ impl ParamsDto {
                 rest: (*rest).map(Into::into),
                 corner_relief: cr_from_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             ParamsDto::Offset2D {
                 links,
@@ -1637,6 +1651,7 @@ impl ParamsDto {
                 blend_radius,
                 corner_relief,
                 tilt,
+                pass_start,
             } => OpParams::Offset2D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 stepover: *stepover,
@@ -1660,6 +1675,7 @@ impl ParamsDto {
                 blend_radius: *blend_radius,
                 corner_relief: cr_from_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             // The M2.4 B trio back out of the wire, same shapes.
             ParamsDto::Engrave {
@@ -1741,6 +1757,7 @@ impl ParamsDto {
                 center,
                 radius,
                 vault,
+                pass_start,
                 stepover,
                 stock_to_leave,
                 clearance_z,
@@ -1759,6 +1776,7 @@ impl ParamsDto {
                 center: Point2::new(center[0], center[1]),
                 radius: *radius,
                 vault: *vault,
+                pass_start: (*pass_start).into(),
                 stepover: *stepover,
                 stock_to_leave: *stock_to_leave,
                 clearance_z: (*clearance_z).into(),
@@ -2633,8 +2651,10 @@ impl ParamsDto {
                 tolerance,
                 holes,
                 break_through,
+                pass_start,
             } => OpParams::Bore {
                 break_through: *break_through,
+                pass_start: (*pass_start).into(),
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 clearance_z: (*clearance_z).into(),
                 retract_z: retract_z.map(Into::into),
