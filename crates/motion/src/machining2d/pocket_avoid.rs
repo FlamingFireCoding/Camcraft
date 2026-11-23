@@ -144,6 +144,8 @@ pub fn pocket_avoid_started_on(
             }
             sub
         };
+        // #3744: Auto round a part cuts the one ring set from one side.
+        let side = &super::ring_side::resolve(&level_center, strategy, p.tool_diameter * 0.5, side)?;
         let (passes, actual, room, joins, ramp_starts) = if strategy == PocketStrategy::Adaptive {
             let what = format!("level at Z {z:.2}");
             let (ps, anotes, act, rm, js) =

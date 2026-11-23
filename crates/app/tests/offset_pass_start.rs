@@ -274,9 +274,10 @@ fn a_strategy_fallback_saved_without_a_cause_reads_as_adaptive() {
     assert_eq!(back, new);
 }
 
-/// #3319 guard on Auto, the maintainer's own setting: the order is the
-/// one every earlier file cut, and no lateral rapid runs below the
-/// clearance plane with "Hop below clearance" off.
+/// #3319 guard on Auto, the maintainer's own setting: no lateral rapid
+/// runs below the clearance plane with "Hop below clearance" off.
+/// #3744: Auto round a part cuts the one ring set from one side; the
+/// stock box leaves the band's outer edge in air, so Auto is Outside.
 #[test]
 fn fig8_auto_offset_keeps_every_lateral_rapid_at_the_clearance_plane() {
     let (world, mut h, name, stock) = fig8_world();
@@ -284,9 +285,12 @@ fn fig8_auto_offset_keeps_every_lateral_rapid_at_the_clearance_plane() {
     let clear_z = stock.1.z + CLEARANCE;
     assert_eq!(lateral_rapids_below(&path, clear_z), vec![], "#3319: a lateral rapid below Z {clear_z}");
     assert!(!warnings.iter().any(|w| w.starts_with("RapidInStock")), "#3319: a rapid through stock: {warnings:?}");
-    // Auto is the core-first order: the first ring is not at the stock edge.
+    // #3744: Auto picks the Outside start of the one ring set: each level
+    // starts outside the stock box (was: the core-first order of
+    // `waterline_passes`, a first ring inside the box).
     let levels = level_ends(&path);
-    assert!(levels.iter().all(|(_, first, _)| outside_box(*first, stock) < R8 - 0.05), "Auto moved: {levels:?}");
+    assert!(!levels.is_empty(), "the levels: {levels:?}");
+    assert!(levels.iter().all(|(_, first, _)| outside_box(*first, stock) >= R8 - 0.05), "Auto is not the Outside start: {levels:?}");
 }
 
 fn call(s: &mut Server, id: i64, name: &str, args: Value) -> Value {

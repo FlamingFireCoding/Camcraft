@@ -265,7 +265,7 @@ fn lead_in(s: Point2, center: &Region, planned: &[&[Point2]], done: &[Cut], reac
 
 /// A start ring stands on a wall when its disc lies wholly in the stock
 /// somewhere (with no footprint known, everything is stock).
-fn on_wall(pts: &[Point2], stock: Option<&Region>, tool_r: f64, step: f64) -> bool {
+pub(super) fn on_wall(pts: &[Point2], stock: Option<&Region>, tool_r: f64, step: f64) -> bool {
     let Some(s) = stock else { return true };
     samples(pts, step).iter().any(|&q| s.contains(q) && edge_dist(q, s) >= 0.9 * tool_r)
 }

@@ -86,6 +86,7 @@ mod level_rings;
 mod levels;
 mod microlift;
 mod pass_start;
+mod ring_side;
 mod pocket;
 mod pocket_plan;
 mod pocket_emit;

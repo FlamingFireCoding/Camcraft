@@ -1096,10 +1096,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 },
             )?;
             // #3316: the stock footprint in the area's frame tells a start
-            // ring in open air from one on a wall.
+            // ring in open air from one on a wall. #3744: Auto round a part
+            // reads it too, to pick the side of the one ring set.
             let side = machining2d::StartSide {
                 start: *pass_start,
-                stock: (*pass_start != machining2d::PassStart::Auto)
+                stock: (*pass_start != machining2d::PassStart::Auto || around_band)
                     .then(|| super::pass_start_stock::footprint(stock_region.as_ref(), frame.as_ref(), stock_facets.as_deref(), &src, &params, &material))
                     .flatten(),
                 around_part: around_band,

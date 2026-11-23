@@ -26,6 +26,7 @@ use super::pass_start::{PassStart, StartSide};
 use super::pocket::PocketParams;
 use super::pocket_plan::plan_passes;
 use super::pocket_strategy::PocketStrategy;
+use super::ring_side::mirror;
 use super::ring::dist;
 
 /// How far (mm) the area's own boundary may stand from the start side
@@ -101,7 +102,7 @@ fn side_plan(
     let rings = matches!(strategy, PocketStrategy::Waterline | PocketStrategy::OffsetRings | PocketStrategy::Adaptive);
     if side.start != PassStart::Auto
         && rings
-        && let Some(pieces) = level_pieces(region, center, off, step, climb, side.start)?
+        && let Some(pieces) = level_pieces(region, center, off, step, climb, side.start, side.around_part)?
     {
         let plan = order(pieces, center, tool_r, side)?;
         let left = unswept(center, &plan.passes, tool_r)?;
@@ -139,6 +140,12 @@ pub(super) fn unswept(center: &Region, passes: &[Vec<Point2>], r: f64) -> Result
 /// the material (an outer loop with its own holes; material inside a
 /// hole is a part of its own) starts from its own edges. `None` when no
 /// part has the start side (Inside on an area with no hole).
+///
+/// `around` (#3744): the area surrounds the part, so every start side
+/// cuts ONE ring set, the distance from the part (its holes): Outside
+/// walks the Inside pieces mirrored (`ring_side::mirror`). A part with
+/// no hole keeps its own rings (core first for Inside, from its edge for
+/// Outside: offsets of the same edge).
 pub(super) fn level_pieces(
     region: &Region,
     center: &Region,
@@ -146,6 +153,7 @@ pub(super) fn level_pieces(
     step: f64,
     climb: bool,
     start: PassStart,
+    around: bool,
 ) -> Result<Option<Vec<Piece>>, GenError> {
     let Some((lo, hi)) = center.bounds() else {
         return Err(GenError::Empty("empty pocket region".into()));
@@ -166,9 +174,12 @@ pub(super) fn level_pieces(
         }
         let filled = Region::new(part.loops().iter().filter(|l| l.is_ccw()).cloned().collect())?;
         let holes = filled.difference(&part)?;
-        let ok = if start == PassStart::Inside && holes.area().abs() <= 1e-9 {
+        let has_holes = holes.area().abs() > 1e-9;
+        let from_holes = start == PassStart::Inside || (around && has_holes);
+        let first = out.len();
+        let ok = if from_holes && !has_holes {
             core_first(&c, step, climb, cap, &mut out)?
-        } else if start == PassStart::Inside {
+        } else if from_holes {
             started = true;
             // The distance from the holes: the holes' centre keep-out grown.
             // `off` 0: the area is its own outline (the 3-D level).
@@ -183,6 +194,9 @@ pub(super) fn level_pieces(
                     done = true;
                     break;
                 }
+            }
+            if start == PassStart::Outside {
+                mirror(out.get_mut(first..).unwrap_or_default());
             }
             done
         } else {
