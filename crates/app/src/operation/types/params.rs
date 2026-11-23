@@ -597,6 +597,10 @@ pub enum OpParams {
         /// ladder (if any) owes the closing half-step less. Off is
         /// the level ladder exactly as it always generated.
         shell: bool,
+        /// Where each level's rings start (#3361, the shared parameter
+        /// of #3316): read by Waterline and Offset rings. `Auto` is
+        /// every earlier file, byte for byte.
+        pass_start: crate::machining2d::PassStart,
     },
     /// Ball-nose surface finishing. The model is the finished
     /// surface. `Waterline`: each ring is the ball-center tangent
@@ -605,7 +609,7 @@ pub enum OpParams {
     /// stepdown field: the tolerance IS the depth increment's author
     /// (see [`crate::finishing3d`]). `Parallel`/`ParallelMulti`/
     /// `Scallop`: a Z-following raster over the shallow terrain (once
-    /// along X, crossed along the axes, crossed along the diagonals),
+    /// at the direction angle, crossed along the axes or the diagonals),
     /// then the same scallop ladder's rings on the steep flanks - the
     /// 45° auto-split, one jurisdiction line for both halves. Region,
     /// heights and refusals follow the 3-D pocket's laws exactly:
@@ -616,6 +620,9 @@ pub enum OpParams {
         /// M2.2a default; Parallel adds the raster (M2.2b),
         /// ParallelMulti and Scallop cross it (M2.2c).
         pattern: finishing3d::FinishPattern,
+        /// Parallel raster direction in degrees counterclockwise from +X
+        /// in the work coordinate system. The valid range is [0, 360).
+        direction_angle: f64,
         /// Raster line spacing, mm; `None` (always for Waterline)
         /// follows the stepover cos-law from the tolerance instead -
         /// same "the tolerance is the author" law as the stepdown.
@@ -685,6 +692,10 @@ pub enum OpParams {
         /// own diagonal certifies the break.
         /// See [`crate::finishing3d::GapLink`].
         gap_link: finishing3d::GapLink,
+        /// Where the nested offset loops start (#3362, the shared
+        /// parameter of #3316): read by Contour and Flat only. `Auto`
+        /// is every earlier file, byte for byte.
+        pass_start: crate::machining2d::PassStart,
     },
     /// Deburr (M2.5 E B): the cone-ruled edge break in 3D. The ONE
     /// authored number is `width` - the chamfer's chord across the
@@ -1132,7 +1143,9 @@ pub enum OpParams {
     ///   blades leave, so a rough's promise is only silent once a
     ///   finish answers for it). The verdict as a re-run decision,
     ///   not a report tail. 0 is silence, like every signal's off
-    ///   state.
+    ///   state. `kerf` (#3469) names the piece kept (the cut-off piece
+    ///   by default, or the piece in the chuck) and the back stock the
+    ///   whole kerf stands off the plane, into the scrap side.
     Part {
         tolerance: f64,
         clearance_z: Height,
@@ -1146,6 +1159,7 @@ pub enum OpParams {
         bar_unload: bool,
         bar_transfer: bool,
         inspect_tol: f64,
+        kerf: crate::turning::PartKerf,
     },
     /// Threading (M5.2 stage D): the helical ladder on a MODELED
     /// thread. `pitch` is that thread's lead - the lattice of V's
@@ -1369,6 +1383,10 @@ pub enum OpParams {
     /// rule and inner-before-outer order (see [`crate::plasma`]). The
     /// plasma table's only kind (#669's family seam).
     PlasmaProfile(super::plasma::PlasmaOp),
+    /// Waterjet profile (#1883): 2D through-cuts of the picked contours
+    /// with an abrasive jet - kerf offset, leads, tabs as uncut gaps and
+    /// inner-before-outer order (see [`crate::waterjet`]).
+    WaterjetProfile(super::waterjet::WaterjetOp),
     /// Wire EDM contour (#532): one closed profile cut by a vertical
     /// wire at the kerf offset of the machine's condition, on a stated
     /// punch / die side, from a stated start hole (see
@@ -1433,6 +1451,7 @@ impl OpParams {
             OpParams::Thread { .. } => OpType::Thread,
             OpParams::Probe { .. } => OpType::Probe,
             OpParams::PlasmaProfile(_) => OpType::PlasmaProfile,
+            OpParams::WaterjetProfile(_) => OpType::WaterjetProfile,
             OpParams::WireContour(_) => OpType::WireContour,
             OpParams::SinkerBurn(_) => OpType::SinkerBurn,
             OpParams::SinkerSideBurn(_) => OpType::SinkerSideBurn,
@@ -1464,7 +1483,7 @@ impl OpParams {
             // The probe touches along the machine's axes (#108); the
             // torch stands vertical over a flat plate (#670); the
             // trochoid carries no index (#220 slice 1).
-            OpParams::Probe { .. } | OpParams::PlasmaProfile(_) | OpParams::TrochoidalSlot { .. } => None,
+            OpParams::Probe { .. } | OpParams::PlasmaProfile(_) | OpParams::WaterjetProfile(_) | OpParams::TrochoidalSlot { .. } => None,
             // The wire stands vertical (#532): a taper is a pose per
             // move (#290 D2, #536), never a 3+2 index.
             OpParams::WireContour(_) => None,
@@ -1542,6 +1561,7 @@ impl OpParams {
     pub fn clearance(&self) -> Height {
         match self {
             OpParams::PlasmaProfile(p) => p.clearance_z,
+            OpParams::WaterjetProfile(p) => p.clearance_z,
             // A wire has no rapids plane (#532): it never lifts out of
             // the work; its travel plane is the workpiece's top.
             OpParams::WireContour(p) => p.top_z,
@@ -1603,6 +1623,7 @@ impl OpParams {
             OpParams::Probe { clearance_z, .. } => *clearance_z,
             // The plasma contours are drawn on the plate's top (#670).
             OpParams::PlasmaProfile(p) => p.top_z,
+            OpParams::WaterjetProfile(p) => p.top_z,
             // The wire's profile is drawn on the workpiece's top (#532).
             OpParams::WireContour(p) => p.top_z,
             // The electrode enters at the work top (#541).
@@ -1680,6 +1701,11 @@ impl OpParams {
         match self {
             OpParams::Probe { clearance_z, .. } => f(*clearance_z),
             OpParams::PlasmaProfile(p) => {
+                f(p.clearance_z);
+                f(p.top_z);
+                f(p.bottom_z);
+            }
+            OpParams::WaterjetProfile(p) => {
                 f(p.clearance_z);
                 f(p.top_z);
                 f(p.bottom_z);
