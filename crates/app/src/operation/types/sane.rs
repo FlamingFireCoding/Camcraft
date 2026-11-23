@@ -68,31 +68,25 @@ impl OpParams {
         if let Some(why) = crate::operation::rest_op::rest_refusal(self) {
             return Some(why);
         }
-        // #1448: only the untilted 2D contour takes a picked start so far;
-        // every other kind refuses it here rather than ignore it.
-        // #1473: the exit point likewise.
-        for (what, set) in [
-            ("start", self.links().is_some_and(|l| l.approach.start_point.is_some())),
-            ("exit", self.links().is_some_and(|l| l.approach.exit_point.is_some())),
-        ] {
-            if !set {
-                continue;
-            }
-            match self {
-                OpParams::Contour { tilt: None, .. } => {}
-                OpParams::Contour { .. } => {
-                    return Some(format!("a {what} point is not taken on a tilted (3+2) contour yet - clear it or the tilt"));
-                }
-                _ => return Some(format!("a {what} point is taken only by the 2D contour so far - clear it on this operation")),
-            }
+        // #1448 / #3324: a start or exit pick on a kind whose capability
+        // does not take it is refused here, by the kind's name, rather
+        // than ignored (`operation::pick_kinds`).
+        if let Some(why) = self.pick_refusal() {
+            return Some(why);
         }
         match self {
+            OpParams::Finish3D { direction_angle, .. } => {
+                crate::finishing3d::parallel_angle_refusal(*direction_angle).map(str::to_owned)
+            }
             OpParams::SinkerBurn(p) => p.compensation_refusal(),
             OpParams::SinkerSideBurn(p) => p.refusal(),
+            OpParams::SlotUndercut(p) => p.refusal(),
             OpParams::Pocket { corner_relief, .. }
             | OpParams::Offset2D { corner_relief, .. } => corner_relief.validate().err().map(|e| e.to_string()),
-            OpParams::Adaptive2D { method, troch, corner_relief, .. } => troch.refusal().or_else(|| {
-                if *method == crate::machining2d::AdaptiveMethod::Trochoidal && !corner_relief.is_off() {
+            OpParams::Adaptive2D { method, troch, corner_relief, pass_start, .. } => troch.refusal().or_else(|| {
+                if let Some(why) = crate::machining2d::trochoidal_pass_start_refusal(*method, *pass_start) {
+                    Some(why)
+                } else if *method == crate::machining2d::AdaptiveMethod::Trochoidal && !corner_relief.is_off() {
                     Some("corner relief is not available with the Trochoidal method - turn corner relief off or use Spiral".into())
                 } else {
                     corner_relief.validate().err().map(|e| e.to_string())
@@ -138,6 +132,8 @@ impl OpParams {
             && match self {
             // The plasma door (#670): the parameter set's own sanity.
             OpParams::PlasmaProfile(p) => p.is_sane(),
+            // The waterjet door (#1883).
+            OpParams::WaterjetProfile(p) => p.is_sane(),
             // The wire door (#532): the parameter set's own sanity; the
             // condition is the command door's world question.
             OpParams::WireContour(p) => p.is_sane(),
@@ -145,6 +141,8 @@ impl OpParams {
             OpParams::SinkerBurn(p) => p.is_sane(),
             // #545: the side burn's own door.
             OpParams::SinkerSideBurn(p) => p.is_sane(),
+            // #1444: the undercut's own door.
+            OpParams::SlotUndercut(p) => p.is_sane(),
             // The probe's door (#108): every distance and feed a real
             // number, the measure no faster than the seek, the back-off
             // inside the approach, a slot G54..G59 when one is named.
@@ -210,6 +208,7 @@ impl OpParams {
                 tab_width,
                 tab_height,
                 helix_radius,
+                chain_overrides,
                 ..
             } => {
                 // Structural only, the pocket doors' word (M8.2 A): a
@@ -217,7 +216,14 @@ impl OpParams {
                 // Helix does, the generator certifies it against the
                 // bore's wall per level - dive room is the refusal of
                 // record there, said in the path's notes.
-                nneg(*stock_to_leave)
+                let overrides_ok = chain_overrides.iter().enumerate().all(|(i, o)| {
+                    !o.entity.is_empty()
+                        && !chain_overrides[..i]
+                            .iter()
+                            .any(|prev| prev.entity == o.entity && prev.chain == o.chain)
+                });
+                overrides_ok
+                    && nneg(*stock_to_leave)
                     && clearance_z.is_sane()
                     && retract_z.is_sane()
                     && top_z.is_sane()
@@ -353,6 +359,28 @@ impl OpParams {
                     && pos(*feed)
                     && pos(*plunge_feed)
             }
+            // The V-carve's door (#1443): the engrave's numbers, and a
+            // floor stepover the generator can ring with.
+            OpParams::VCarve {
+                clearance_z,
+                retract_z,
+                top_z,
+                bottom_z,
+                stepdown,
+                feed,
+                plunge_feed,
+                flat_stepover,
+                ..
+            } => {
+                clearance_z.is_sane()
+                    && retract_z.is_none_or(|r| r.is_sane())
+                    && top_z.is_sane()
+                    && bottom_z.is_sane()
+                    && pos(*stepdown)
+                    && pos(*feed)
+                    && pos(*plunge_feed)
+                    && pos(*flat_stepover)
+            }
             // The 2-D chamfer's door (M2.4 B): the authored promise -
             // a land wider than nothing, cut at an angle that is a
             // chamfer and not a flat (0) or a wall (90): the ride
@@ -452,6 +480,7 @@ impl OpParams {
                             || crate::load::load_in_door(*optimal_load)))
             }
             OpParams::Finish3D {
+                direction_angle,
                 stepover,
                 tolerance,
                 clearance_z,
@@ -472,6 +501,7 @@ impl OpParams {
                 // level cap refuses a tolerance that would need more
                 // rings than the machine of record may hold.
                 pos(*tolerance)
+                    && crate::finishing3d::parallel_angle_refusal(*direction_angle).is_none()
                     && stepover.is_none_or(pos)
                     // M2.5 A: the flank's own number is a spacing
                     // like the raster's - finite and positive, or absent.
@@ -518,8 +548,11 @@ impl OpParams {
                 hole_max_diameter,
                 // #1889: the policy is an enum; each value is legal.
                 unreachable: _,
+                sizing,
             } => {
                 pos(*width)
+                    // #1890: a positive depth and 1..=100 passes.
+                    && sizing.is_sane()
                     && clearance_z.is_sane()
                     && top_z.is_sane()
                     && bottom_z.is_sane()
@@ -535,6 +568,49 @@ impl OpParams {
                     && hole_max_diameter.is_finite()
                     && *hole_min_diameter >= 0.0
                     && hole_max_diameter >= hole_min_diameter
+            }
+            // #1894: the Deburr's numbers, and the lean inside its cap -
+            // the kernel's door at command creation.
+            OpParams::MultiAxisDeburr {
+                width,
+                clearance_z,
+                top_z,
+                bottom_z,
+                feed,
+                plunge_feed,
+                exclude_edges,
+                min_edge_angle_deg,
+                exclude_holes: _,
+                hole_min_diameter,
+                hole_max_diameter,
+                unreachable: _,
+                sizing,
+                axis_mode: _,
+                lead_deg,
+                lag_deg,
+                max_tilt_deg,
+                shank_avoid: _,
+            } => {
+                let cap = crate::multiaxis::MAX_TILT_CAP_DEG;
+                let deg = |v: f64| v.is_finite() && (0.0..=cap).contains(&v);
+                pos(*width)
+                    && sizing.is_sane()
+                    && clearance_z.is_sane()
+                    && top_z.is_sane()
+                    && bottom_z.is_sane()
+                    && pos(*feed)
+                    && pos(*plunge_feed)
+                    && exclude_edges.iter().all(|g| matches!(g.feature, FeatureSel::Chain(_)))
+                    && min_edge_angle_deg.is_finite()
+                    && (0.0..180.0).contains(min_edge_angle_deg)
+                    && hole_min_diameter.is_finite()
+                    && hole_max_diameter.is_finite()
+                    && *hole_min_diameter >= 0.0
+                    && hole_max_diameter >= hole_min_diameter
+                    && deg(*lead_deg)
+                    && deg(*lag_deg)
+                    && deg(*max_tilt_deg)
+                    && (lead_deg - lag_deg).abs() <= *max_tilt_deg
             }
             OpParams::Contour5D {
                 tolerance,
@@ -1048,6 +1124,7 @@ impl OpParams {
                 plunge_feed,
                 bar_advance,
                 inspect_tol,
+                kerf,
                 ..
             } => {
                 pos(*tolerance)
@@ -1072,6 +1149,8 @@ impl OpParams {
                     // generator's level-cap precedent, at the door.
                     && inspect_tol.is_finite()
                     && (*inspect_tol == 0.0 || *inspect_tol >= 1e-4)
+                    // #3469: the back stock is a length, 0 or more.
+                    && kerf.problem().is_none()
             }
             // The threading door (M5.2 stage D): three positive helix
             // numbers - pitch, depth, infeed - beside the twins'

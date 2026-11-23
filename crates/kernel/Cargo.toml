@@ -44,13 +44,6 @@ truck-meshalgo = { workspace = true, optional = true }
 
 [dev-dependencies]
 camcraft-kernel = { path = ".", features = ["truck"] }
-# The STEP bench (#916, tests/step_agreement.rs) only: truck's STEP reader
-# and mesher exactly as crates/app imports with them today (the workspace
-# pins). Dev-only on purpose: the library gains no truck-stepio.
-truck-stepio = { workspace = true }
-truck-meshalgo = { workspace = true }
-# The bench's face meter (#1697, tests/step_util/truck_guard.rs) builds a
-# CompressedShell of metered faces; truck-stepio does not re-export the type.
-# Already in the workspace (crates/app), at the same pin.
-truck-topology = { workspace = true }
-ruststep = { workspace = true }
+# #2790: the STEP bench's truck side (truck-stepio, ruststep, truck-topology)
+# is a recorded reading now (tests/step_agreement/rows.rs); no truck STEP
+# crate is a dependency of this crate.
