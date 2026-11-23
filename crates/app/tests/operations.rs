@@ -4074,6 +4074,8 @@ fn finish_params(top_z: f64, bottom_z: f64, tolerance: f64) -> OpParams {
     OpParams::Finish3D {
         gap_link: camcraft_app::finishing3d::GapLink::Jump,
         pattern: camcraft_app::finishing3d::FinishPattern::Waterline,
+        direction_angle: 0.0,
+        pass_start: camcraft_app::machining2d::PassStart::Auto,
         stepover: None,
         tolerance,
         clearance_z: Height::fixed(25.0),
@@ -6413,6 +6415,7 @@ fn multiaxis_rough_params() -> OpParams {
 
 fn multiaxis_rough_pocket_twin() -> OpParams {
     OpParams::Pocket3D {
+        pass_start: Default::default(),
         links: camcraft_app::links::Links::ROUGH3D,
         stepover: 3.0,
         stock_to_leave: 0.0,

@@ -612,6 +612,10 @@ pub enum OpParams {
         /// ladder (if any) owes the closing half-step less. Off is
         /// the level ladder exactly as it always generated.
         shell: bool,
+        /// Where each level's rings start (#3361, the shared parameter
+        /// of #3316): read by Waterline and Offset rings. `Auto` is
+        /// every earlier file, byte for byte.
+        pass_start: crate::machining2d::PassStart,
     },
     /// Ball-nose surface finishing. The model is the finished
     /// surface. `Waterline`: each ring is the ball-center tangent
@@ -620,7 +624,7 @@ pub enum OpParams {
     /// stepdown field: the tolerance IS the depth increment's author
     /// (see [`crate::finishing3d`]). `Parallel`/`ParallelMulti`/
     /// `Scallop`: a Z-following raster over the shallow terrain (once
-    /// along X, crossed along the axes, crossed along the diagonals),
+    /// at the direction angle, crossed along the axes or the diagonals),
     /// then the same scallop ladder's rings on the steep flanks - the
     /// 45° auto-split, one jurisdiction line for both halves. Region,
     /// heights and refusals follow the 3-D pocket's laws exactly:
@@ -631,6 +635,9 @@ pub enum OpParams {
         /// M2.2a default; Parallel adds the raster (M2.2b),
         /// ParallelMulti and Scallop cross it (M2.2c).
         pattern: finishing3d::FinishPattern,
+        /// Parallel raster direction in degrees counterclockwise from +X
+        /// in the work coordinate system. The valid range is [0, 360).
+        direction_angle: f64,
         /// Raster line spacing, mm; `None` (always for Waterline)
         /// follows the stepover cos-law from the tolerance instead -
         /// same "the tolerance is the author" law as the stepdown.
@@ -700,6 +707,10 @@ pub enum OpParams {
         /// own diagonal certifies the break.
         /// See [`crate::finishing3d::GapLink`].
         gap_link: finishing3d::GapLink,
+        /// Where the nested offset loops start (#3362, the shared
+        /// parameter of #3316): read by Contour and Flat only. `Auto`
+        /// is every earlier file, byte for byte.
+        pass_start: crate::machining2d::PassStart,
     },
     /// Deburr (M2.5 E B): the cone-ruled edge break in 3D. The ONE
     /// authored number is `width` - the chamfer's chord across the

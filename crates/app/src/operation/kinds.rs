@@ -1110,12 +1110,15 @@ fn seed_pocket3d(c: &Carried) -> OpParams {
         // Off is the ladder exactly as it always generated; the shell
         // is the user's ask, not the fresh op's guess (M2.5 F).
         shell: false,
+        // #3361: the core-first order every earlier 3D pocket cut.
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 
 fn seed_finish3d(c: &Carried) -> OpParams {
     OpParams::Finish3D {
         pattern: FinishPattern::Parallel,
+        direction_angle: 0.0,
         // None = the stepover cos-law derives spacing from the
         // tolerance; the panel can override it per line set.
         stepover: None,
@@ -1153,6 +1156,8 @@ fn seed_finish3d(c: &Carried) -> OpParams {
         // Fresh finishes hop to clearance like every older file;
         // straight links are the machinist's opt-in (the linking menu).
         gap_link: crate::finishing3d::GapLink::Jump,
+        // #3362: the outside-in order every earlier finish cut.
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 

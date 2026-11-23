@@ -139,6 +139,7 @@ fn drill(entry: f64, floor: f64, r: f64) -> OpParams {
 
 fn pocket(bottom: f64) -> OpParams {
     OpParams::Pocket3D {
+        pass_start: Default::default(),
         links: Links::ROUGH3D,
         stepover: 2.5,
         stock_to_leave: 0.0,

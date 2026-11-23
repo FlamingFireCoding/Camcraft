@@ -361,6 +361,7 @@ fn a_tool_that_is_not_centre_cutting_never_plunges_on_the_3d_ladder() {
                 ("clearance", Links { pass: Link::Clearance, level: Link::Clearance, ..Links::ROUGH3D }),
             ] {
                 let p = Pocket3DParams {
+                    pass_start: Default::default(),
                     links,
                     tool_diameter: 8.0,
                     stepover: 3.0,

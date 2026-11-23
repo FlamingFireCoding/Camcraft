@@ -111,6 +111,14 @@ impl OpParams {
                     w(h, p.cavity_x);
                     w(h, p.cavity_y);
                 }
+                if !p.cavity_outline.is_empty() {
+                    h.write(b"cavity_outline");
+                    h.write_usize(p.cavity_outline.len());
+                    for point in &p.cavity_outline {
+                        w(h, point[0]);
+                        w(h, point[1]);
+                    }
+                }
                 // #544: the orbit - bytes only when one is stated, so a
                 // plain plunge's digest does not move.
                 if let Some(o) = &p.orbit {

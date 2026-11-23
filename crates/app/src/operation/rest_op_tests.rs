@@ -83,3 +83,25 @@ fn pass_start_moves_the_pocket_stamp_only_off_auto() {
     assert_ne!(auto, outside, "Outside must not share Auto's stamp");
     assert_ne!(inside, outside, "the two sides must not share a stamp");
 }
+
+/// #3361: the same law on 3D Pocket. Inside and Outside move the stamp;
+/// Auto writes nothing, so every earlier 3D pocket keeps its stamp.
+#[test]
+fn pass_start_moves_the_pocket3d_stamp_only_off_auto() {
+    use crate::machining2d::PassStart;
+    let world = crate::world::new_world();
+    let base = crate::operation::retype_params(&pocket(None), crate::operation::OpType::Pocket3D.ordinal());
+    let digest = |s: PassStart| {
+        let mut p = base.clone();
+        let OpParams::Pocket3D { pass_start, .. } = &mut p else { panic!("not a 3D Pocket: {p:?}") };
+        *pass_start = s;
+        let mut h = std::hash::DefaultHasher::new();
+        p.stamp_with(&world, None, None, &mut h);
+        h.finish()
+    };
+    let auto = digest(PassStart::Auto);
+    let (inside, outside) = (digest(PassStart::Inside), digest(PassStart::Outside));
+    assert_ne!(auto, inside, "Inside must not share Auto's stamp");
+    assert_ne!(auto, outside, "Outside must not share Auto's stamp");
+    assert_ne!(inside, outside, "the two sides must not share a stamp");
+}

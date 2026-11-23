@@ -102,6 +102,7 @@ mod spindle_row;
 mod approach_page;
 mod lead_page;
 mod start_exit_rows;
+mod predrilled_page;
 pub(crate) mod op_tabs;
 mod painted;
 mod sim_steps;
@@ -345,6 +346,8 @@ mod debug_info_tests;
 #[cfg(test)]
 mod report_tests;
 #[cfg(test)]
+mod gpu_test_lock;
+#[cfg(test)]
 mod fresh_op_tests;
 #[cfg(test)]
 mod tool_number_tests;
@@ -389,6 +392,8 @@ mod sinker_pass_tests;
 mod sinker_machine_tests;
 #[cfg(test)]
 mod rest_pocket_tests;
+#[cfg(test)]
+mod predrilled_page_tests;
 
 /// Entry for `--ui egui`; returns the process exit code. `--headless`
 /// selects the no-window proof (seeded document, or the file named on the
@@ -438,7 +443,7 @@ pub fn run(args: &[String]) -> i32 {
         }
     } else {
         // #2462: the file named on the command line opens in the window.
-        run_windowed(pick, want, mcp_port, &crate::cli_options::files(args))
+        run_windowed(pick, want, mcp_port, &crate::cli_options::files(args), crate::cli_options::start_mode(args))
     }
 }
 
@@ -465,15 +470,15 @@ fn run_headless(_open: Option<crate::state::CommandKind>) -> i32 {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>, files: &[String]) -> i32 {
-    shell_window::run_windowed(pick, want, mcp_port, files)
+fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>, files: &[String], start: crate::cli_options::StartMode) -> i32 {
+    shell_window::run_windowed(pick, want, mcp_port, files, start)
 }
 
 /// #31: the browser build has no winit window to open - its shell is the
 /// web runner still owed on that issue - so the windowed entry refuses by
 /// name instead of pretending.
 #[cfg(target_arch = "wasm32")]
-fn run_windowed(_pick: gpu::GpuPick, _want: Option<String>, _mcp_port: Option<u16>, _files: &[String]) -> i32 {
+fn run_windowed(_pick: gpu::GpuPick, _want: Option<String>, _mcp_port: Option<u16>, _files: &[String], _start: crate::cli_options::StartMode) -> i32 {
     diag_warn!("{WASM_NO_WINDOW}");
     2
 }

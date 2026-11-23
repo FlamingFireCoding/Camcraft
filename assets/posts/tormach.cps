@@ -53,6 +53,7 @@ declaredOptions = {
 };
 afterModes = true; // #1532: reads PARAM AfterOperation (stop / optional stop) and PARAM SetupChange; a trip home is refused by name
 rotariesBeforeTraverse = true; // #3100: each section turns A at the safe Z (G53 G0 Z, then G0 A) before its first X/Y traverse (indexFor, xyFirst); pinned by posting_rotaries_first.rs
+uprightReturn = true; // #3477: the same G53 G0 Z, then G0 A turn writes A0 at a section after a tilted section; pinned by upright_after_tilt.rs
 explains = "paren"; // #1387: LinuxCNC parenthesized comments; shared helper keeps them inert
 // Original wording; inherited mill meanings cite RS-274 / LinuxCNC in explain.rs.
 explainWords = {
