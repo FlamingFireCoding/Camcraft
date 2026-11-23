@@ -545,6 +545,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // procedure are optional. An older machine keeps both unstated.
         // v75 -> v76 (#1890): a Deburr width becomes the chamfer chord; the
         // old setback steps up by sqrt(2), its chord on a 90-degree edge.
+        // v76 -> v77 (#3447): a setup may state its creation `order`;
+        // absent stays absent and sorts by name, as every v76 file posted.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         if from < 68 {
@@ -973,6 +975,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                     nose_to_axis: sdto.nose_to_axis,
                     workholding_max_rpm: sdto.workholding_max_rpm,
                     sheet_job: sdto.sheet_job,
+                    // #3447: absent in every earlier file - name order.
+                    order: sdto.order,
                 });
             }
         }

@@ -132,7 +132,7 @@ pub use flow::flow;
 // closest-point law the raster clearance uses, crate-visible.
 pub(crate) use support::closest_pt_tri;
 pub use polar::{morphed_spiral, radial, spiral};
-pub use raster::{blend, parallel};
+pub use raster::{blend, parallel, parallel_angle_refusal, parallel_with_angle};
 pub use swarf::{swarf, swarf_multi};
 pub use rings::waterline;
 pub use morph::morph;

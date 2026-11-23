@@ -203,7 +203,7 @@ fn adaptive2d_shows_the_pick_protected_button_and_no_unsupported_note() {
     }
     h.run_steps(3);
     expand_boundary(&mut h);
-    assert!(h.query_by_label_contains("only so far").is_none(), "2D Adaptive supports Do not touch (#3346)");
+    assert!(h.query_by_label_contains("is supported on").is_none(), "2D Adaptive supports Do not touch (#3346)");
     h.get_by_label("Pick protected").click();
     h.run_steps(2);
     assert_eq!(h.state().state.boundary_pick, Some(crate::state::BoundaryPick::DoNotTouch));
