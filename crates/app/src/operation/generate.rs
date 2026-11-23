@@ -3861,6 +3861,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 path.notes.extend(av_notes);
                 warns.extend(av_warns);
             }
+            // #3525: a cut deeper than the flute length is named by its
+            // cause, FIRST - before the move findings that it explains.
+            super::flute_law::name_first(&params, &mut path, &mut warns, &geom, &tool_name, stock_top_z);
             Ok((path, warns))
         }
         Some(f) => {

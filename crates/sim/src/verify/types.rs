@@ -401,6 +401,14 @@ pub enum Warning {
     /// path, so the post is not held - but the strategy the user asked for
     /// did not cut those areas, and the op says so.
     StrategyFallback { at: usize, areas: usize },
+    /// #3525: the operation cuts `depth_mm` below the stock top, deeper
+    /// than the tool's `flute_mm` flute length, from the cutting move
+    /// `at` on ([`super::flute_reach`]). `wider` names the body section
+    /// wider than the cutter that enters the cut (the shank, or past it
+    /// the holder): then the body meets the walls the flutes leave and the
+    /// post is held. `None`: the body is not wider and can only rub the
+    /// walls - advisory, the collision laws still judge each move.
+    FluteShort { at: usize, flute_mm: f64, depth_mm: f64, wider: Option<FixturePart> },
 }
 
 impl Warning {
@@ -412,7 +420,8 @@ impl Warning {
                 | Warning::ProbeSearch { .. }
                 | Warning::SinkerFinishOrder { .. }
                 | Warning::DrillUndersize { .. }
-                | Warning::StrategyFallback { .. })
+                | Warning::StrategyFallback { .. }
+                | Warning::FluteShort { wider: None, .. })
     }
 
     /// The envelope report's unjudged hidden half, as the warning that
@@ -551,6 +560,15 @@ impl core::fmt::Display for Warning {
                 f,
                 "Adaptive fell back to Offset rings on {areas} area{} from move {at}: the notes name each one and why (the post is not held: the rings are verified)",
                 if *areas == 1 { "" } else { "s" }
+            ),
+            Warning::FluteShort { at, flute_mm, depth_mm, wider } => write!(
+                f,
+                "the tool's flute length is {flute_mm:.3} mm, but the cut goes {depth_mm:.3} mm below the stock top from move {at}: {}",
+                match wider {
+                    Some(FixturePart::Holder) => "the holder, wider than the cutter, is in the cut and meets the walls that the flutes leave",
+                    Some(_) => "the shank, wider than the cutter, is in the cut and meets the walls that the flutes leave",
+                    None => "the shank is in the cut and can rub the walls (the post is not held)",
+                }
             ),
         }
     }
