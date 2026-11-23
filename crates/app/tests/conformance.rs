@@ -135,7 +135,7 @@ const PLASMA_POSTS: &[(&str, &str)] = &[("Tormach PathPilot Plasma", "tormach-pl
 
 /// The WIRE EDM dialects (#533): their golden is the wire stream's own
 /// (`wire_post.rs`, `nc/wire-iso/`); a mill golden they refuse by name.
-const WIRE_POSTS: &[(&str, &str)] = &[("Generic ISO Wire EDM", "wire-iso"), ("Sodick Wire EDM (Mark 21)", "sodick-wire"), ("Agie native wire EDM", "agie-native")];
+const WIRE_POSTS: &[(&str, &str)] = &[("Generic ISO Wire EDM", "wire-iso"), ("Sodick Wire EDM (Mark 21)", "sodick-wire"), ("Native wire EDM job files", "agie-native")];
 
 /// The SINKER EDM dialects (#542): their golden is the sinker burn's
 /// own (`crates/post/tests/script_sinker_iso.rs`, `nc/sinker-iso/`); a

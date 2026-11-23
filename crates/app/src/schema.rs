@@ -635,9 +635,22 @@ impl PostScriptOptions {
         }
     }
 
-    /// Remove empty per-post maps.
+    /// Remove empty per-post maps, and move a hidden alias key to the key
+    /// of the registry name it selects (#3537); an entry already under
+    /// the registry name wins.
     pub fn normalize(&mut self) {
         self.by_post.retain(|_, v| !v.is_empty());
+        let aliased: Vec<String> = self
+            .by_post
+            .keys()
+            .filter(|k| crate::posting::agie::current_key(k) != **k)
+            .cloned()
+            .collect();
+        for old in aliased {
+            if let Some(v) = self.by_post.remove(&old) {
+                self.by_post.entry(crate::posting::agie::current_key(&old)).or_insert(v);
+            }
+        }
     }
 }
 

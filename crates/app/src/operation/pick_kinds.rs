@@ -105,6 +105,8 @@ impl KindInfo {
             | OpType::FormTurning
             | OpType::BoringTurning
             | OpType::PlasmaProfile
+            // #1883: the waterjet's lead picks are owed, as the plasma's.
+            | OpType::WaterjetProfile
             | OpType::TrochoidalSlot
             | OpType::SinkerBurn
             | OpType::SinkerSideBurn
