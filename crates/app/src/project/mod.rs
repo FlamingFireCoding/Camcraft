@@ -171,6 +171,9 @@ pub use links::*;
 pub use entity::*;
 mod wire;
 pub use wire::*;
+// #3608: the project file's size and modification time, for the overwrite guard of a save.
+mod disk_stamp;
+pub use disk_stamp::DiskStamp;
 mod json;
 pub use json::*;
 mod apply;

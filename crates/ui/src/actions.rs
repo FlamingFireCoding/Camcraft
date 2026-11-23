@@ -58,6 +58,11 @@ pub(crate) fn resolve_unsaved(state: &mut State, choice: crate::unsaved::Unsaved
     state.pending.push_back(CommandKind::ResolveUnsaved(choice));
 }
 
+/// The overwrite prompt's answer (#3608): its effect goes through the queue.
+pub(crate) fn resolve_overwrite(state: &mut State, choice: crate::save_guard::OverwriteChoice) {
+    state.resolve_overwrite(choice);
+}
+
 pub(crate) fn undo(state: &mut State) {
     state.pending.push_back(CommandKind::Undo);
 }
