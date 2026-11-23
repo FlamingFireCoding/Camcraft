@@ -16,9 +16,11 @@
   A PR with a new top-level file under `crates/*/tests/` and no reason in
   its body, outside `ISOLATED` and `SLOW_BINARIES`, gets a requested change.
 
-**Owner's words** (comment on #3187, 2026-11-23, question dialog): "YES, add
-the rule "a new integration test joins an existing directory suite", with
-the exemptions `ISOLATED` and `SLOW_BINARIES`. The work starts now."
+**Owner's decision** (live answer in the question dialog, 2026-11-23,
+relayed by the main session and recorded by the coordinator in a comment on
+#3187): "YES, add it." The question was: add the rule "a new integration
+test joins an existing directory suite", with the exemptions `ISOLATED` and
+`SLOW_BINARIES`?
 
 **Why.** Each integration test binary of `camcraft-app` takes about 100 MB.
 Workspace test binaries went from 412 to 1,020 in ten days. A test in a
