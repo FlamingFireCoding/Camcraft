@@ -115,7 +115,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // with a body, the same bands above the shank, never the cylinder
     // enclosing them (#842: drill reach and the cross drill too).
     let cutter = verify::Cutter::of(&tool).with_body(&geom, &holder);
-    let avoid_spec = avoid_ok.map(|(items, cl)| super::avoid::spec_of(items, cl, &params, cutter));
+    let mut avoid_spec = avoid_ok.map(|(items, cl)| super::avoid::spec_of(items, cl, &params, cutter));
     // The probe (#108) cuts nothing: its own protected-move law judges
     // the stylus against the model, and no cutting law or region applies.
     if matches!(params, OpParams::Probe { .. }) {
@@ -1214,6 +1214,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         }
         OpParams::Finish3D {
             pattern,
+            direction_angle,
             stepover,
             tolerance,
             feed,
@@ -1328,8 +1329,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 finishing3d::FinishPattern::Waterline => {
                     finishing3d::waterline(drive, fp)?
                 }
-                finishing3d::FinishPattern::Parallel
-                | finishing3d::FinishPattern::ParallelMulti
+                finishing3d::FinishPattern::Parallel => {
+                    finishing3d::parallel_with_angle(drive, fp, *direction_angle)?
+                }
+                finishing3d::FinishPattern::ParallelMulti
                 | finishing3d::FinishPattern::Scallop
                 | finishing3d::FinishPattern::SteepShallow => {
                     finishing3d::parallel(drive, fp)?
@@ -3421,6 +3424,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     } else {
         path
     };
+    // Judge the final Trace after fixture routing, in the same frame as
+    // the protected geometry. All following laws see any elevated links.
+    if let Some(spec) = avoid_spec.take_if(|_| matches!(params, OpParams::Trace { .. })) {
+        super::avoid::protect_trace(&mut path, &spec, frame.is_none(), z_ceiling)?;
+    }
     let stl = stock_to_leave_of(&params);
     // The 2D kinds' depth-aware verify (the silent-gouge fix): a flat
     // region says where the walls stand at ONE plane, and a path walked
@@ -3861,6 +3869,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 path.notes.extend(av_notes);
                 warns.extend(av_warns);
             }
+            // #3525: a cut deeper than the flute length is named by its
+            // cause, FIRST - before the move findings that it explains.
+            super::flute_law::name_first(&params, &mut path, &mut warns, &geom, &tool_name, stock_top_z);
             Ok((path, warns))
         }
         Some(f) => {

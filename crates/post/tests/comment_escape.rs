@@ -101,7 +101,7 @@ fn assert_inert(stem: &str, l: &str) {
 fn hostile_names_post_well_formed_comments_in_every_mill_dialect() {
     let stream = mill_stream(8000.0);
     let m = mill(MACHINE);
-    for stem in ["fanuc", "haas", "mazak", "tormach", "grblhal", "tinyg", "grbl"] {
+    for stem in ["fanuc", "haas", "mazak", "tormach", "grblhal", "tinyg", "grbl", "mach3"] {
         let nc = post(stem, &m, &stream);
         for l in nc.lines() {
             assert_paren_line(stem, l);
@@ -318,6 +318,6 @@ fn header_notes_use_each_shipped_dialect_and_keep_the_full_surface_bound() {
         }
         text_posts += 1;
     }
-    assert_eq!(text_posts, 20, "every shipped text post writes both notes");
+    assert_eq!(text_posts, 21, "every shipped text post writes both notes");
     assert_eq!(native_refusals, 1, "the native Agie dispatcher refused the notes");
 }

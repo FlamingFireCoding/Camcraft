@@ -401,6 +401,12 @@ pub enum Warning {
     /// path, so the post is not held - but the strategy the user asked for
     /// did not cut those areas, and the op says so.
     StrategyFallback { at: usize, areas: usize },
+    /// #3525: the operation cuts `depth_mm` below the stock top, deeper
+    /// than the tool's `flute_mm` flute length, from the cutting move
+    /// `at` on ([`super::flute_reach`]). Always advisory (#3525
+    /// decision): it names the cause of the shank and holder findings that
+    /// follow it, and those findings hold the post.
+    FluteShort { at: usize, flute_mm: f64, depth_mm: f64 },
 }
 
 impl Warning {
@@ -412,7 +418,8 @@ impl Warning {
                 | Warning::ProbeSearch { .. }
                 | Warning::SinkerFinishOrder { .. }
                 | Warning::DrillUndersize { .. }
-                | Warning::StrategyFallback { .. })
+                | Warning::StrategyFallback { .. }
+                | Warning::FluteShort { .. })
     }
 
     /// The envelope report's unjudged hidden half, as the warning that
@@ -551,6 +558,12 @@ impl core::fmt::Display for Warning {
                 f,
                 "Adaptive fell back to Offset rings on {areas} area{} from move {at}: the notes name each one and why (the post is not held: the rings are verified)",
                 if *areas == 1 { "" } else { "s" }
+            ),
+            Warning::FluteShort { at, flute_mm, depth_mm } => write!(
+                f,
+                "the tool's flute length is {flute_mm:.3} mm, but the cut goes {depth_mm:.3} mm below the stock top from move {at}: \
+                 above the flutes, the shank or the holder goes into the cut; the findings after this one name the moves where \
+                 it meets material - use a tool with a longer flute, or cut less deep (this finding alone does not hold the post)"
             ),
         }
     }
