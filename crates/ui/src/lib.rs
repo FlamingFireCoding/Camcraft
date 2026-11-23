@@ -80,6 +80,7 @@ mod sketch_chip_memo;
 mod sketch_memo;
 mod floor;
 mod work_envelope;
+mod operator_side;
 pub mod view_frame;
 pub mod mcp_host;
 pub mod operations;
