@@ -6707,13 +6707,16 @@ fn balls_of(path: &camcraft_app::cl::Toolpath, r: f64) -> Vec<camcraft_app::geom
 /// #3414: the path's moves without the rotary indices - the
 /// standstill swings the stamp inserts: zero-travel RAPIDS whose axis
 /// CHANGES off the pose held. A zero-travel rapid that states no new
-/// pose (the ladder's own) stays.
+/// pose (the ladder's own) stays, and so does an opening upright
+/// statement from no held pose (#3300): the home the path inherits,
+/// commanded as zero angles - no rotation happens.
 fn no_swings(t: &camcraft_app::cl::Toolpath) -> Vec<&camcraft_app::cl::Move> {
     let mut held: Option<[f64; 3]> = None;
     t.moves
         .iter()
         .filter(|m| {
-            let swing = m.kind == MoveKind::Rapid && m.from == m.to && m.axis != held;
+            let swing = m.kind == MoveKind::Rapid && m.from == m.to && m.axis != held
+                && !(held.is_none() && m.axis.is_some_and(|a| camcraft_app::cl::is_vertical(&a)));
             if !swing {
                 held = m.axis.or(held);
             }
