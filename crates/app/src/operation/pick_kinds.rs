@@ -109,6 +109,9 @@ impl KindInfo {
             | OpType::SinkerBurn
             | OpType::SinkerSideBurn
             | OpType::SlotUndercut
+            // #2826: the flow band's own start and exit ride its
+            // picked chains' own ends, the planner's choice.
+            | OpType::RotaryFlow
             | OpType::VCarve => PickCapability::NotTaken(PICK_OWED),
         }
     }

@@ -137,7 +137,9 @@ fn want(ty: OpType) -> Want {
         | OpType::SinkerBurn
         | OpType::SinkerSideBurn
         // #1444: a mill kind, like the Slot.
-        | OpType::SlotUndercut => Want::Refused,
+        // #2826: the flow band is the rotary kinds' mill sibling.
+        | OpType::SlotUndercut
+        | OpType::RotaryFlow => Want::Refused,
     }
 }
 

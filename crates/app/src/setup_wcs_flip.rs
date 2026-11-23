@@ -133,6 +133,9 @@ fn op_problem(op: &Operation, cache: Option<crate::schema::Toolpath>) -> Option<
             | OpParams::MultiAxisRough { .. }
             | OpParams::Flow5D { .. }
             | OpParams::MultiAxisContour { .. }
+            // #2826: the band's cylinders and rotary words are not
+            // verified mirrored.
+            | OpParams::RotaryFlow { .. }
     ) || op.params.kind().info().section == Section::Turning
     {
         return Some("that operation type is not supported in a flipped WCS yet");
