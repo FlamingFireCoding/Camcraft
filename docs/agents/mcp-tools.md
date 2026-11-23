@@ -1,7 +1,7 @@
 <!-- Generated from crates/app/src/mcp/tools.rs. Do not edit by hand. Write it again with: cargo run -p camcraft-app --bin camcraft-cli -- mcp reference > docs/agents/mcp-tools.md -->
 # CamCraft MCP tool reference
 
-The server lists 117 tools. The live `tools/list` reply is the authority; this file is generated from the same table. An argument with `?` is optional.
+The server lists 120 tools. The live `tools/list` reply is the authority; this file is generated from the same table. An argument with `?` is optional.
 
 | Tool | Arguments | What it does |
 |---|---|---|
@@ -31,7 +31,7 @@ The server lists 117 tools. The live `tools/list` reply is the authority; this f
 | `set_operation_geometry` | `operation`, `picks` | Set the features an operation machines (faces, edge chains, loops, or DXF sketch chains and layers with optional per-chain side and direction overrides) by list_features ids. One undo step; undo restores the previous source. |
 | `set_operation_area` | `area`, `operation` | Replace an operation's area controls (containment, offset, outer_offset, corner, extension, extra include/exclude boundaries, open boundary). One undo step. |
 | `get_operation_do_not_touch` | `operation` | Read an operation's 'Do not touch' protected faces/edges and standoff clearance (mm). |
-| `set_operation_do_not_touch` | `clearance?`, `operation`, `picks?` | Set protected faces or edge chains (plus standoff clearance, mm) that Trace, 2D Offset, 3D Pocket, Face and 3D Finish paths must stay clear of across flutes, shank, and holder. Refuses unsupported operation kinds, vertex picks, and overlap with the machining selection. One undo step. |
+| `set_operation_do_not_touch` | `clearance?`, `operation`, `picks?` | Set protected faces or edge chains (plus standoff clearance, mm) that Trace, 2D Offset, 2D Adaptive, 3D Pocket, Face and 3D Finish paths must stay clear of across flutes, shank, and holder. Refuses unsupported operation kinds, vertex picks, and overlap with the machining selection. One undo step. |
 | `undo` | - | Undo the last document change. |
 | `redo` | - | Redo the last undone change. |
 | `generate` | `name?` | Generate toolpaths: one named operation (always regenerated) or, with no name, every operation that is not current when reached in program order, including operations made stale by earlier generations in this call. A refusal stops the call and names the operation. |
@@ -122,3 +122,6 @@ The server lists 117 tools. The live `tools/list` reply is the authority; this f
 | `import_tool_holder_dxf` | `path`, `tool`, `units?` | Import a 2D half-profile ASCII DXF (one LINE on layer CENTRELINE plus an open LINE/ARC profile chain wholly on one side) as a tool's revolved holder body. The centreline must be parallel to Y. DXF +Y is tool +Z; z = 0 is the lower end of the centreline, independent of draw direction. One undo step; missing centreline, crossing geometry, closed loops, splines or missing $INSUNITS (unless "units" is stated) refuse by name. |
 | `export_tool_holder_dxf` | `path`, `tool` | Export a document tool's holder body or drawn/converted spun profile to an ASCII DXF half-profile in millimetres (layers CENTRELINE and PROFILE, $INSUNITS = 4). |
 | `convert_tool_step_to_profile` | `dxf_out_path?`, `step_path`, `tool` | Convert an ISO 13399 aligned STEP holder/body to a conservative outer-envelope half-profile on a document tool (non-revolved features are enveloped, never cut away) and optionally write it as ASCII DXF. Refuses STEP files with missing, degenerate or ambiguous ISO 13399 coordinate systems instead of guessing +Z. One undo step. |
+| `save_cut_recipe` | `library?`, `name`, `operation`, `replace?` | Save an operation's settings (its kind, tool, every parameter such as depths, stepdown, feeds, tabs, leads and ramps, and the workpiece material in force) as a named cut recipe in the user's recipe library. Not a document change: no undo step. A name already in the library is refused unless replace is true. |
+| `list_cut_recipes` | `library?` | The cut recipes in the user's recipe library: name, operation kind, tool and material of each. |
+| `apply_cut_recipe` | `library?`, `name?`, `recipe`, `source?` | Add an operation from a saved cut recipe, on the stock, a model or a placed DXF profile, in the active setup. One undo step removes it. Refused by the recipe's name: a recipe not in the library, a tool no longer in the document, a material the table no longer has or one other than the material in force. Every add_operation check applies. Not generated until generate runs. |

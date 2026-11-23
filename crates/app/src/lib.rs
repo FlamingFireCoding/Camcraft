@@ -8,6 +8,8 @@ pub use camcraft_cl::cl;
 pub mod cli;
 pub mod clock;
 pub mod commands;
+// #3073: saved cut recipes - an operation's settings under a name.
+pub mod cut_recipe;
 pub mod cutting;
 // #890: which row of a tool's per-material cutting data the document picks.
 pub mod cutting_rows;
