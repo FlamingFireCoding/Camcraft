@@ -130,6 +130,7 @@ fn finish() -> OpParams {
     OpParams::Finish3D {
         pattern: FinishPattern::Waterline,
         direction_angle: 0.0,
+        pass_start: camcraft_app::machining2d::PassStart::Auto,
         stepover: None,
         tolerance: 0.1,
         clearance_z: Height::fixed(16.0),

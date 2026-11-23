@@ -158,6 +158,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             pencil_reference,
             fill_openings,
             gap_link,
+            pass_start,
         } => {
             if tab == SEC_HEIGHTS {
                 height_editor(
@@ -231,6 +232,12 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 if matches!(pattern, camcraft_app::finishing3d::FinishPattern::Parallel) {
                     prop_row(ui, "Direction angle", |ui| num_unit_row(ui, direction_angle, "°"));
                     hint(ui, "Counterclockwise from work coordinate +X. Enter 0 or more and less than 360 degrees.");
+                }
+                // #3362: the shared row; only Contour and Flat read it.
+                super::pass_start_row::pass_start_row(ui, "finish3d", pass_start);
+                if !camcraft_app::finishing3d::reads_pass_start(*pattern) {
+                    let name = FINISH_PATTERNS.get(pat_idx).copied().unwrap_or("This pattern");
+                    consequence(ui, &super::pass_start_row::finish3d_no_ring_order(name));
                 }
                 if !matches!(pattern, camcraft_app::finishing3d::FinishPattern::Waterline) {
                     // The scallop law on the reference R3 ball -

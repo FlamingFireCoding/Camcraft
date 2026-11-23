@@ -1318,6 +1318,7 @@ fn every_field_lives_on_exactly_one_section() {
                 ),
                 ("Passes", vec![
                     "Pattern",
+                    "Pass starts at",
                     "Stepover",
                     "Minimum step",
                     "Ramp between lines",
