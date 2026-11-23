@@ -210,6 +210,7 @@ pub(super) fn build_3d_world() -> World {
     let top_clr = Height::of(HeightReference::TopOfStock, 10.0);
     let ret_z = Height::of(HeightReference::TopOfStock, 4.0);
     create_and_gen(&world, &mut h, "3D Pocket1", "EM-0600-4FL", SrcRef::Entity("Mold".into()), OpParams::Pocket3D {
+        pass_start: Default::default(),
         stepover: 2.5, stock_to_leave: 0.3, clearance_z: top_clr, retract_z: Some(ret_z),
         top_z: Height::of(HeightReference::TopOfStock, 0.0),
         bottom_z: Height::of(HeightReference::BottomOfModel, 0.0),
@@ -228,6 +229,7 @@ pub(super) fn build_3d_world() -> World {
         // #1713: the guide walkthrough posts without gap links - the
         // Jump link is the pre-gap-link behaviour, as the text states.
         gap_link: camcraft_app::finishing3d::GapLink::Jump,
+        pass_start: camcraft_app::machining2d::PassStart::Auto,
     });
     world
 }

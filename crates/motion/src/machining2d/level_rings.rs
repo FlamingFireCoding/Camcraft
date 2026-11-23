@@ -69,26 +69,56 @@ pub(super) fn ring_plan_ramped(
     side: &StartSide,
     ramps: bool,
 ) -> Result<RampedRings, GenError> {
+    let off = p.tool_diameter * 0.5 + p.stock_to_leave;
+    let ramp_entry = if ramps { Some(p) } else { None };
+    side_plan(region, center, off, p.tool_diameter * 0.5, (p.tiling_step(), p.climb), strategy, side, ramp_entry)
+}
+
+/// The 3-D rough's level (#3361): [`ring_plan`] over a cutter-centre
+/// area that is its own outline (the level law erodes the target once,
+/// so the start side is read off `center`'s own edges). Auto, a row
+/// strategy and an Inside with no hole keep `plan_passes` byte for byte.
+pub fn level_ring_plan(
+    center: &Region,
+    tool_r: f64,
+    step: f64,
+    climb: bool,
+    strategy: PocketStrategy,
+    side: &StartSide,
+) -> Result<(Vec<Vec<Point2>>, Vec<String>), GenError> {
+    side_plan(center, center, 0.0, tool_r, (step, climb), strategy, side, None).map(|(passes, notes, _)| (passes, notes))
+}
+
+fn side_plan(
+    region: &Region,
+    center: &Region,
+    off: f64,
+    tool_r: f64,
+    (step, climb): (f64, bool),
+    strategy: PocketStrategy,
+    side: &StartSide,
+    ramp_entry: Option<&PocketParams>,
+) -> Result<RampedRings, GenError> {
     let rings = matches!(strategy, PocketStrategy::Waterline | PocketStrategy::OffsetRings | PocketStrategy::Adaptive);
-    if side.start != PassStart::Auto && rings {
-        let off = p.tool_diameter * 0.5 + p.stock_to_leave;
-        if let Some(pieces) = level_pieces(region, center, off, p.tiling_step(), p.climb, side.start)? {
-            let plan = order(pieces, center, p.tool_diameter * 0.5, side)?;
-            let left = unswept(center, &plan.passes, p.tool_diameter * 0.5)?;
-            let short = if ramps { too_short_at(&plan.passes, &plan.ramp_starts, p) } else { None };
-            if left <= LEFT_TOL && short.is_none() {
-                let starts = if ramps { plan.ramp_starts } else { Vec::new() };
-                return Ok((plan.passes, plan.notes, starts));
-            }
-            let auto = plan_passes(center, p.tiling_step(), p.climb, strategy)?;
-            let note = match short.filter(|_| left <= LEFT_TOL) {
-                Some(at) => side.ramp_fallback_note(at.x, at.y),
-                None => side.fallback_note(left),
-            };
-            return Ok((auto, vec![note], Vec::new()));
+    if side.start != PassStart::Auto
+        && rings
+        && let Some(pieces) = level_pieces(region, center, off, step, climb, side.start)?
+    {
+        let plan = order(pieces, center, tool_r, side)?;
+        let left = unswept(center, &plan.passes, tool_r)?;
+        let short = ramp_entry.and_then(|p| too_short_at(&plan.passes, &plan.ramp_starts, p));
+        if left <= LEFT_TOL && short.is_none() {
+            let starts = if ramp_entry.is_some() { plan.ramp_starts } else { Vec::new() };
+            return Ok((plan.passes, plan.notes, starts));
         }
+        let auto = plan_passes(center, step, climb, strategy)?;
+        let note = match short.filter(|_| left <= LEFT_TOL) {
+            Some(at) => side.ramp_fallback_note(at.x, at.y),
+            None => side.fallback_note(left),
+        };
+        return Ok((auto, vec![note], Vec::new()));
     }
-    Ok((plan_passes(center, p.tiling_step(), p.climb, strategy)?, Vec::new(), Vec::new()))
+    Ok((plan_passes(center, step, climb, strategy)?, Vec::new(), Vec::new()))
 }
 
 /// The most area (mm2) of the cutter-centre area that the passes may leave
@@ -142,7 +172,8 @@ pub(super) fn level_pieces(
         } else if start == PassStart::Inside {
             started = true;
             // The distance from the holes: the holes' centre keep-out grown.
-            let hc = holes.offset(off)?;
+            // `off` 0: the area is its own outline (the 3-D level).
+            let hc = if off == 0.0 { holes } else { holes.offset(off)? };
             sides(&c, &hc.offset(SIDE_EPS)?, true, climb, &mut out)?;
             let mut done = false;
             for j in 1..=cap {
@@ -158,7 +189,7 @@ pub(super) fn level_pieces(
         } else {
             started = true;
             // The distance from the outer edge: the filled part eroded.
-            let fc = filled.offset(-off)?;
+            let fc = if off == 0.0 { filled } else { filled.offset(-off)? };
             sides(&c, &fc.offset(-SIDE_EPS)?, false, climb, &mut out)?;
             let mut done = false;
             for j in 1..=cap {
