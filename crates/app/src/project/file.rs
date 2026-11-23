@@ -174,7 +174,7 @@ use super::*;
 /// nothing, what every v77 machine was, so a v77 file steps up unchanged.
 /// An old reader must refuse a v78 file rather than drop the reservations
 /// and post a cutting tool at a reserved probe pocket.
-pub const PROJECT_VERSION: u32 = 77;
+pub const PROJECT_VERSION: u32 = 78;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

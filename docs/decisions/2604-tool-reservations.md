@@ -37,9 +37,10 @@ or infer name-based tool calls.
 
 **Cost to change later:** More reservation uses need explicit tool-kind
 rules and tests. Controller name-based calls need a separate post change.
-Project version 77 marks the stored `reserved_tools` field. An older
+Project version 78 marks the stored `reserved_tools` field. An older
 reader refuses the file. It does not drop the reservation and post a
-cutting tool at a reserved pocket. A v76 file steps up unchanged.
-PR #3485 also asks for a version step; the PR that merges second takes
-the next number. Changing the stored shape needs a new version step. Existing
+cutting tool at a reserved pocket. A v77 file steps up unchanged.
+PR #3485 merged first and took version 77 for the setup `order` (#3447),
+so this PR takes 78. The step is a breaking change of the project file:
+the commit has a `BREAKING CHANGE:` footer. Changing the stored shape needs a new version step. Existing
 machine assignments must remain explicit during either change.
