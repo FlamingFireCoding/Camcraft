@@ -11,7 +11,7 @@
 use super::direction::AxisDirection;
 // #669: the kind moved to its own seam; re-exported so `def::*` (and
 // every `machine::Kind` path) reads as before.
-pub use super::kind::{can_tilt, kind, Kind};
+pub use super::kind::{can_tilt, is_router, is_router_word, kind, Kind};
 pub use super::trunnion::RotarySignConvention;
 use serde::{Deserialize, Serialize};
 
@@ -228,6 +228,9 @@ pub struct Machine {
     /// post that needs it refuses rather than guess where up is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub safe_retract_z: Option<f64>,
+    /// `general.operator_side` (#2632): the stated side; `None` takes the kind's default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator_side: Option<super::operator_side::OperatorSide>,
     /// The `edm` section of a wire or sinker EDM machine (#530), or
     /// None: unstated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -253,6 +256,12 @@ pub struct Machine {
     /// by name; `Bake` works on every machine.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coordinate_rotation: Option<bool>,
+    /// Installed controller and NC software release, exactly as recorded at the machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller_identity: Option<super::ControllerIdentity>,
+    /// Tool-changing procedure supported by this particular installation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_change: Option<super::ToolChangeMode>,
     /// Explicit `controller.rtcp` capability flag (#1962); `None` infers from tilt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub controller_rtcp: Option<bool>,
@@ -314,6 +323,7 @@ impl Machine {
                 .kind
                 .as_deref()
                 .is_none_or(|w| Kind::from_word(w).is_some())
+            && self.controller_identity.as_ref().is_none_or(|c| c.validate().is_ok())
             && self.coolants.iter().all(|c| !c.name.is_empty())
             && self.waterjet_sane()
             && self.plasma_sane()

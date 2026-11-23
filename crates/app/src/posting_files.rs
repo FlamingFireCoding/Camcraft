@@ -51,6 +51,9 @@ pub const BUILTINS: &[(&str, AssetFile)] = &[
     ("Doosan DNM", AssetFile("doosan-dnm.cps")),
     ("Makera Carvera", AssetFile("carvera.cps")),
     ("Mach4", AssetFile("mach4.cps")),
+    // #2482: Mach3 Mill, 3-axis - canned cycles with G98, T M6 + G43 H, dwell unit by option.
+    ("Mach3", AssetFile("mach3.cps")),
+    ("Heidenhain Klartext", AssetFile("heidenhain-klartext.cps")),
     ("Fanuc Lathe", AssetFile("fanuc-lathe.cps")),
     ("Tormach PathPilot Lathe", AssetFile("tormach-lathe.cps")),
     // #671: the plasma dialect, from UM10720 §6-7 and the PathPilot
@@ -62,6 +65,7 @@ pub const BUILTINS: &[(&str, AssetFile)] = &[
     // #617: the Sodick 2-axis wire post, its words from Sodick's 1998
     // operation manual (Mark 21 / EX21); not verified on a control.
     ("Sodick Wire EDM (Mark 21)", AssetFile("sodick-wire.cps")),
+    (super::agie::POST, AssetFile("agie-native.cps")),
     // #542: the generic ISO-style sinker post; every EDM code is the
     // machine's `edm.codes` (#290 D5). It serves sinker EDMs only.
     ("Sinker EDM (ISO)", AssetFile("sinker-iso.cps")),
@@ -78,6 +82,7 @@ pub const BUILTINS: &[(&str, AssetFile)] = &[
 /// label and an install-time default, never a file's identity.
 pub const MACHINES: &[(&str, AssetFile)] = &[
     ("VMC 3-axis", AssetFile("vmc.mch")),
+    ("Fehlmann Picomax 55 (iTNC 530)", AssetFile("fehlmann-picomax55.mch")),
     ("Tilt-head 5-axis", AssetFile("tilthead.mch")),
     ("Mill-turn", AssetFile("millturn.mch")),
     ("Lathe", AssetFile("lathe.mch")),
@@ -332,6 +337,7 @@ fn embedded(kind: &str, file: &str) -> Option<&'static str> {
         ("posts", "haas.cps") => Some(include_str!("../../../assets/posts/haas.cps")),
         ("posts", "sinumerik.cps") => Some(include_str!("../../../assets/posts/sinumerik.cps")),
         ("posts", "heidenhain.cps") => Some(include_str!("../../../assets/posts/heidenhain.cps")),
+        ("posts", "heidenhain-klartext.cps") => Some(include_str!("../../../assets/posts/heidenhain-klartext.cps")),
         ("posts", "mazak.cps") => Some(include_str!("../../../assets/posts/mazak.cps")),
         ("posts", "tormach.cps") => Some(include_str!("../../../assets/posts/tormach.cps")),
         ("posts", "grblhal.cps") => Some(include_str!("../../../assets/posts/grblhal.cps")),
@@ -341,13 +347,16 @@ fn embedded(kind: &str, file: &str) -> Option<&'static str> {
         ("posts", "doosan-dnm.cps") => Some(include_str!("../../../assets/posts/doosan-dnm.cps")),
         ("posts", "carvera.cps") => Some(include_str!("../../../assets/posts/carvera.cps")),
         ("posts", "mach4.cps") => Some(include_str!("../../../assets/posts/mach4.cps")),
+        ("posts", "mach3.cps") => Some(include_str!("../../../assets/posts/mach3.cps")),
         ("posts", "fanuc-lathe.cps") => Some(include_str!("../../../assets/posts/fanuc-lathe.cps")),
         ("posts", "tormach-lathe.cps") => Some(include_str!("../../../assets/posts/tormach-lathe.cps")),
         ("posts", "tormach-plasma.cps") => Some(include_str!("../../../assets/posts/tormach-plasma.cps")),
         ("posts", "wire-iso.cps") => Some(include_str!("../../../assets/posts/wire-iso.cps")),
+        ("posts", "agie-native.cps") => Some(include_str!("../../../assets/posts/agie-native.cps")),
         ("posts", "sodick-wire.cps") => Some(include_str!("../../../assets/posts/sodick-wire.cps")),
         ("posts", "sinker-iso.cps") => Some(include_str!("../../../assets/posts/sinker-iso.cps")),
         ("machines", "vmc.mch") => Some(include_str!("../../../assets/machines/vmc.mch")),
+        ("machines", "fehlmann-picomax55.mch") => Some(include_str!("../../../assets/machines/fehlmann-picomax55.mch")),
         ("machines", "tilthead.mch") => Some(include_str!("../../../assets/machines/tilthead.mch")),
         ("machines", "millturn.mch") => Some(include_str!("../../../assets/machines/millturn.mch")),
         ("machines", "lathe.mch") => Some(include_str!("../../../assets/machines/lathe.mch")),

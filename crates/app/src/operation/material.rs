@@ -206,15 +206,18 @@ pub fn detect_holes(
         _ => return Err(format!("'{name}' is not a drilling operation")),
     };
     let axial = holes_of(world, setup, src).map_err(|e| e.to_string())?;
-    // #2601: report directed mouths on every machine. The generator's
-    // machine and mixed-list checks still refuse unsupported work.
+    // #2601: directed mouths are read on every machine. #3448: a mill
+    // has no turret, so each one is named in `skipped`, never stored.
     let radial = if !is_drill {
         Vec::new()
     } else {
         cross_holes_of(world, setup, src).map_err(|e| e.to_string())?
     };
+    let (radial, side) = super::cross_reach::keep_reachable(world, setup, radial);
     if axial.is_empty() && radial.is_empty() {
-        return Err(if is_drill {
+        return Err(if !side.is_empty() {
+            format!("no hole this Drill op can make along Z: {}", side.join("; "))
+        } else if is_drill {
             "no drilled holes found in the source model - Z or radial".to_string()
         } else {
             "no Z-axis holes found in the source model - this ride reads only those".to_string()
@@ -223,7 +226,8 @@ pub fn detect_holes(
     *holes = axial;
     // #1556: a Bore op's ride is one ring; a hole wider than that ring
     // clears would leave a core - left out here, named, never stored.
-    let skipped = super::bore_reach::skip_unborable(world, name, &mut params)?;
+    let mut skipped = super::bore_reach::skip_unborable(world, name, &mut params)?;
+    skipped.extend(side);
     if let OpParams::Drill { cross, .. } = &mut params {
         *cross = radial;
     }
@@ -239,6 +243,14 @@ pub(super) fn named_material(world: &World, setup: Option<&str>, name: &str, gon
     let Some(entity) = model::find_by_name(world, name) else {
         return Err(GenError::Invalid(gone.to_string()));
     };
+    if crate::sketch::is_sketch(world, &entity) {
+        let Some(pose) = crate::sketch::world_pose(world, &entity) else {
+            return Err(GenError::Invalid(format!(
+                "DXF profile '{name}' has no stock to lie on - set up stock first"
+            )));
+        };
+        return Ok(Material { facets: Vec::new(), top: pose.pos.z, bodies: Vec::new(), excess: 0.0, file_tolerance: false });
+    }
     let facets = crate::setup_align::facets_in(world, &entity, setup).unwrap_or_default();
     let top = crate::setup_align::entity_aabb_in(world, &entity, setup)
         .map(|b| b.max.z)

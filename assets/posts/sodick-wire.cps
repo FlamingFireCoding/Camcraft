@@ -105,6 +105,7 @@ function fu(v) {
   return (s === "-0." || s === "-.") ? "0." : s;
 }
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }
+function arcWord(k, v) { return k === "Z" ? "" : wo(k, v, k === "X" ? orgX : orgY); }  // #3442: a position word as written (no Z), for arcFate
 function block(words) {
   var a = [];
   for (var i = 0; i < words.length; i++) {
@@ -112,7 +113,7 @@ function block(words) {
   }
   if (a.length > 0) writeln(a.join(" "));
 }
-function msg(s) { if (typeof message === "function") message(s); else writeln("(" + s + ")"); }
+function msg(s) { if (typeof message === "function") message(s); else note(s); }
 function refuse(key, s) {
   if (refused[key]) return;
   refused[key] = true;
@@ -124,7 +125,8 @@ function clean(s) {
   t = t.replace(/[()%;\/]/g, " ").replace(/[^\x20-\x7E]/g, "?").replace(/\s+/g, " ").trim();
   return t.length > 48 ? t.substring(0, 48).trim() : t;
 }
-function note(s) { block(["(" + s + ")"]); }
+// #3213: the control rejects hashes, brackets and escapes in every comment.
+function note(s) { block(["(" + String(s).replace(/[#\[\]\\]/g, " ") + ")"]); }
 // Program notes use this dialect without truncating the stated bound.
 function onComment(s) { note(commentText(s)); }
 
@@ -465,6 +467,9 @@ function onCircular() {
     return;
   }
   if (!cutOk(p)) return;
+  // #3442: an arc whose written ends coincide is no arc block (arcFate, PRELUDE).
+  var fate = arcFate(arcWord);
+  if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   var c = p.IJKIncrement || {};
   if (!has(c.I) || !has(c.J) || !has(p.StartX) || !has(p.StartY)) {
     refuse("arcc" + opName, who() + "an arc states no centre - refused");

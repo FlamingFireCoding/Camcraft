@@ -72,6 +72,8 @@ mod heights_sel;
 pub use heights_sel::*;
 mod kinds;
 pub use kinds::*;
+mod pick_kinds;
+pub use pick_kinds::*;
 mod seed;
 pub use seed::seed_params;
 pub mod tool_law;
@@ -80,6 +82,7 @@ mod params;
 mod hole_digest;
 mod slot_fit;
 mod trochoid_op;
+pub use trochoid_op::TROCHOIDAL_SLOT_NO_PASS_ORDER;
 mod stamp;
 mod stamp_tool;
 pub use stamp::*;
@@ -89,6 +92,8 @@ pub(crate) use stamp_stock::write_setup_stock;
 mod material;
 // #2496: a drill makes its own size; a wider hole is named.
 mod drill_size;
+// #3448: a mill names the radial holes it cannot reach.
+mod cross_reach;
 // #2598: a Drill or Thread op's feed against its tool's stated feed.
 pub mod feed_rating;
 pub use material::*;
@@ -97,6 +102,8 @@ pub(crate) use material_region::selection_drives_region;
 mod circle_fit;
 // #1504: the plain Slot's room read off two picked edges or a face.
 mod slot_pick;
+// #1868: the same room read off DXF sketch chains.
+mod slot_sketch;
 pub use slot_pick::{slot_bound_of, slot_fit_of, slot_from_picks};
 pub use circle_fit::{CIRCLE_FIT_TOL, circle_of_region, circular_fit_of};
 mod material_source;
@@ -116,7 +123,10 @@ mod thread_r_plane;
 // #985: external threads - the boss door, the crest region, the neighbour law.
 mod thread_boss;
 pub mod wire_op;
+mod agie_profile;
+pub(crate) use agie_profile::agie_job;
 mod wire_ruled;
+pub(crate) mod wire_sketch;
 // #534: the wire laws' inputs, read live at the post.
 pub mod wire_verify;
 // #541: the sinker EDM burn to depth.
@@ -129,6 +139,10 @@ pub mod sinker_faces;
 pub mod sinker_wear_op;
 // #545: the Sinker Side Burn's seed, laws and generation.
 pub mod sinker_side_op;
+// #1444: the Slot Undercut's seed and generation glue.
+pub mod slot_undercut_op;
+/// #1443: the V-Carve operation's seed and tool doors.
+pub mod vcarve_op;
 // #171: the Probe op seeded from one picked face, edge, vertex or round wall.
 mod probe_pick;
 mod probe_pick_round;
@@ -172,6 +186,13 @@ fn boundary_chain_error(error: boundary_chains::BoundaryError) -> GenError {
     }
 }
 mod contour_open;
+mod contour_sketch_pick;
+mod sketch_memo;
+pub use contour_sketch_pick::{SketchChainInfo, sketch_chain_infos_fresh, sketch_z_range_fresh};
+pub use sketch_memo::{
+    display_heights, sketch_chain_info_builds, sketch_chain_infos, sketch_z_builds, sketch_z_fresh_reads,
+};
+mod contour_sketch;
 mod finish_clip;
 mod finish_entry;
 mod boundary_ctx;
@@ -191,6 +212,7 @@ mod tilt_heights;
 pub use tilt_heights::{fold_height, resolve_params_folded};
 mod wcs_yaw;
 pub(crate) mod corner_relief;
+mod pass_start_stock;
 mod corner_relief_sim;
 mod job;
 pub use job::*;
@@ -227,6 +249,7 @@ mod rotary_law;
 pub(crate) mod spindle_law;
 pub use spindle_law::{spindle_reading, SpindleReading, SPINDLE_TOL};
 mod rotary_gate;
+mod rotary_traverse;
 mod rotary_picks;
 mod air_law;
 // #1595: the depth law an Engrave or Trace on the part carries itself.
@@ -242,6 +265,8 @@ pub mod kept_rejudge;
 pub(crate) mod fidelity_law;
 mod clearance_stock;
 mod first_traverse;
+mod first_traverse_posed;
+mod first_traverse_table;
 mod top_stock;
 mod stock_top_law;
 // #266: a tap judged at its thread's core.
