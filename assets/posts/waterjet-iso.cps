@@ -236,23 +236,28 @@ function onToolChange(number, name) { toolName = clean(name); }
 // The section's preamble: refused unless the machine is a waterjet and
 // the section carries a WATERJET header (a mill, lathe or plasma path is
 // not a waterjet cut).
+function headerOk() {
+  if (properties.WaterjetAbrasive !== undefined) return true;
+  refuse("op" + opName, who() + (opKind ? "a " + opKind + " operation" : "a path with no WATERJET header") +
+    " is not waterjet cutting - this post writes only waterjet paths");
+  return false;
+}
+
 function startPreamble() {
   if (sectionOpen) return;
   sectionOpen = true;
   if (!machineOk()) return;
-  if (properties.WaterjetAbrasive === undefined) {
-    refuse("op" + opName, who() + (opKind ? "a " + opKind + " operation" : "a path with no WATERJET header") +
-      " is not waterjet cutting - this post writes only waterjet paths");
-    return;
-  }
+  if (!headerOk()) return;
   if (setupName && setupName !== setupSaid) { note("SETUP: " + setupName); setupSaid = setupName; }
   if (opName) note("OPERATION: " + opName + (opKind ? " - " + opKind.toUpperCase() : ""));
   note((toolName || "NOZZLE") + " - " + (properties.WaterjetAbrasive ? "ABRASIVE" : "PURE WATER"));
   block([wcsWord]);
 }
 
+// A jet word or a cut with no header in force is refused by name, never
+// dropped without a warning.
 function jetOk() {
-  return sectionOpen && properties.WaterjetAbrasive !== undefined && !refused.kind && !refused.rotary;
+  return sectionOpen && !refused.kind && !refused.rotary && headerOk();
 }
 
 function onSection() { startPreamble(); }

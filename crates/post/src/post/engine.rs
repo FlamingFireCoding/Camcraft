@@ -333,6 +333,11 @@ pub fn run_program_with(
                 tool_macros.call(&mut s, *number, name)?;
             }
             Record::Section { begin } => {
+                // #1882: `onSection` reads this section's properties, not the
+                // last record's (a header the previous ENDSECTION cleared).
+                if *begin {
+                    s.set_properties(&merged(&base, &BTreeMap::new(), pos))?;
+                }
                 s.call(if *begin { "onSection" } else { "onSectionEnd" }, "")?;
                 if !*begin {
                     torch.section_end(&mut base, &mut warnings);

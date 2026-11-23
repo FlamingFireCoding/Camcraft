@@ -184,6 +184,21 @@ fn waterjet_post_keeps_a_small_positive_feed_or_refuses_it() {
     assert!(ten.program.contains("F10\n"), "{}", ten.program);
 }
 
+/// A section with no WATERJET header after a waterjet section: the
+/// previous ENDSECTION cleared the header, so `onSection` must see no
+/// header and the post must refuse the section by name. It must not drop
+/// the section's moves without a warning.
+#[test]
+fn waterjet_post_refuses_an_adjacent_section_with_no_header() {
+    let stream = "WATERJET\nSECTION\nRapid X 0 Y 0 Z 0\nJET ON C0 OUTER\nFeed X 1000 Y 0 Z 0 F300000\nJET OFF C0\nENDSECTION\nSECTION\nFeed X 10000 Y 0 Z 0 F300000\nENDSECTION\n";
+    let out = post(&jet_machine(), stream, &json!({}));
+    assert_refused(&out.warnings, "a path with no WATERJET header is not waterjet cutting");
+    assert!(out.program.contains("G1 X1 Y0 F300\n"), "the first section posts:\n{}", out.program);
+    // The second section's hook saw the current properties: no second preamble.
+    assert_eq!(out.program.matches("NOZZLE - ").count(), 1, "{}", out.program);
+    assert_eq!(out.program.matches("G54\n").count(), 1, "{}", out.program);
+}
+
 #[test]
 fn waterjet_rapid_cache_resets_when_the_coordinate_frame_changes() {
     // Each new frame needs a physical traverse, even when its words match
