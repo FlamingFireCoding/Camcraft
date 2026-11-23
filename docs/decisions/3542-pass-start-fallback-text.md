@@ -9,9 +9,13 @@ text:
 > N area(s), so the Auto order was used there instead, from move M: the
 > notes name each one (the post is not held: the cut is verified)
 
-The op sets the cause from the notes (`pass_start_fallbacks`, the guard
-notes that start with `PASS_START_NOTE`), never from the op kind: 2D
-Pocket, 2D Offset and 3D pocket reach the guard, and an Adaptive op on its
+The op sets the cause from the notes (`pass_start_fallbacks`), never from
+the op kind. A guard note contains `PASS_START_NOTE` and ends with the
+shared tail `PASS_START_FALLBACK_TAIL` ("this area in the Auto order
+instead", used by `StartSide::fallback_note`). The match does not read the
+start of the note: 3D pocket (#3618) writes the note after its level, as
+`Z <level>: <note>`. No Adaptive note ends with that tail. 2D Pocket, 2D
+Offset and 3D pocket reach the guard, and an Adaptive op on its
 ring fallback can write an Adaptive note and a guard note on one path.
 `PassStart` is set only when every fallback note is a guard note; any
 Adaptive note keeps the Adaptive cause and text. The warning moved into

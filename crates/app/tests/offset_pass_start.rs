@@ -249,6 +249,11 @@ fn the_offset_guard_fallback_warning_names_the_pass_start() {
         "Pass starts at: the selected start side would leave material uncut in 1 area, so the Auto order was used there instead, from move 0: the notes name each one (the post is not held: the cut is verified)"
     );
     assert!(!w.blocks_post(), "{w}");
+    // #3542 review: 3D pocket writes the same note after its level
+    // ("Z <level>: "); the cause and the text are the same.
+    let level = Toolpath { notes: vec![format!("Z 1.000: {note}")], ..Default::default() };
+    let w3 = strategy_fallback(&level).expect("the 3D pocket guard note posts a fallback warning");
+    assert_eq!(w3, w, "the 3D pocket form reads as the same pass-start fallback");
     let adaptive = "adaptive: Pass starts at Outside - the HSM plan failed - Offset rings cut the pocket in that order instead";
     let mixed = Toolpath { notes: vec![adaptive.to_owned(), note], ..Default::default() };
     let w = strategy_fallback(&mixed).expect("a fallback warning");
