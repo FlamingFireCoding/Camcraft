@@ -140,7 +140,11 @@ pub(super) fn order(pieces: Vec<Piece>, center: &Region, tool_r: f64, side: &Sta
                     cur = vec![q];
                     cur.extend(p.pts.iter().copied());
                 } else {
-                    if let Some(&s) = p.pts.first().filter(|_| p.level > 0 && !p.core && side.start == PassStart::Outside) {
+                    // #3744: round a part, Outside walks Inside's ring set,
+                    // whose pieces end on no part wall: it enters as Inside
+                    // does, with no dead-end ramp (#3748 retires the rest).
+                    let dead_end = side.start == PassStart::Outside && !side.around_part;
+                    if let Some(&s) = p.pts.first().filter(|_| p.level > 0 && !p.core && dead_end) {
                         ramp_starts.push(s);
                     }
                     cur = p.pts.clone();

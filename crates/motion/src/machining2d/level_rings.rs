@@ -26,7 +26,7 @@ use super::pass_start::{PassStart, StartSide};
 use super::pocket::PocketParams;
 use super::pocket_plan::plan_passes;
 use super::pocket_strategy::PocketStrategy;
-use super::ring_side::mirror;
+use super::ring_side::{mirror, share_ends};
 use super::ring::dist;
 
 /// How far (mm) the area's own boundary may stand from the start side
@@ -298,38 +298,6 @@ fn sides(center: &Region, start_side: &Region, start_inside: bool, climb: bool, 
         push(out, WALL, &back, wall);
     }
     Ok(())
-}
-
-/// Each end of a ring piece that stands on the area's boundary becomes
-/// a vertex of the boundary walk it stands on (ring 0 or a wall): the
-/// two then share the point exactly, so the verifier's crossing law
-/// reads a touch there, never a crossing.
-fn share_ends(out: &mut [Piece]) {
-    let ends: Vec<Point2> = out
-        .iter()
-        .filter(|p| !p.closed && p.level != 0 && p.level != WALL)
-        .flat_map(|p| p.pts.first().into_iter().chain(p.pts.last()).copied().collect::<Vec<_>>())
-        .collect();
-    for p in out.iter_mut().filter(|p| p.level == 0 || p.level == WALL) {
-        for &e in &ends {
-            let at = p.pts.windows(2).position(|w| w[0] != e && w[1] != e && on_segment(e, w[0], w[1]));
-            if let Some(i) = at {
-                p.pts.insert(i + 1, e);
-            }
-        }
-    }
-}
-
-/// Is `e` on the segment `a -> b`, strictly between its ends, within a
-/// nanometre?
-fn on_segment(e: Point2, a: Point2, b: Point2) -> bool {
-    let (dx, dy) = (b.x - a.x, b.y - a.y);
-    let dd = dx * dx + dy * dy;
-    if !(dd > 0.0 && dd.is_finite()) {
-        return false;
-    }
-    let t = ((e.x - a.x) * dx + (e.y - a.y) * dy) / dd;
-    t > 0.0 && t < 1.0 && dist(e, Point2::new(a.x + t * dx, a.y + t * dy)) <= 1e-6
 }
 
 /// Ring `level`: the loops of `g` clipped to `center`, reversed when

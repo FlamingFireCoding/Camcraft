@@ -39,8 +39,19 @@ the part, and Auto offset both edges (`waterline_passes`).
   `StrategyFallback` note. Dropped for now: clean-up rings of the same set
   for a leftover. The guard is the Prime Directive's net, and the dog-bone
   pins assert that it does not fire. #3743 owns the replacement.
-- The #3567 dead-end ramp marks (`level_order`, Outside only) stay; #3748
-  retires them. The entry (#3746) and the links (#3747) are not changed.
+- The #3567 dead-end ramp marks go away round a part (issue step 6). The
+  Outside pieces of the one set end on no part wall, so Outside enters as
+  Inside does. On the fig8 Auto pass (`flute_reach`), two dead-end ramps
+  crossed in XY at the same depth, and the crossing law blocked the post.
+  The marks stay for a pocket (`around_part: false`); #3748 retires them.
+  The entry (#3746) and the links (#3747) are not changed.
+- The ring ends are snapped onto the boundary walk within 0.1 um
+  (`ring_side::share_ends`). The closing chord of a closed walk is
+  included. Before, the test was 1 nm, and a ring end that the clip put
+  3 um off its chord was not shared. On the block of `shoulder_adaptive`,
+  the verifier then read a crossing at that end. Inside had the same gap.
+  The ends of an open walk never move, because ring 0 and a wall share
+  them.
 - When Auto resolves, the "Pass start" notes name the side that was cut
   ("Inside" or "Outside"), not "Auto". Dropped: an extra note for Auto,
   because each note shows as a warning line on the op page.
