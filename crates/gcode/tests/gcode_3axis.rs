@@ -1,5 +1,5 @@
 //! Pinning tests for `camcraft-gcode` RS-274/NGC and ISO 6983 3-axis milling parsing.
-//! Gate map: covers gcode::types, gcode::lexer, gcode::arc, gcode::cycle, gcode::interp.
+//! Gate map: covers camcraft_gcode::{types, lexer, block, block_codes, arc, cycle, motion, section, interp, error}.
 
 use camcraft_cl::cl::{ArcPlane, CycleKind, MoveKind};
 use camcraft_gcode::{

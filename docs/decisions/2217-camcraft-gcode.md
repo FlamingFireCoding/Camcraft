@@ -19,6 +19,12 @@
 - *Evaluating fanuc macro variables (`#`) or `M98` subprograms in v1*: rejected so the 3-axis parser stays deterministic and never mis-executes control flow; left cleanly separated for a future macro preprocessor if needed.
 - *Silent fallback to `G21` mm when unit mode is absent*: rejected so unitless programs cannot scale inches as millimeters silently.
 
+**Continuation on current main (qsmits, 2026-11-23).**
+- Kept commit `711314efd` (Mike Kinney) by a merge of it into main `60376ccbb`. The three conflicts were lists only: the root `members` line and the `BATCH_CRATES` / `ALL_CRATES` / `CLIPPY` lines in `xtask/src/plan.rs` now hold both `"gcode"` (after `"cl"`) and main's `"gpu"`; the release step count in `xtask/src/tests.rs` keeps main's known-fail `checks` term and the held `plan::ALL_CRATES.len()` term.
+- Main's later xtask tests list the crates by hand. `heavy_plan_tests::reach_follows_the_crate_dependencies` now expects `gcode` in the reach of `geometry` (the edge `camcraft-gcode -> camcraft-geometry` puts it there). `step_tests::batch_prebuild_leaves_suite_steps_fresh_with_truck_dev_dep` writes a stub `crates/gcode` for its fixture workspace.
+- Both test files name their modules in a `Gate map: covers camcraft_gcode::{..}` line, so quick selects them for a change of any `crates/gcode/src` module. Added `tests/degenerate_input.rs`: malformed programs (empty, huge numbers, zero radius, `Q0` pecks, huge `L` repeats, bad comments) give a value or a refusal, with no panic and no hang (5 s limit for each case).
+- Rebuild impact of the two edges, restated: a change in `camcraft-geometry` or `camcraft-cl` rebuilds `camcraft-gcode`. No crate depends on `camcraft-gcode` yet, so a change in it rebuilds nothing else. The batch, release and clippy plans each get one more crate.
+
 **What it would cost to change later.**
 - Adding a new dialect field or mapping from `camcraft-post` / `.cps` headers is additive on `Dialect` with `..Dialect::rs274()`.
 - Supporting cutter compensation or macro expansion later only requires extending `block_codes` and `lexer` behind explicit `ParseOptions` opt-in without altering existing 3-axis section output.
