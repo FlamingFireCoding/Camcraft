@@ -25,6 +25,8 @@ use camcraft_app::operation::{self, Height, OpParams, OpStatus, SrcRef};
 use camcraft_app::post::{cnc, engine};
 use camcraft_app::posting;
 use camcraft_app::schema::Location;
+use camcraft_app::setup_align;
+use camcraft_app::setup_turn::TurnPivot;
 use camcraft_app::tools::catalog;
 use camcraft_app::turning::{PartKept, PartKerf};
 use camcraft_app::world::new_world;
@@ -41,6 +43,11 @@ const STUBBED: [(f64, f64); 4] = [(0.0, -84.0), (15.0, -84.0), (15.0, 0.0), (0.0
 /// The OP20 end-for-end flip preset (180 degrees about X; the angles
 /// `setup_align_lathe.rs` pins).
 const FLIP: [f64; 3] = [180.0, 0.0, 90.0];
+/// The turn that stands a model drawn along document X up the spindle
+/// (the angles `setup_align_lathe.rs` pins), and the same turned end for
+/// end.
+const TURN: [f64; 3] = [90.0, 0.0, 90.0];
+const TURN_FLIPPED: [f64; 3] = [-90.0, 0.0, 90.0];
 
 fn revolve(meridian: &[(f64, f64)], segs: usize) -> Mesh {
     let v = |j: usize, r: f64, z: f64| {
@@ -66,15 +73,45 @@ fn revolve(meridian: &[(f64, f64)], segs: usize) -> Mesh {
 }
 
 /// The lathe, the Ø34 bar Z-84..0, the GT-0300 blade on `corner`, the
-/// model `meridian` as "pin", and - with `flip` - one setup that holds
-/// the part end for end (the OP20 flip preset). The Part op "P1" at
-/// `plane` is created, not generated.
-fn lathe_world(meridian: &[(f64, f64)], corner: Option<u8>, flip: bool, plane: f64) -> (World, History) {
-    lathe_world_kerf(meridian, corner, flip, plane, PartKerf::default())
+/// model `meridian` as "pin", and - with `hold` - one setup that holds
+/// the part as modelled, flipped end for end, spun, or turned. The Part
+/// op "P1" at `plane` is created, not generated.
+fn lathe_world(meridian: &[(f64, f64)], corner: Option<u8>, hold: Hold, plane: f64) -> (World, History) {
+    lathe_world_kerf(meridian, corner, hold, plane, PartKerf::default())
 }
 
 /// [`lathe_world`] with the Part op's kerf setting (#3469).
-fn lathe_world_kerf(meridian: &[(f64, f64)], corner: Option<u8>, flip: bool, plane: f64, kerf: PartKerf) -> (World, History) {
+fn lathe_world_kerf(meridian: &[(f64, f64)], corner: Option<u8>, hold: Hold, plane: f64, kerf: PartKerf) -> (World, History) {
+    lathe_world_of_kerf(revolve(meridian, 32), corner, hold, plane, kerf)
+}
+
+/// How the one setup holds the part.
+#[derive(Clone, Copy)]
+enum Hold {
+    /// No setup alignment: as modelled.
+    AsModelled,
+    /// The OP20 end-for-end flip preset.
+    Flip,
+    /// A turn about the spindle axis only.
+    Spin,
+    /// The given angles, about the WCS origin (a model drawn lying down
+    /// stood up the spindle, as `setup_align_lathe.rs` does).
+    Turn([f64; 3]),
+}
+
+/// A model drawn lying down along document X (the `unturn` of
+/// `setup_align_lathe.rs`): (x, y, z) -> (y, z, x).
+fn lying(m: Mesh) -> Mesh {
+    let mv = |p: Point3| Point3::new(p.y, p.z, p.x);
+    Mesh::from_facets(m.facets.iter().map(|t| Triangle::new(mv(t.a), mv(t.b), mv(t.c))).collect())
+}
+
+fn lathe_world_of(mesh: Mesh, corner: Option<u8>, hold: Hold, plane: f64) -> (World, History) {
+    lathe_world_of_kerf(mesh, corner, hold, plane, PartKerf::default())
+}
+
+/// [`lathe_world_of`] with the Part op's kerf setting (#3469).
+fn lathe_world_of_kerf(mesh: Mesh, corner: Option<u8>, hold: Hold, plane: f64, kerf: PartKerf) -> (World, History) {
     let world = new_world();
     let mut history = History::default();
     let lathe = Machine {
@@ -90,10 +127,16 @@ fn lathe_world_kerf(meridian: &[(f64, f64)], corner: Option<u8>, flip: bool, pla
     history.execute(&world, AddTool::new(&world, GT, blade.clone()).expect("blade"));
     blade.orientation = corner;
     history.execute(&world, ChangeTool::new(&world, GT, blade).expect("a sane corner"));
-    history.execute(&world, ImportModel::from_mesh("pin", revolve(meridian, 32)));
-    if flip {
+    history.execute(&world, ImportModel::from_mesh("pin", mesh));
+    if !matches!(hold, Hold::AsModelled) {
         history.execute(&world, CreateSetup::new(&world, None, None).expect("Setup1"));
-        history.execute(&world, AlignPartToSetup::angles(&world, "Setup1", FLIP).expect("flip"));
+        let cmd = match hold {
+            Hold::Flip => AlignPartToSetup::angles(&world, "Setup1", FLIP),
+            Hold::Spin => AlignPartToSetup::angles(&world, "Setup1", [0.0, 0.0, 90.0]),
+            Hold::Turn(deg) => AlignPartToSetup::turn(&world, "Setup1", deg, TurnPivot::WcsOrigin),
+            Hold::AsModelled => return (world, history),
+        };
+        history.execute(&world, cmd.expect("align"));
     }
     let at = Location { pos: Point3::new(0.0, 0.0, -84.0), ..Location::default() };
     let cmd = SetStock::new(&world, camcraft_app::stock::StockShape::Cylinder { diameter: 34.0, height: 84.0 }, at);
@@ -121,7 +164,7 @@ fn lathe_world_kerf(meridian: &[(f64, f64)], corner: Option<u8>, flip: bool, pla
 }
 
 fn pin_world(corner: Option<u8>) -> (World, History) {
-    let (world, mut history) = lathe_world(&PIN, corner, false, END_FACE);
+    let (world, mut history) = lathe_world(&PIN, corner, Hold::AsModelled, END_FACE);
     history.execute(&world, GenerateOperation::new(&world, "P1").expect("generate"));
     let e = model::find_by_name(&world, "P1").expect("op");
     assert_eq!(operation::status_of(&world, &e), OpStatus::Ok, "the part-off generates");
@@ -179,32 +222,76 @@ fn the_plus_z_corner_posts_the_end_face_itself() {
     assert!(zs.iter().all(|z| (z - END_FACE).abs() < 1e-6), "the +Z corner posts Z-70: {zs:?}");
 }
 
+/// Move the parting plane of "P1" (one undoable edit).
+fn set_plane(world: &World, history: &mut History, plane: f64) {
+    let e = model::find_by_name(world, "P1").expect("op");
+    let mut params = model::operation_of(world, &e).expect("operation").params;
+    if let OpParams::Part { top_z, bottom_z, .. } = &mut params {
+        *top_z = Height::fixed(plane.max(0.0) + 100.0);
+        *bottom_z = Height::fixed(plane);
+    }
+    history.execute(world, EditOperationParams::new(world, "P1", params).expect("edit"));
+}
+
+/// Generate "P1" and read its posted feed Z.
+fn generated_feed_z(world: &World, history: &mut History) -> Vec<f64> {
+    history.execute(world, GenerateOperation::new(world, "P1").expect("generate"));
+    let e = model::find_by_name(world, "P1").expect("op");
+    assert_eq!(operation::status_of(world, &e), OpStatus::Ok, "the part-off generates");
+    posted_feed_z(world)
+}
+
+fn all_at_73(zs: &[f64], what: &str) {
+    assert!(!zs.is_empty() && zs.iter().all(|z| (z + 73.0).abs() < 1e-6), "{what}: the -Z corner posts Z-73: {zs:?}");
+}
+
 #[test]
 fn a_flipped_setup_refuses_the_part_off_by_name() {
     // The stubbed pin flipped end for end: the finished part (Z-84..-14
     // in the setup) is in the chuck, the stub at the free end. The chuck
     // side rule would put the kerf Z-17..-14 into the part, so the
     // part-off is refused before a move exists.
-    let (world, _h) = lathe_world(&STUBBED, Some(2), true, -14.0);
+    let (world, _h) = lathe_world(&STUBBED, Some(2), Hold::Flip, -14.0);
     let why = refusal(&world);
-    for want in ["cannot keep the cut-off piece", "holds the part end for end", "the chuck holds the finished part", "'Chuck piece'"] {
+    for want in ["cannot run here", "on both sides", "holds the part end for end", "'Chuck piece'"] {
         assert!(why.contains(want), "the refusal names {want:?}: {why}");
     }
-    // A part-only model in the flipped setup is refused the same way.
-    let (world, _h) = lathe_world(&PIN, Some(2), true, 0.0);
-    assert!(refusal(&world).contains("holds the part end for end"));
+    // A part-only model in the flipped setup, parted at its +Z end: the
+    // whole model stands on the chuck side - refused as before.
+    let (world, _h) = lathe_world(&PIN, Some(2), Hold::Flip, 0.0);
+    let why = refusal(&world);
+    assert!(why.contains("stands wholly on the chuck side"), "{why}");
 }
 
 #[test]
 fn a_setup_as_modelled_parts_the_stubbed_pin_behind_the_end_face() {
     // The same stubbed pin, held as modelled, plane at the part's end
     // face Z-70 inside the model: the kerf is Z-73..-70.
-    let (world, mut history) = lathe_world(&STUBBED, Some(2), false, END_FACE);
-    history.execute(&world, GenerateOperation::new(&world, "P1").expect("generate"));
-    let e = model::find_by_name(&world, "P1").expect("op");
-    assert_eq!(operation::status_of(&world, &e), OpStatus::Ok, "the part-off generates");
-    let zs = posted_feed_z(&world);
-    assert!(!zs.is_empty() && zs.iter().all(|z| (z + 73.0).abs() < 1e-6), "the -Z corner posts Z-73: {zs:?}");
+    let (world, mut history) = lathe_world(&STUBBED, Some(2), Hold::AsModelled, END_FACE);
+    all_at_73(&generated_feed_z(&world, &mut history), "as modelled");
+    // A turn about the spindle axis only is still as modelled.
+    let (world, mut history) = lathe_world(&STUBBED, Some(2), Hold::Spin, END_FACE);
+    all_at_73(&generated_feed_z(&world, &mut history), "spun about the spindle");
+}
+
+#[test]
+fn a_part_modelled_lying_down_parts_only_at_its_end() {
+    // Drawn along document X and stood up the spindle (TURN): the part
+    // alone, parted at its end face, keeps the model - it generates.
+    let (world, mut history) = lathe_world_of(lying(revolve(&PIN, 32)), Some(2), Hold::Turn(TURN), END_FACE);
+    all_at_73(&generated_feed_z(&world, &mut history), "lying pin under TURN");
+    // With its grip stub, the plane is inside the model: nothing says
+    // which end of a lying model is free - under TURN and under TURN
+    // turned end for end alike.
+    for deg in [TURN, TURN_FLIPPED] {
+        let (world, mut history) = lathe_world_of(lying(revolve(&STUBBED, 32)), Some(2), Hold::Turn(deg), END_FACE);
+        // The plane 14 mm above the model's setup-frame bottom: the
+        // stub/part seam under TURN, inside the model under both turns.
+        let bottom = setup_align::part_aabb_in(&world, None).expect("the model in the setup").min.z;
+        set_plane(&world, &mut history, bottom + 14.0);
+        let why = refusal(&world);
+        assert!(why.contains("modelled lying down"), "{deg:?} (model bottom Z{bottom}): {why}");
+    }
 }
 
 // ---- #3469: the kept piece and the back stock ----
@@ -223,7 +310,7 @@ fn a_flipped_setup_keeping_the_chuck_piece_cuts_the_stub_off_the_free_end() {
     // chuck, the stub Z-14..0 at the free end. Keeping the chuck piece
     // puts the kerf Z-14..-11, on the free-end side of the plane.
     let kerf = PartKerf { kept: PartKept::Chuck, back_stock: 0.0 };
-    let (world, mut history) = lathe_world_kerf(&STUBBED, Some(2), true, -14.0, kerf);
+    let (world, mut history) = lathe_world_kerf(&STUBBED, Some(2), Hold::Flip, -14.0, kerf);
     let e = model::find_by_name(&world, "P1").expect("op");
     let op = model::operation_of(&world, &e).expect("operation");
     let made = operation::generate(&world, &op, "P1").map(|_| ());
@@ -242,7 +329,7 @@ fn a_back_stock_posts_the_kerf_that_far_into_the_bar() {
     // The #3452 case with 0.5 mm back stock: the kerf is Z-73.5..-70.5,
     // so orientation 2 posts Z-73.5 and the part comes off 70.5 mm long.
     let kerf = PartKerf { kept: PartKept::CutOff, back_stock: 0.5 };
-    let (world, mut history) = lathe_world_kerf(&PIN, Some(2), false, END_FACE, kerf);
+    let (world, mut history) = lathe_world_kerf(&PIN, Some(2), Hold::AsModelled, END_FACE, kerf);
     history.execute(&world, GenerateOperation::new(&world, "P1").expect("generate"));
     let e = model::find_by_name(&world, "P1").expect("op");
     assert_eq!(operation::status_of(&world, &e), OpStatus::Ok, "the part-off generates");
@@ -255,7 +342,7 @@ fn the_chuck_piece_with_nothing_in_the_chuck_is_refused_by_name() {
     // The #3452 pin stands wholly above its end face Z-70: keeping the
     // chuck piece parts nothing, and the refusal says which setting.
     let kerf = PartKerf { kept: PartKept::Chuck, back_stock: 0.0 };
-    let (world, _h) = lathe_world_kerf(&PIN, Some(2), false, END_FACE, kerf);
+    let (world, _h) = lathe_world_kerf(&PIN, Some(2), Hold::AsModelled, END_FACE, kerf);
     let why = refusal(&world);
     for want in ["nothing to part", "free-end side (higher Z)", "'Cut-off piece'"] {
         assert!(why.contains(want), "the refusal names {want:?}: {why}");
@@ -264,7 +351,7 @@ fn the_chuck_piece_with_nothing_in_the_chuck_is_refused_by_name() {
 
 #[test]
 fn the_kerf_setting_is_an_undoable_edit_and_rides_the_project_file() {
-    let (world, mut history) = lathe_world(&PIN, Some(2), false, END_FACE);
+    let (world, mut history) = lathe_world(&PIN, Some(2), Hold::AsModelled, END_FACE);
     assert_eq!(kerf_of(&world), PartKerf::default(), "a new part-off keeps the cut-off piece, no back stock");
     // The default writes neither key: an unchanged op saves the same file.
     let p = std::env::temp_dir().join(format!("camcraft-3469-{}.camproj", std::process::id()));

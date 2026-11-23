@@ -28,15 +28,49 @@ with the whole model on the chuck side (the part would be the empty side) is
 refused by name. The kerf position parameter of #3469 is where another side
 will come from.
 
-**A setup that holds the part end for end is refused** (second re-read of
-PR #3472). The setup's `part_alignment` is baked into the facets that the
-kernel reads, so the kernel works in the setup frame. In an OP20 flip setup
-the chuck at -Z holds the FINISHED part and the free end is the scrap: the
-chuck-side rule would cut into the part. Which piece to keep is the user's
-intent and cannot be stated yet, so `collect_job` refuses a Part op when
-`setup_align::reverses_axis` holds: the alignment turns the document +Z to a
-negative setup Z. That predicate catches any alignment that reverses the
-turning axis, not only the flip preset.
+**Where the side matters, a setup that cannot say which end is free is
+refused** (second and third re-reads of PR #3472). The setup's
+`part_alignment` is baked into the facets that the kernel reads, so the
+kernel works in the setup frame. In an OP20 flip setup the chuck at -Z holds
+the FINISHED part and the free end is the scrap. The kept side matters only
+when the model goes on past the plane on both sides
+(`parting_law::plane_inside_model`): at an end of the model the model itself
+is the part, and no setup can turn that wrong. So the Part arm refuses only
+there, with `setup_align::part_off_problem`:
+
+- What fixes the sign: the part AS MODELLED is the as-modelled setup (no
+  alignment), which holds the document +Z up the spindle. The part's own
+  turning axis is fitted on the setup-frame facets (`multiaxis::axis::fit`,
+  the fit the turning frame uses) and read back into the document frame with
+  the inverse of the alignment rotation.
+- A part modelled standing (its axis at least 0.5 along the document Z): the
+  document-up end of the axis must point up the spindle by 0.5 or more.
+  -0.5 or less is "end for end", anything between is "no clear hold".
+  The limit is never 0, so float noise at a horizontal axis decides
+  nothing.
+- A part modelled lying down (along X or Y): no setup is "as modelled", so
+  nothing tells which end the user means as free. A sign rule (for example
+  "the largest component is positive") is a guess: it fails for a part drawn
+  with its stub at +X. So a lying model with the plane inside it is refused.
+  At an end of the model it generates, as under TURN today.
+- A turn about the spindle axis only keeps the hold as modelled.
+
+The first form of this door (`reverses_axis`, document +Z below 0) was
+dropped: it missed the flip of a model drawn lying down, where document Z
+maps to horizontal in OP10 and in OP20 alike.
+
+**Saved projects.** The loader restores the stored stamp, and an op whose
+stamp equals the live one reads Ok. A part-off cached before this change
+holds the old centred kerf. The Part stamp therefore carries the salt
+`part-off-kerf-side-v1` (the `rotary-picked-faces-v1` precedent of #2848):
+every part-off saved before #3452 loads Stale, and the post refuses it
+until it is generated again. The other blade kinds keep their stamps (their
+paths did not change). Pinned by `part_off_saved_before_3452.rs` with a
+fixture recorded on main.
+
+**Behaviour that worked before and is refused now** (#3469 is the way back):
+a part-off with the plane inside the model in an aligned setup that does not
+hold the part as modelled, and in a setup with a part modelled lying down.
 
 **Where the rule decides, the path says so.** A plane at an end of the model
 needs no rule: the model is the part. A plane with model on both sides (a
@@ -87,6 +121,9 @@ is the chuck's, never inferred; the verdict reads it on its own.
 - In a flipped setup, part toward +Z (keep the held piece): the setup does
   not say whether the held piece is the part or a bar that runs on, so the
   side would again be a guess. Refused until #3469 states it.
+- Refuse every part-off in an aligned setup that is not a turn about the
+  spindle: safe, but it also refuses a plane at an end of the model, where
+  the side cannot be wrong.
 - A warning in place of a refusal: a gouge of the finished part must block
   the post (Prime Directive).
 - A user parameter for the kerf position or the chuck side (a facing

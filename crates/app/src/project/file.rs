@@ -164,7 +164,12 @@ use super::*;
 /// the chord of its setback on a 90-degree edge, so the cut depth stays.
 /// An old reader must refuse a v76 file rather than read the chord as a
 /// setback and cut each break sqrt(2) times deeper.
-pub const PROJECT_VERSION: u32 = 76;
+/// v77 (#3447): a setup may state its creation order (`order`), and the
+/// program posts setups in that order. Absent sorts by name - what every
+/// v76 file posted - so a v76 file steps up unchanged. An old reader must
+/// refuse a v77 file rather than drop the order and post a setup before
+/// the setup its datum comes from.
+pub const PROJECT_VERSION: u32 = 77;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

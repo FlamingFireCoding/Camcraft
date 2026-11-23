@@ -141,6 +141,19 @@ fn side_words(w: WasteSide) -> &'static str {
     }
 }
 
+/// Does the model go on past the plane at `parting_z` on both sides
+/// (#3452)? Only then does the chuck-side rule decide which piece is the
+/// part; at an end of the model the model itself is the part. A model
+/// this cannot read answers `false`: the kernel refuses it by name.
+pub fn plane_inside_model(facets: &[Triangle], parting_z: f64, tol: f64) -> bool {
+    let Ok(f) = profile::Frame::about(facets) else { return false };
+    let Ok(pts) = profile::silhouette(facets, &f, tol * 0.25) else { return false };
+    match (pts.first(), pts.last()) {
+        (Some(a), Some(b)) => rule_decides((a.0, b.0), f.station_of(parting_z), tol),
+        _ => false,
+    }
+}
+
 /// The refusal for a plane with no part beyond it: the model stands
 /// wholly on the scrap side of the piece `kept` (#3469), so the cut
 /// would part nothing the model keeps - or would cut into the model.

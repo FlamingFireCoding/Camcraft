@@ -280,6 +280,12 @@ impl ChangeTool {
         {
             return Err(CommandError::Invalid(msg));
         }
+        // #3475: a smaller cutter never strands a slot; a wider one can.
+        if next.diameter > prev.diameter
+            && let Some(msg) = crate::operation::tool_gate::resize_refusal(world, name, next.diameter)
+        {
+            return Err(CommandError::Invalid(msg));
+        }
         // #368: an edit that would stand the tool's body over its flutes
         // (or retype it to a lathe insert) is refused by name.
         if let Some(body) = crate::tool_body::body_of(world, &entity) {
