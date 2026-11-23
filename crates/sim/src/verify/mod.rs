@@ -176,6 +176,8 @@ mod fine_bore;
 mod finish;
 mod first_traverse;
 mod first_traverse_posed;
+// #3525: a cut deeper than the flute length, named by its cause.
+mod flute_reach;
 mod hidden;
 mod hidden_span;
 mod hole_wall;
@@ -239,6 +241,7 @@ pub use types::{FixturePart, Mode, VerifyContext, Warning};
 pub use crossing::{crossed_pairs, crossed_pairs_all};
 pub use laws::CROSSING_TOUCH;
 pub use engine::{verify, verify_bodies};
+pub use flute_reach::{flute_note, flute_reach};
 pub use thread_bore::{CHORD_CREDIT, ThreadBore};
 pub use air::cuts_no_material;
 pub use prior::{acquit_by_prior, prior_surface};
