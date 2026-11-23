@@ -2431,7 +2431,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             if let Some(strokes) = &sketch_mark {
                 // #1869 with #3349: the strokes are not loops, so no
                 // keep-out is planned into them. A "Do not touch" spec
-                // judges them after generation.
+                // judges them after fixture routing (`protect_path`).
                 (Region::empty(), strokes.trace(&trace, lk)?)
             } else {
                 let region = region_for_job(&mut picked_region, &mut section_z, &src, &params, m_gen, frame.as_ref())?;
@@ -3553,7 +3553,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     };
     // Judge the final Trace or Finish3D after fixture routing, in the same frame as
     // the protected geometry. All following laws see any elevated links.
-    if let Some(spec) = avoid_spec.take_if(|_| matches!(params, OpParams::Trace { .. } | OpParams::Finish3D { .. })) {
+    // #1869: a sketch Engrave has no keep-out plan (strokes are not loops),
+    // so it is judged and refused by name here, as a Trace is.
+    let judged_here = matches!(params, OpParams::Trace { .. } | OpParams::Finish3D { .. })
+        || (matches!(params, OpParams::Engrave { .. }) && sketch_mark.is_some());
+    if let Some(spec) = avoid_spec.take_if(|_| judged_here) {
         super::avoid::protect_path(&mut path, &spec, frame.is_none(), z_ceiling, params.kind())?;
     }
     let stl = stock_to_leave_of(&params);

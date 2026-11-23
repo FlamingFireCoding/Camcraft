@@ -6,6 +6,8 @@
 //! Provenance: original fixtures using public DXF group codes and planar geometry.
 
 mod common;
+#[path = "sketch_engrave_trace/avoid.rs"]
+mod avoid;
 #[path = "sketch_engrave_trace/mcp.rs"]
 mod mcp;
 #[path = "sketch_engrave_trace/precision.rs"]
