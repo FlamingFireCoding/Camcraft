@@ -66,6 +66,7 @@ const POSTS: &[(&str, &str, &str)] = &[
     ("Makera Carvera", "carvera", "carvera"),
     ("Mach4", "mach4", "mach4"),
     ("RichAuto DSP A11", "richauto", "richauto"),
+    ("Mach3", "mach3", "mach3"),
 ];
 
 /// #1357: the Tormach goldens are runnable programs - posted for a real
@@ -106,6 +107,7 @@ fn golden_input(cps_stem: &str, g: &str) -> (serde_json::Value, String) {
 const REFUSED: &[(&str, &str, &str)] = &[
     ("carvera", "tap_plate", "tapping"),
     ("grblhal", "tap_plate", "tapping"),
+    ("mach3", "tap_plate", "tapping"),
     ("tinyg", "tap_plate", "tapping"),
     // #2303: the generic VMC states no spindle encoder (rigid_tapping),
     // so LinuxCNC's G33.1 rigid tap is refused by name there.
@@ -133,7 +135,7 @@ const PLASMA_POSTS: &[(&str, &str)] = &[("Tormach PathPilot Plasma", "tormach-pl
 
 /// The WIRE EDM dialects (#533): their golden is the wire stream's own
 /// (`wire_post.rs`, `nc/wire-iso/`); a mill golden they refuse by name.
-const WIRE_POSTS: &[(&str, &str)] = &[("Generic ISO Wire EDM", "wire-iso"), ("Sodick Wire EDM (Mark 21)", "sodick-wire")];
+const WIRE_POSTS: &[(&str, &str)] = &[("Generic ISO Wire EDM", "wire-iso"), ("Sodick Wire EDM (Mark 21)", "sodick-wire"), ("Agie native wire EDM", "agie-native")];
 
 /// The SINKER EDM dialects (#542): their golden is the sinker burn's
 /// own (`crates/post/tests/script_sinker_iso.rs`, `nc/sinker-iso/`); a
@@ -379,7 +381,7 @@ fn the_synthesized_stream_locks_the_tool_and_spindle_words() {
             "carvera" => synth_stream_with("G55", false),
             // #1914: one work origin (the pendant zero), no tap.
             "richauto" => synth_stream_with("G54", false),
-            "grblhal" | "tinyg" | "linuxcnc" | "grbl" => synth_stream_with("G55", false),
+            "grblhal" | "tinyg" | "linuxcnc" | "grbl" | "mach3" => synth_stream_with("G55", false),
             _ => synth_stream(),
         };
         let cps = read(&format!("assets/posts/{cps_stem}.cps"));
@@ -483,12 +485,14 @@ const EXTENSIONS: &[(&str, &str)] = &[
     ("mach4", "nc"),
     // #1907: the program a Laguna Swift's A11 runs is a .mmg file.
     ("richauto", "mmg"),
+    ("mach3", "nc"),
     ("heidenhain-klartext", "H"),
     ("fanuc-lathe", "nc"),
     ("tormach-lathe", "nc"),
     ("tormach-plasma", "nc"),
     ("wire-iso", "nc"),
     ("sodick-wire", "nc"),
+    ("agie-native", "agie"),
     ("sinker-iso", "nc"),
 ];
 

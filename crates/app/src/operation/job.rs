@@ -140,6 +140,10 @@ pub struct GenJob {
     /// share of the turned surface the axis fit set aside, which the
     /// op does not turn. Carried onto the path's notes by `run_job`.
     pub(super) spindle_note: Option<String>,
+    /// #3452: why this setup cannot say which end of the part is free
+    /// (it holds the part end for end, or the part is modelled lying
+    /// down) - the Part arm refuses with it where the side rule decides.
+    pub(super) part_off_side: Option<String>,
     /// #3100: what the setup's post declares about its first traverse
     /// (`first_traverse_posed::post_order`), read with the world here.
     pub(super) post_order: super::first_traverse_posed::PostOrder,
@@ -212,6 +216,11 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     // the job's error-order law.
     let opframe = OpFrame::of(op);
     let material = opframe.material_of(world, &op.src)?;
+    // #3452: whether this setup can say which end of the part is free.
+    // The Part arm refuses with it where the side rule would decide.
+    let part_off_side = matches!(op.params, OpParams::Part { .. })
+        .then(|| crate::setup_align::part_off_problem(&material.facets, crate::setup_align::alignment(world, setup)))
+        .flatten();
     let part_solid = part_solid_of(world, setup, &op.src, &material);
     // Setup stock, when it is not the source itself: the swarf column
     // around a smaller model (the head read at `generate` - same call).
@@ -339,6 +348,24 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
                 crate::rest::prior_state(world, op_name, setup, tool.diameter * 0.5)
                     // #319: declared material past the carried grid is
                     // present - no mask, the declared stock is cut.
+                    .map(|p| if carried.distrust_prior { crate::rest::PriorState { grid: None, ..p } } else { p })
+                    .map(Arc::new),
+            )
+        }
+        // #2033: a 2D Pocket whose rest area is read from the previous
+        // operations takes the same grid. The stock must be established:
+        // a tilted plane, or an earlier operation without a current
+        // toolpath, is refused by name. Declared material past a carried
+        // grid is no grid: the whole pocket stands.
+        p if super::rest_op::reads_previous_ops(p) => {
+            if frame.is_some() {
+                return Err(GenError::Invalid(format!("{op_name}: {}", super::rest_op::REST_PREVIOUS_TILTED)));
+            }
+            if let Some(why) = super::rest_op::previous_ops_refusal(world, op_name, setup) {
+                return Err(GenError::Invalid(format!("{op_name}: {why}")));
+            }
+            Some(
+                crate::rest::prior_state(world, op_name, setup, tool.diameter * 0.5)
                     .map(|p| if carried.distrust_prior { crate::rest::PriorState { grid: None, ..p } } else { p })
                     .map(Arc::new),
             )
@@ -492,6 +519,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         avoid,
         wcs_origin,
         spindle_note,
+        part_off_side,
         post_order: super::first_traverse_posed::post_order(world, setup, &op.params),
         carried_overhang,
         wire,
