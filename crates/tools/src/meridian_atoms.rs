@@ -50,7 +50,11 @@ impl MeridianAtom {
         match self.shape {
             AtomShape::Frustum { r0, r1 } => {
                 let h = self.z1 - self.z0;
-                if h > 0.0 { r0 + (r1 - r0) * (z - self.z0) / h } else { r0.max(r1) }
+                if h > 0.0 {
+                    r0 + (r1 - r0) * ((z - self.z0) / h)
+                } else {
+                    r0.max(r1)
+                }
             }
             AtomShape::Zone { zc, rc, rad } => {
                 let e = z - zc;
@@ -87,7 +91,10 @@ impl ArcGeom {
         let half = (len * 0.5 / rad).clamp(-1.0, 1.0).asin();
         let s = a.arc.signum();
         let back = rad * half.cos();
-        let mut c = ((a.z + b.z) * 0.5 - s * back * n.0, (a.r + b.r) * 0.5 - s * back * n.1);
+        let mut c = (
+            a.z + dz * 0.5 - s * back * n.0,
+            a.r + dr * 0.5 - s * back * n.1,
+        );
         // An end at the centre's radius is the circle's z extreme, where
         // rho = rc + sqrt(rad^2 - e^2) turns float dust in the centre into
         // a visible error (1e-16 in, 1e-8 out). Snap the centre there: the
@@ -99,7 +106,14 @@ impl ArcGeom {
         } else if near(b) {
             c = (b.z - rad, b.r);
         }
-        Some(Self { c, rad, half, s, u: (s * n.0, s * n.1), v })
+        Some(Self {
+            c,
+            rad,
+            half,
+            s,
+            u: (s * n.0, s * n.1),
+            v,
+        })
     }
 
     pub fn convex(&self) -> bool {
@@ -109,7 +123,10 @@ impl ArcGeom {
     /// The point at angle `th` from the arc's middle, `k` from the centre.
     fn at(&self, th: f64, k: f64) -> (f64, f64) {
         let (c, s) = (th.cos(), th.sin());
-        (self.c.0 + k * (c * self.u.0 + s * self.v.0), self.c.1 + k * (c * self.u.1 + s * self.v.1))
+        (
+            self.c.0 + k * (c * self.u.0 + s * self.v.0),
+            self.c.1 + k * (c * self.u.1 + s * self.v.1),
+        )
     }
 }
 
@@ -130,12 +147,22 @@ impl Meridian {
                 None => push_frustum(&mut out, (a.z, a.r), (b.z, b.r), cutting),
                 Some(g) if g.convex() => {
                     if b.z - a.z > EPS {
-                        let shape = AtomShape::Zone { zc: g.c.0, rc: g.c.1, rad: g.rad };
-                        out.push(MeridianAtom { z0: a.z, z1: b.z, shape, cutting });
+                        let shape = AtomShape::Zone {
+                            zc: g.c.0,
+                            rc: g.c.1,
+                            rad: g.rad,
+                        };
+                        out.push(MeridianAtom {
+                            z0: a.z,
+                            z1: b.z,
+                            shape,
+                            cutting,
+                        });
                     }
                 }
                 Some(g) => {
-                    let pts = split_concave(&g, a, b, bound, sag).ok_or(MeridianError::SagTooFine(i + 1))?;
+                    let pts = split_concave(&g, a, b, bound, sag)
+                        .ok_or(MeridianError::SagTooFine(i + 1))?;
                     for q in pts.windows(2) {
                         push_frustum(&mut out, q[0], q[1], cutting);
                     }
@@ -148,7 +175,12 @@ impl Meridian {
 
 fn push_frustum(out: &mut Vec<MeridianAtom>, p: (f64, f64), q: (f64, f64), cutting: bool) {
     if q.0 - p.0 > EPS {
-        out.push(MeridianAtom { z0: p.0, z1: q.0, shape: AtomShape::Frustum { r0: p.1, r1: q.1 }, cutting });
+        out.push(MeridianAtom {
+            z0: p.0,
+            z1: q.0,
+            shape: AtomShape::Frustum { r0: p.1, r1: q.1 },
+            cutting,
+        });
     }
 }
 
@@ -156,7 +188,13 @@ fn push_frustum(out: &mut Vec<MeridianAtom>, p: (f64, f64), q: (f64, f64), cutti
 /// the arc (outer), or the tangents at the split points, meeting at the
 /// mid-angles (inner, clamped to the axis). `None` when the sag limit
 /// needs more than [`MAX_SPLIT`] parts.
-fn split_concave(g: &ArcGeom, a: SpunPoint, b: SpunPoint, bound: Bound, sag: f64) -> Option<Vec<(f64, f64)>> {
+fn split_concave(
+    g: &ArcGeom,
+    a: SpunPoint,
+    b: SpunPoint,
+    bound: Bound,
+    sag: f64,
+) -> Option<Vec<(f64, f64)>> {
     let off = |n: usize| {
         let t = g.half / n as f64;
         match bound {
@@ -171,7 +209,11 @@ fn split_concave(g: &ArcGeom, a: SpunPoint, b: SpunPoint, bound: Bound, sag: f64
         Bound::Outer => pts.extend((1..n).map(|i| g.at(-g.half + i as f64 * step, g.rad))),
         Bound::Inner => {
             let k = g.rad / (step * 0.5).cos();
-            pts.extend((0..n).map(|i| g.at(-g.half + (i as f64 + 0.5) * step, k)).map(|(z, r)| (z, r.max(0.0))));
+            pts.extend(
+                (0..n)
+                    .map(|i| g.at(-g.half + (i as f64 + 0.5) * step, k))
+                    .map(|(z, r)| (z, r.max(0.0))),
+            );
         }
     }
     pts.push((b.z, b.r));

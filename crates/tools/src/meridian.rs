@@ -25,6 +25,9 @@ pub use atoms::{AtomShape, Bound, MeridianAtom, MAX_SPLIT};
 pub const MIN_LEN: f64 = 1e-6;
 /// Slack (mm) on the order and fold checks: float dust only.
 pub(crate) const EPS: f64 = 1e-9;
+/// Largest coordinate or radius of an arc (mm). Circle calculations
+/// square these values; this limit leaves room for their sums and products.
+pub const MAX_ARC_COORD: f64 = 1e150;
 
 /// Why a meridian is refused. Point numbers are 1-based; a segment is
 /// numbered by the point it starts from.
@@ -32,6 +35,7 @@ pub(crate) const EPS: f64 = 1e-9;
 pub enum MeridianError {
     TooFew,
     NonFinite(usize),
+    OutOfRange(usize),
     Negative(usize),
     Short(usize),
     ArcTooTight(usize),
@@ -49,13 +53,32 @@ impl core::fmt::Display for MeridianError {
         match self {
             Self::TooFew => write!(f, "a tool meridian needs at least 2 points"),
             Self::NonFinite(i) => write!(f, "meridian point {i} is not a finite number"),
+            Self::OutOfRange(i) => write!(
+                f,
+                "meridian segment {i} exceeds the supported numeric range"
+            ),
             Self::Negative(i) => write!(f, "meridian point or segment {i} has a negative radius"),
-            Self::Short(i) => write!(f, "the meridian segment from point {i} is shorter than {MIN_LEN} mm"),
-            Self::ArcTooTight(i) => write!(f, "the meridian arc from point {i} has a radius smaller than half its chord"),
-            Self::ArcFolds(i) => write!(f, "the meridian arc from point {i} turns back along the tool axis"),
-            Self::RunsBack(i) => write!(f, "the meridian segment from point {i} runs back down the tool axis"),
+            Self::Short(i) => write!(
+                f,
+                "the meridian segment from point {i} is shorter than {MIN_LEN} mm"
+            ),
+            Self::ArcTooTight(i) => write!(
+                f,
+                "the meridian arc from point {i} has a radius smaller than half its chord"
+            ),
+            Self::ArcFolds(i) => write!(
+                f,
+                "the meridian arc from point {i} turns back along the tool axis"
+            ),
+            Self::RunsBack(i) => write!(
+                f,
+                "the meridian segment from point {i} runs back down the tool axis"
+            ),
             Self::FlagCount => write!(f, "a tool meridian needs one cutting flag for each segment"),
-            Self::BadSag => write!(f, "the sag limit of an arc split must be a finite number over 0 mm"),
+            Self::BadSag => write!(
+                f,
+                "the sag limit of an arc split must be a finite number over 0 mm"
+            ),
             Self::SagTooFine(i) => {
                 write!(f, "the arc from meridian point {i} needs more than {MAX_SPLIT} parts for this sag limit")
             }
@@ -118,7 +141,10 @@ impl Meridian {
 fn check_segment(a: SpunPoint, b: SpunPoint, i: usize) -> Result<(), MeridianError> {
     let (dz, dr) = (b.z - a.z, b.r - a.r);
     let len = dz.hypot(dr);
-    if len.is_nan() || len < MIN_LEN {
+    if !len.is_finite() {
+        return Err(MeridianError::OutOfRange(i));
+    }
+    if len < MIN_LEN {
         return Err(MeridianError::Short(i));
     }
     if dz < -EPS {
@@ -127,13 +153,25 @@ fn check_segment(a: SpunPoint, b: SpunPoint, i: usize) -> Result<(), MeridianErr
     if a.arc == 0.0 {
         return Ok(());
     }
+    if [a.z, a.r, a.arc, b.z, b.r]
+        .iter()
+        .any(|v| v.abs() > MAX_ARC_COORD)
+    {
+        return Err(MeridianError::OutOfRange(i));
+    }
     if a.arc.abs() < len * 0.5 - EPS {
         return Err(MeridianError::ArcTooTight(i));
     }
     let g = atoms::ArcGeom::of(a, b).ok_or(MeridianError::ArcTooTight(i))?;
     // A convex arc lies on the circle's far half from the axis, a
     // concave one on its near half: only then is it a function of z.
-    let side = |r: f64| if g.convex() { r >= g.c.1 - EPS } else { r <= g.c.1 + EPS };
+    let side = |r: f64| {
+        if g.convex() {
+            r >= g.c.1 - EPS
+        } else {
+            r <= g.c.1 + EPS
+        }
+    };
     if !(side(a.r) && side(b.r)) {
         return Err(MeridianError::ArcFolds(i));
     }
@@ -153,6 +191,7 @@ impl Tool {
     /// kind that is no mill, or numbers that make no tool, are refused
     /// by name.
     pub fn meridian(&self) -> Result<Meridian, MeridianError> {
+        self.check_meridian_inputs()?;
         let (r, fl) = (self.diameter * 0.5, self.flute_len);
         let line = SpunPoint::line;
         let square = vec![line(0.0, 0.0), line(0.0, r), line(fl, r)];
@@ -167,7 +206,11 @@ impl Tool {
                         self.diameter
                     )));
                 }
-                if cr > 0.0 { tip_arc(r, cr, fl) } else { square }
+                if cr > 0.0 {
+                    tip_arc(r, cr, fl)
+                } else {
+                    square
+                }
             }
             ToolKind::Drill | ToolKind::Taper => {
                 let tan = (self.tip_angle.to_radians() * 0.5).tan();
@@ -187,7 +230,14 @@ impl Tool {
                     return Err(MeridianError::Unsound(why));
                 }
                 match self.kind {
-                    ToolKind::Lollipop => vec![SpunPoint { z: 0.0, r: 0.0, arc: r }, line(2.0 * r, 0.0)],
+                    ToolKind::Lollipop => vec![
+                        SpunPoint {
+                            z: 0.0,
+                            r: 0.0,
+                            arc: r,
+                        },
+                        line(2.0 * r, 0.0),
+                    ],
                     ToolKind::Dovetail => {
                         let cot = 1.0 / self.tip_angle.to_radians().tan();
                         vec![line(0.0, 0.0), line(0.0, r), line(fl, r - fl * cot)]
@@ -199,6 +249,67 @@ impl Tool {
         };
         let n = pts.len().saturating_sub(1);
         Meridian::new(pts, vec![true; n])
+    }
+
+    /// Check source dimensions before a min, comparison or fallback can
+    /// hide a malformed value. Zero angle keeps the existing square tip.
+    fn check_meridian_inputs(&self) -> Result<(), MeridianError> {
+        if !matches!(
+            self.kind,
+            ToolKind::EndMill
+                | ToolKind::BallNose
+                | ToolKind::BullNose
+                | ToolKind::Drill
+                | ToolKind::Taper
+                | ToolKind::TSlot
+                | ToolKind::Keyseat
+                | ToolKind::Dovetail
+                | ToolKind::Lollipop
+        ) {
+            return Err(MeridianError::NotAMill(self.kind));
+        }
+        for (i, value) in [self.diameter, self.flute_len].into_iter().enumerate() {
+            if !value.is_finite() {
+                return Err(MeridianError::NonFinite(i + 1));
+            }
+            if value < 0.0 {
+                return Err(MeridianError::Negative(i + 1));
+            }
+            if value == 0.0 {
+                return Err(MeridianError::Short(i + 1));
+            }
+        }
+        if self.kind == ToolKind::BullNose {
+            if !self.corner_r.is_finite() {
+                return Err(MeridianError::NonFinite(1));
+            }
+            if self.corner_r < 0.0 {
+                return Err(MeridianError::Negative(1));
+            }
+        }
+        if matches!(
+            self.kind,
+            ToolKind::Drill | ToolKind::Taper | ToolKind::Dovetail
+        ) {
+            if !self.tip_angle.is_finite() {
+                return Err(MeridianError::NonFinite(1));
+            }
+            if !(0.0..180.0).contains(&self.tip_angle) {
+                return Err(MeridianError::Unsound(
+                    "a tip angle must be at least 0 and less than 180 degrees".into(),
+                ));
+            }
+        }
+        if matches!(
+            self.kind,
+            ToolKind::BallNose | ToolKind::BullNose | ToolKind::Lollipop
+        ) && [self.diameter, self.flute_len, self.corner_r]
+            .iter()
+            .any(|v| v.abs() > MAX_ARC_COORD)
+        {
+            return Err(MeridianError::OutOfRange(1));
+        }
+        Ok(())
     }
 }
 
@@ -221,7 +332,10 @@ fn tip_arc(r: f64, cr: f64, fl: f64) -> Vec<SpunPoint> {
         }
     } else {
         let e = cr - fl;
-        p.push(SpunPoint::line(fl, flat + (cr * cr - e * e).max(0.0).sqrt()));
+        p.push(SpunPoint::line(
+            fl,
+            flat + (cr * cr - e * e).max(0.0).sqrt(),
+        ));
     }
     p
 }
