@@ -415,7 +415,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             feed,
             plunge_feed,
             climb,
-            blend_turns,
+            blend_turns, blend_radius,
             holes,
             ..
         } => {
@@ -445,7 +445,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 feed: *feed,
                 plunge_feed: *plunge_feed,
                 climb: *climb,
-                blend_turns: *blend_turns,
+                blend_turns: *blend_turns, blend_radius: *blend_radius,
                 holes: *holes,
                 // #2004 review: stock over the face's Top keeps the
                 // level at Top (a first bite of at most one stepdown).
@@ -521,7 +521,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             tab_height,
             entry,
             helix_radius,
-            blend_turns,
+            blend_turns, blend_radius,
             ..
         } => {
             // Backstop for a committed file that carries Inside on a
@@ -573,7 +573,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 tab_height: *tab_height,
                 entry: *entry,
                 helix_radius: *helix_radius,
-                blend_turns: *blend_turns,
+                blend_turns: *blend_turns, blend_radius: *blend_radius,
             links: lk,
             };
             let (region, path) = if let Some(plan_res) = sketch_contour.take() {
@@ -850,12 +850,24 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 None
             };
             let ahead_cols = ahead.as_ref().and_then(|p| p.grid.as_ref()).map(crate::stock_sim::Columns::of_grid);
-            let pocket = |pp: &PocketParams| match rest {
-                Some(r) if from_ops => {
+            let pocket = |pp: &PocketParams| match (rest, &avoid_spec) {
+                (Some(r), Some(spec)) if from_ops => machining2d::rest_pocket_previous_avoid_with_relief(
+                    &region,
+                    pp,
+                    r,
+                    ahead_cols.as_ref(),
+                    spec,
+                    corner_relief,
+                ),
+                (Some(r), Some(spec)) => machining2d::rest_pocket_avoid_with_relief(&region, pp, r, spec, corner_relief),
+                (None, Some(spec)) => {
+                    machining2d::pocket_avoid_entered_started(&region, pp, &holes, spec, corner_relief, *pass_start)
+                }
+                (Some(r), None) if from_ops => {
                     machining2d::rest_pocket_previous_with_relief(&region, pp, r, ahead_cols.as_ref(), corner_relief)
                 }
-                Some(r) => machining2d::rest_pocket_with_relief(&region, pp, r, corner_relief),
-                None => machining2d::pocket_started(&region, pp, &holes, corner_relief, *pass_start),
+                (Some(r), None) => machining2d::rest_pocket_with_relief(&region, pp, r, corner_relief),
+                (None, None) => machining2d::pocket_started(&region, pp, &holes, corner_relief, *pass_start),
             };
             let mut path = pocket(&pp)?;
             if let Some(m) = carry_need!(&relieved_region, &path) {
@@ -1307,6 +1319,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             pencil_reference,
             fill_openings,
             gap_link,
+            waterlines,
             pass_start,
             ..
         } => {
@@ -1348,6 +1361,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 steep_stepover: *steep_stepover,
                 pencil_reference: *pencil_reference,
                 gap_link: *gap_link,
+                waterlines: *waterlines,
             };
             // The pattern picks the generator; Waterline never
             // reaches the raster code at all. SteepShallow is the
@@ -1387,6 +1401,18 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // name too. Flow grounds every column on the same support
             // as Parallel and honours the lids (pinned in motion's
             // finish3d_land).
+            if !*waterlines
+                && matches!(
+                    *pattern,
+                    finishing3d::FinishPattern::Waterline
+                        | finishing3d::FinishPattern::Blend
+                        | finishing3d::FinishPattern::Morph
+                )
+            {
+                return Err(GenError::Invalid(format!(
+                    "{pattern:?} 3D finish relies on the waterline ring pass - enable waterlines or pick a shallow-first pattern"
+                )));
+            }
             let land = match fill_openings {
                 Some(_) if *pattern == finishing3d::FinishPattern::Geodesic => {
                     return Err(GenError::Invalid(
@@ -1694,6 +1720,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry_ramp: false,
                 steep_stepover: None,
                 pencil_reference: None,
+                waterlines: true,
             };
             let axis = crate::multiaxis::AxisControl {
                 lead_deg: *lead_deg,
@@ -1787,6 +1814,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry_ramp: false,
                 steep_stepover: None,
                 pencil_reference: None,
+                waterlines: true,
             };
             let axis = crate::multiaxis::AxisControl {
                 lead_deg: *lead_deg,
@@ -1878,6 +1906,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry_ramp: false,
                 steep_stepover: None,
                 pencil_reference: None,
+                waterlines: true,
             };
             let axis = crate::multiaxis::AxisControl {
                 lead_deg: *lead_deg,
@@ -2176,6 +2205,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry_ramp: false,
                 steep_stepover: None,
                 pencil_reference: None,
+                waterlines: true,
             };
             let axis = crate::multiaxis::AxisControl {
                 lead_deg: *lead_deg,
@@ -2284,7 +2314,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             plunge_feed,
             climb,
             entry,
-            helix_radius,
+            helix_radius, blend_turns, blend_radius,
             extend_start,
             extend_end,
             ..
@@ -2305,7 +2335,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     links: lk,
                     tool_diameter: d,
                     entry: *entry,
-                    helix_radius: *helix_radius,
+                    helix_radius: *helix_radius, blend_turns: *blend_turns, blend_radius: *blend_radius,
                     width: *width,
                     stock_to_leave: *stock_to_leave,
                     clearance_z: hl.clearance,
@@ -2379,6 +2409,12 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             let path = machining2d::trochoidal_slot(&[*a, *b], &tp)?;
             (region, path)
         }
+        // The engrave twin (M2.4 B) shares the trace's machinery: the
+        // same zero-width-kerf ride and the same no-entry-knob theorem.
+        // Only the registry's name for the pick differs (text on a face,
+        // not a boundary line). A V-bit cuts wider than the kerf's claim;
+        // that tooling question is M10.1's.
+        // #1869: a sketch pick rides its own analytic strokes.
         OpParams::Trace { stepdown, feed, plunge_feed, climb, .. }
         | OpParams::Engrave { stepdown, feed, plunge_feed, climb, .. } => {
             let trace = TraceParams {
@@ -2393,10 +2429,18 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 stock_top: lk.approach.stock_top,
             };
             if let Some(strokes) = &sketch_mark {
+                // #1869 with #3349: the strokes are not loops, so no
+                // keep-out is planned into them. A "Do not touch" spec
+                // judges them after generation.
                 (Region::empty(), strokes.trace(&trace, lk)?)
             } else {
                 let region = region_for_job(&mut picked_region, &mut section_z, &src, &params, m_gen, frame.as_ref())?;
-                let path = machining2d::trace(&region, &trace)?;
+                // #3349: Engrave plans each level clear of "Do not touch".
+                // Trace keeps its line; `protect_path` judges it below.
+                let path = match (&avoid_spec, &params) {
+                    (Some(spec), OpParams::Engrave { .. }) => machining2d::trace_avoid(&region, &trace, spec)?,
+                    _ => machining2d::trace(&region, &trace)?,
+                };
                 (region, path)
             }
         }

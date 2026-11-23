@@ -276,6 +276,7 @@ fn header_notes_use_each_shipped_dialect_and_keep_the_full_surface_bound() {
         if stem.contains("wire") { mch["kind"] = json!("wire-edm"); }
         if stem.contains("sinker") { mch["kind"] = json!("sinker-edm"); }
         if stem.contains("plasma") { mch["kind"] = json!("plasma"); }
+        if stem.contains("waterjet") { mch["kind"] = json!("waterjet"); }
         let result = engine::run_program_with(
             &std::fs::read_to_string(&p).expect("post reads"), &mch, "", &json!(null), &id,
         );
@@ -318,6 +319,6 @@ fn header_notes_use_each_shipped_dialect_and_keep_the_full_surface_bound() {
         }
         text_posts += 1;
     }
-    assert_eq!(text_posts, 24, "every shipped text post writes both notes");
+    assert_eq!(text_posts, 25, "every shipped text post writes both notes");
     assert_eq!(native_refusals, 1, "the native Agie dispatcher refused the notes");
 }

@@ -516,6 +516,11 @@ pub(super) fn emit_rings_with_trim(
 /// resting tip-deep at that Z touches the surface.
 pub fn waterline(facets: &[Triangle], p: &Finish3DParams) -> Result<Toolpath, GenError> {
     validate(p, facets)?;
+    if !p.waterlines {
+        return Err(GenError::Invalid(
+            "Waterline 3D finish is the waterline ring pass - enable waterlines or pick a shallow-first pattern".into(),
+        ));
+    }
     let r = p.tool_diameter * 0.5;
     let zs = levels(p, r, facets)?;
     let ds = dirs(r, p.tolerance);

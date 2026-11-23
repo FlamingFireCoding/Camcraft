@@ -131,6 +131,9 @@ mod agie_profile;
 pub(crate) use agie_profile::agie_job;
 mod wire_ruled;
 pub(crate) mod wire_sketch;
+mod agie_inspection;
+pub(crate) use agie_inspection::prepare_inspection;
+pub use agie_inspection::{AgieInspectionReceipt, export_agie_inspection, has_agie_inspection_source};
 // #534: the wire laws' inputs, read live at the post.
 pub mod wire_verify;
 // #541: the sinker EDM burn to depth.
