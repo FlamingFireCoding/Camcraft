@@ -344,6 +344,7 @@ fn plate() -> Vec<Triangle> {
 
 fn p3d(equal: bool) -> Pocket3DParams {
     Pocket3DParams {
+        pass_start: Default::default(),
         links: links(Links::ROUGH3D, equal),
         tool_diameter: 6.0,
         stepover: 2.4,

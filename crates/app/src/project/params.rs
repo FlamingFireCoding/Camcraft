@@ -635,6 +635,10 @@ pub enum ParamsDto {
         /// IS the old behavior.
         #[serde(default)]
         shell: bool,
+        /// #3361 where each level's rings start: absent is `auto`, the
+        /// order every earlier file cut - no version step.
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
     },
     /// Declared at v15 with the waterline. The rename states the tag
     /// for the same reason `pocket3d` does - the automatic snake_case
@@ -651,6 +655,9 @@ pub enum ParamsDto {
         /// Absent means Waterline (the v15 truth).
         #[serde(default)]
         pattern: FinishPatternDto,
+        /// Absent means 0 degrees, along +X.
+        #[serde(default)]
+        direction_angle: f64,
         /// Absent follows the stepover cos-law from the tolerance.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         stepover: Option<f64>,
@@ -708,6 +715,10 @@ pub enum ParamsDto {
         /// grammar, so no version step-up.
         #[serde(default)]
         gap_link: GapLinkDto,
+        /// #3362 where the nested offset loops start: absent is
+        /// `auto`, the order every earlier file cut - no version step.
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
     },
     /// Declared at v48 with the deburr ride (M2.5 E B). `Deburr`'s
     /// automatic snake_case tag IS the clean word - no rename needed -

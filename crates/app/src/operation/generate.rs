@@ -23,6 +23,27 @@ pub fn generate(
 mod run_job;
 pub use run_job::run_job;
 
+/// #3035: the areas the Offset rings cut in place of the planned order -
+/// a warning, not only a note; advisory (the rings are verified). #3542:
+/// the cause comes from the notes, not from the op kind - a Pocket, an
+/// Offset or a 3D pocket reaches the pass-start guard too, and an
+/// Adaptive op on its ring fallback can write both notes; any Adaptive
+/// note keeps the Adaptive text.
+#[must_use]
+pub fn strategy_fallback(path: &Toolpath) -> Option<Warning> {
+    let areas = crate::machining2d::rings_fallbacks(&path.notes);
+    if areas == 0 {
+        return None;
+    }
+    let at = path.moves.iter().position(|m| m.kind != crate::cl::MoveKind::Rapid).unwrap_or(0);
+    let cause = if crate::machining2d::pass_start_fallbacks(&path.notes) == areas {
+        crate::verify::FallbackCause::PassStart
+    } else {
+        crate::verify::FallbackCause::Adaptive
+    };
+    Some(Warning::StrategyFallback { at, areas, cause })
+}
+
 /// [`run_job`]'s body: every arm, unchanged.
 fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     let GenJob {
@@ -1085,6 +1106,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             feed_opt,
             shell,
             method,
+            pass_start,
             ..
         } => {
             // The region is the model's own silhouette (see
@@ -1137,6 +1159,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry: *entry,
                 helix_radius: *helix_radius,
                 optimal_load: *optimal_load,
+                pass_start: *pass_start,
             };
             // #1950: steel in the air band refuses the op by name.
             if let Some(st) = air_stock {
@@ -1240,6 +1263,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         }
         OpParams::Finish3D {
             pattern,
+            direction_angle,
             stepover,
             tolerance,
             feed,
@@ -1253,6 +1277,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             pencil_reference,
             fill_openings,
             gap_link,
+            pass_start,
             ..
         } => {
             // Ball jurisdiction: the rings are the tangent locus of a
@@ -1354,17 +1379,23 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 finishing3d::FinishPattern::Waterline => {
                     finishing3d::waterline(drive, fp)?
                 }
-                finishing3d::FinishPattern::Parallel
-                | finishing3d::FinishPattern::ParallelMulti
+                finishing3d::FinishPattern::Parallel => {
+                    finishing3d::parallel_with_angle(drive, fp, *direction_angle)?
+                }
+                finishing3d::FinishPattern::ParallelMulti
                 | finishing3d::FinishPattern::Scallop
                 | finishing3d::FinishPattern::SteepShallow => {
                     finishing3d::parallel(drive, fp)?
                 }
                 finishing3d::FinishPattern::Radial => finishing3d::radial(drive, fp)?,
                 finishing3d::FinishPattern::Spiral => finishing3d::spiral(drive, fp)?,
-                finishing3d::FinishPattern::Contour => finishing3d::contour(drive, fp)?,
+                finishing3d::FinishPattern::Contour => {
+                    finishing3d::contour_from(drive, fp, *pass_start)?
+                }
                 finishing3d::FinishPattern::Project => finishing3d::project(drive, fp)?,
-                finishing3d::FinishPattern::Flat => finishing3d::flat(drive, fp)?,
+                finishing3d::FinishPattern::Flat => {
+                    finishing3d::flat_from(drive, fp, *pass_start)?
+                }
                 // The crease pair (M2.5 B): the same locus walk in
                 // pencil.rs, and the band filter's reference is the
                 // only thing that differs - Corner asks its own
@@ -1870,6 +1901,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry: *entry,
                 helix_radius: *helix_radius,
                 optimal_load: *optimal_load,
+                pass_start: crate::machining2d::PassStart::Auto,
             };
             let axis = crate::multiaxis::AxisControl {
                 lead_deg: *lead_deg,
@@ -1978,6 +2010,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry: *entry,
                 helix_radius: *helix_radius,
                 optimal_load: *optimal_load,
+                pass_start: crate::machining2d::PassStart::Auto,
             };
             let axis = crate::multiaxis::AxisControl {
                 lead_deg: *lead_deg,
@@ -3847,11 +3880,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             super::drill_size::undersize_into(&mut warns, &path, &tool, &params);
             // #3035: Adaptive areas cut by Offset rings - a warning, not
             // only a note; advisory (the rings are verified above).
-            let areas = crate::machining2d::rings_fallbacks(&path.notes);
-            if areas > 0 {
-                let at = path.moves.iter().position(|m| m.kind != crate::cl::MoveKind::Rapid).unwrap_or(0);
-                warns.push(Warning::StrategyFallback { at, areas });
-            }
+            warns.extend(strategy_fallback(&path));
             // The rotary kinds' bands and rapids (M13): `Mode::Rotary`
             // stood the vertical-column laws down; the radial field
             // reads rest material in the frame the work turns in.
@@ -3892,6 +3921,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 path.notes.extend(av_notes);
                 warns.extend(av_warns);
             }
+            // #3525: a cut deeper than the flute length is named by its
+            // cause, FIRST - before the move findings that it explains.
+            super::flute_law::name_first(&params, &mut path, &mut warns, &geom, &tool_name, stock_top_z);
             Ok((path, warns))
         }
         Some(f) => {

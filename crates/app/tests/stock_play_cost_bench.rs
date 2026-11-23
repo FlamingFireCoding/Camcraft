@@ -106,6 +106,7 @@ fn pocket3d() -> (World, String) {
     let loc = Location { pos: Point3::new(0.0, 0.0, -7.0), ..Default::default() };
     h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 70.0, dy: 70.0, dz: 27.0 }, loc).expect("stock"));
     let params = OpParams::Pocket3D {
+        pass_start: Default::default(),
         links: Links::ROUGH3D,
         stepover: 4.0,
         stock_to_leave: 0.0,

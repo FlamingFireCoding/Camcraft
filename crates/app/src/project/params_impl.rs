@@ -485,6 +485,7 @@ impl ParamsDto {
                 feed_opt,
                 shell,
                 method,
+                pass_start,
             } => ParamsDto::Pocket3D {
                 links: links_to_dto(links, &p.default_links()),
                 stepover: *stepover,
@@ -520,9 +521,11 @@ impl ParamsDto {
                 optimal_load: Some(*optimal_load),
                 feed_opt: *feed_opt,
                 shell: *shell,
+                pass_start: (*pass_start).into(),
             },
             OpParams::Finish3D {
                 pattern,
+                direction_angle,
                 stepover,
                 tolerance,
                 clearance_z,
@@ -540,8 +543,10 @@ impl ParamsDto {
                 pencil_reference,
                 fill_openings,
                 gap_link,
+                pass_start,
             } => ParamsDto::Finish3D {
                 pattern: (*pattern).into(),
+                direction_angle: *direction_angle,
                 stepover: *stepover,
                 tolerance: *tolerance,
                 clearance_z: (*clearance_z).into(),
@@ -559,6 +564,7 @@ impl ParamsDto {
                 pencil_reference: *pencil_reference,
                 fill_openings: *fill_openings,
                 gap_link: (*gap_link).into(),
+                pass_start: (*pass_start).into(),
             },
             // The deburr ride (M2.5 E B): the six keys are the kind's
             // whole content - no pattern, no retract, nothing derived
@@ -1817,6 +1823,7 @@ impl ParamsDto {
                 optimal_load,
                 feed_opt,
                 shell,
+                pass_start,
             } => OpParams::Pocket3D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::ROUGH3D),
                 stepover: *stepover,
@@ -1851,9 +1858,11 @@ impl ParamsDto {
                 optimal_load: load_from_file(*optimal_load, *max_engagement),
                 feed_opt: *feed_opt,
                 shell: *shell,
+                pass_start: (*pass_start).into(),
             },
             ParamsDto::Finish3D {
                 pattern,
+                direction_angle,
                 stepover,
                 tolerance,
                 clearance_z,
@@ -1871,8 +1880,10 @@ impl ParamsDto {
                 pencil_reference,
                 fill_openings,
                 gap_link,
+                pass_start,
             } => OpParams::Finish3D {
                 pattern: (*pattern).into(),
+                direction_angle: *direction_angle,
                 stepover: *stepover,
                 tolerance: *tolerance,
                 clearance_z: (*clearance_z).into(),
@@ -1890,6 +1901,7 @@ impl ParamsDto {
                 pencil_reference: *pencil_reference,
                 fill_openings: *fill_openings,
                 gap_link: (*gap_link).into(),
+                pass_start: (*pass_start).into(),
             },
             // Read back whole, the blade kinds' way - sane or
             // nothing, `validate_kind`'s door first (M2.5 E B):

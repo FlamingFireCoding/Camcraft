@@ -28,10 +28,11 @@ use super::{gpu, gpu_init, icons, theme, world};
 
 mod capture;
 mod frame;
+mod start;
 
 /// The windowed shell (the `--ui egui` entry without `--headless`); returns
 /// the process exit code.
-pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>, files: &[String]) -> i32 {
+pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>, files: &[String], start: crate::cli_options::StartMode) -> i32 {
     let event_loop = match EventLoop::new() {
         Ok(el) => el,
         Err(err) => {
@@ -44,6 +45,7 @@ pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: O
     // through the guarded Quit instead of ending the process.
     let _ = super::os_quit::install();
     let mut shell = Shell::new(pick, want);
+    shell.start = start;
     // #2462: a file named on the command line goes through the same
     // import / open command as the dialogs, on the first frame.
     crate::launch_file::queue(&mut shell.state, files);
@@ -145,6 +147,8 @@ struct Shell {
     /// #1696: the whole-window picture the Report door asks for; idle
     /// until a `ViewportCommand::Screenshot` reaches the frame loop.
     capture: capture::Capture,
+    /// How the window first appears (`--minimized`, `--no-activate`).
+    start: crate::cli_options::StartMode,
     state: State,
 }
 
@@ -199,6 +203,7 @@ impl Shell {
             pending_resize: None,
             last_resize_frame: None,
             capture: capture::Capture::new(),
+            start: crate::cli_options::StartMode::default(),
             state,
         }
     }
@@ -213,9 +218,12 @@ impl Shell {
 
     fn init_gpu(&mut self, el: &ActiveEventLoop) {
         // #1754: with_icons also sets the taskbar icon (ICON_BIG) on Windows.
-        let attrs = super::app_icon::with_icons(Window::default_attributes())
-            .with_title(self.window_title.clone())
-            .with_inner_size(LogicalSize::new(1280.0, 800.0));
+        let attrs = start::attributes(
+            self.start,
+            super::app_icon::with_icons(Window::default_attributes())
+                .with_title(self.window_title.clone())
+                .with_inner_size(LogicalSize::new(1280.0, 800.0)),
+        );
         let window = match el.create_window(attrs) {
             Ok(w) => Arc::new(w),
             Err(err) => {
@@ -228,8 +236,8 @@ impl Shell {
         crate::file_dialog::set_parent(&window);
         // A window launched from a terminal or a script does not always get
         // the foreground: ask for it once, so the shell is not born behind
-        // whatever launched it.
-        window.focus_window();
+        // whatever launched it. `--minimized` and `--no-activate` skip this.
+        start::show(self.start, &window);
         // M4.2 + #74: the honest fallback chain, adapter by adapter inside
         // each backend mask (gpu_init); a refusal names every adapter tried.
         // The View3D pipelines are built per candidate: an adapter that
