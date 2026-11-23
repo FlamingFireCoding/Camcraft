@@ -791,7 +791,7 @@ dependencies = [
 
 [[package]]
 name = "camcraft-gcode"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "camcraft-cl",
  "camcraft-geometry",
