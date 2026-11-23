@@ -232,6 +232,31 @@ pub(super) fn tool_gate(world: &World, params: &OpParams, tool: &str) -> Result<
     rest_gate(world, params, tool)
 }
 
+/// The slot door (#3475): a plain Slot's tool must fit its width, by the
+/// slot generator's own rule (`machining2d::slot_centre_band`), refused
+/// when the operation is made, re-tooled or retyped. Open for every other
+/// kind, for a width that only falls back from picks that seed no slot
+/// (generation names those picks), and for a tool name that does not
+/// resolve (the tool door names that one).
+pub(super) fn slot_gate(world: &World, setup: Option<&str>, src: &SrcRef, params: &OpParams, tool: &str) -> Result<(), CommandError> {
+    let OpParams::Slot { width, stock_to_leave, .. } = params else {
+        return Ok(());
+    };
+    if !operation::slot_width_is_stated(world, setup, src, params) {
+        return Ok(());
+    }
+    match model::find_by_name(world, tool).and_then(|e| model::tool_of(world, &e)) {
+        Some(def) => {
+            let unit = crate::units::of(world);
+            match operation::tool_gate::slot_fit_refusal(tool, def.diameter, *width, *stock_to_leave, unit) {
+                Some(msg) => Err(CommandError::Invalid(msg)),
+                None => Ok(()),
+            }
+        }
+        None => Ok(()),
+    }
+}
+
 /// The rest machining door (#1489): a 2D Pocket's previous tool must be
 /// larger than the tool it mounts - refused by name when the operation
 /// is made, edited or re-tooled, in the rest generator's words. Open for
