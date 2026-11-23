@@ -597,6 +597,10 @@ pub enum OpParams {
         /// ladder (if any) owes the closing half-step less. Off is
         /// the level ladder exactly as it always generated.
         shell: bool,
+        /// Where each level's rings start (#3361, the shared parameter
+        /// of #3316): read by Waterline and Offset rings. `Auto` is
+        /// every earlier file, byte for byte.
+        pass_start: crate::machining2d::PassStart,
     },
     /// Ball-nose surface finishing. The model is the finished
     /// surface. `Waterline`: each ring is the ball-center tangent

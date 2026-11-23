@@ -631,6 +631,10 @@ pub enum ParamsDto {
         /// IS the old behavior.
         #[serde(default)]
         shell: bool,
+        /// #3361 where each level's rings start: absent is `auto`, the
+        /// order every earlier file cut - no version step.
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
     },
     /// Declared at v15 with the waterline. The rename states the tag
     /// for the same reason `pocket3d` does - the automatic snake_case

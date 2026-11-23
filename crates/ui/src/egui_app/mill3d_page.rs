@@ -53,6 +53,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             feed_opt,
             shell,
             method,
+            pass_start,
         } => {
             if tab == SEC_LEADS {
                 lead_page::leads_tab(ui, u, "p3", Some((entry, helix_radius)), links);
@@ -112,6 +113,11 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 if matches!(strategy, PocketStrategy::Adaptive) {
                     // #1591: how an Adaptive level is cleared.
                     method_row(ui, method);
+                }
+                // #3361: the shared row; only the ring strategies read it.
+                super::pass_start_row::pass_start_row(ui, "pocket3d", pass_start);
+                if !matches!(strategy, PocketStrategy::Waterline | PocketStrategy::OffsetRings) {
+                    consequence(ui, super::pass_start_row::POCKET3D_NO_RING_ORDER);
                 }
                 if matches!(strategy, PocketStrategy::Adaptive) && *method == camcraft_app::machining2d::AdaptiveMethod::Trochoidal {
                     hint(ui, TROCHOIDAL_HINT);

@@ -103,6 +103,7 @@ fn document(aligned: bool, tool_name: &str) -> (World, History) {
 
 fn rough(strategy: PocketStrategy) -> OpParams {
     OpParams::Pocket3D {
+        pass_start: Default::default(),
         links: Links::ROUGH3D,
         stepover: 1.5,
         stock_to_leave: 0.0,

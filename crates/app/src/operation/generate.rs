@@ -1080,6 +1080,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             feed_opt,
             shell,
             method,
+            pass_start,
             ..
         } => {
             // The region is the model's own silhouette (see
@@ -1132,6 +1133,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry: *entry,
                 helix_radius: *helix_radius,
                 optimal_load: *optimal_load,
+                pass_start: *pass_start,
             };
             // #1950: steel in the air band refuses the op by name.
             if let Some(st) = air_stock {
@@ -1868,6 +1870,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry: *entry,
                 helix_radius: *helix_radius,
                 optimal_load: *optimal_load,
+                pass_start: crate::machining2d::PassStart::Auto,
             };
             let axis = crate::multiaxis::AxisControl {
                 lead_deg: *lead_deg,
@@ -1976,6 +1979,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry: *entry,
                 helix_radius: *helix_radius,
                 optimal_load: *optimal_load,
+                pass_start: crate::machining2d::PassStart::Auto,
             };
             let axis = crate::multiaxis::AxisControl {
                 lead_deg: *lead_deg,
