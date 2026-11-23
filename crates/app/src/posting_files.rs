@@ -68,6 +68,9 @@ pub const BUILTINS: &[(&str, AssetFile)] = &[
     // operation manual (Mark 21 / EX21); not verified on a control.
     ("Sodick Wire EDM (Mark 21)", AssetFile("sodick-wire.cps")),
     (super::agie::POST, AssetFile("agie-native.cps")),
+    // #2700: the G-EDM 2-axis wire post for G-RBLv3 (Grbl-family words,
+    // spark power set at the controller); not verified on a control.
+    ("G-EDM Wire EDM", AssetFile("g-edm.cps")),
     // #542: the generic ISO-style sinker post; every EDM code is the
     // machine's `edm.codes` (#290 D5). It serves sinker EDMs only.
     ("Sinker EDM (ISO)", AssetFile("sinker-iso.cps")),
@@ -357,6 +360,7 @@ fn embedded(kind: &str, file: &str) -> Option<&'static str> {
         ("posts", "wire-iso.cps") => Some(include_str!("../../../assets/posts/wire-iso.cps")),
         ("posts", "agie-native.cps") => Some(include_str!("../../../assets/posts/agie-native.cps")),
         ("posts", "sodick-wire.cps") => Some(include_str!("../../../assets/posts/sodick-wire.cps")),
+        ("posts", "g-edm.cps") => Some(include_str!("../../../assets/posts/g-edm.cps")),
         ("posts", "sinker-iso.cps") => Some(include_str!("../../../assets/posts/sinker-iso.cps")),
         ("machines", "vmc.mch") => Some(include_str!("../../../assets/machines/vmc.mch")),
         ("machines", "fehlmann-picomax55.mch") => Some(include_str!("../../../assets/machines/fehlmann-picomax55.mch")),
