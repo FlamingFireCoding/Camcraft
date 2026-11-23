@@ -986,17 +986,31 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             };
             // #1509 / #1588: the method picks the planner; both cut the same
             // region, the one the op's source and boundary settings give.
-            let adaptive = |pp: &PocketParams| match (rest, method) {
-                (Some(r), _) => machining2d::rest_adaptive_previous(&region, pp, r, ahead_cols.as_ref()),
-                (None, machining2d::AdaptiveMethod::Spiral) => {
+            // #1446: a rest pass reads the stock that the earlier
+            // operations leave; it keeps precedence, as it does on main.
+            // #3346: without rest, "Do not touch" items make each planner
+            // cut its area back by the full-tool keep-out; without them,
+            // or on a rest pass, the plain planner runs and its path stays
+            // the one it always was. The rest planner takes no keep-out,
+            // so rest + "Do not touch" is a feature gap, never a silent
+            // gouge: `verify_avoid` below still blocks a hit on the post.
+            let adaptive = |pp: &PocketParams| match (rest, method, avoid_spec.as_ref()) {
+                (Some(r), _, _) => machining2d::rest_adaptive_previous(&region, pp, r, ahead_cols.as_ref()),
+                (None, machining2d::AdaptiveMethod::Spiral, Some(spec)) => {
+                    machining2d::adaptive_spiral_avoid_on(&region, pp, spec, corner_relief, &side)
+                }
+                (None, machining2d::AdaptiveMethod::Spiral, None) => {
                     machining2d::pocket_started_on(&region, pp, &[], corner_relief, &side)
                 }
                 // #1733: the loops are arcs already; the option is
                 // refused by name, never ignored (`sane` says it first).
-                (None, machining2d::AdaptiveMethod::Trochoidal) if *blend_turns => Err(GenError::Invalid(
+                (None, machining2d::AdaptiveMethod::Trochoidal, _) if *blend_turns => Err(GenError::Invalid(
                     "arc turns at corners are not available with the Trochoidal method".into(),
                 )),
-                (None, machining2d::AdaptiveMethod::Trochoidal) => {
+                (None, machining2d::AdaptiveMethod::Trochoidal, Some(spec)) => {
+                    machining2d::adaptive_trochoidal_avoid(&region, pp, troch, spec)
+                }
+                (None, machining2d::AdaptiveMethod::Trochoidal, None) => {
                     machining2d::adaptive_trochoidal_with(&region, pp, troch)
                 }
             };
