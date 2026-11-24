@@ -12,7 +12,6 @@ use crate::egui_app::tool_library_dialog::recipes_tab::{COPY, MARK, SUGGEST, TAB
 use crate::state::CommandKind;
 use camcraft_app::tool_cutting_rows::CuttingRow;
 use camcraft_app::tools::{Tool, ToolMaterial, WorkMaterial};
-use egui_kittest::kittest::NodeT;
 
 /// A document tool that the cutting table speaks for (an end, ball, bull
 /// nose or chamfer mill), with a carbide edge, three flutes and the
