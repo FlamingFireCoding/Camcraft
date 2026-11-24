@@ -14,7 +14,7 @@ use crate::model;
 #[path = "posting_agie_group.rs"]
 mod group;
 
-pub(crate) use camcraft_post::agie::{AgieJob, AgieSide};
+pub(crate) use camcraft_post::agie::{AgieJob, AgieSide, Quality};
 pub use camcraft_post::agie::valid_name;
 
 /// The registry name of the native wire EDM post, the one place it is spelled (#3537).
@@ -24,8 +24,18 @@ pub const POST: &str = "Native wire EDM job files";
 /// that still says it selects [`POST`].
 pub const LEGACY_POST: &str = "Agie native wire EDM";
 const MODEL: &str = "AGIECUT CLASSIC 2S";
-pub(crate) const CONDITION: &str = "AGIE_QN2";
 pub(crate) const PREVIEW_GAP: f64 = 0.005;
+
+/// The work quality that a Wire Contour machine condition requests (#2966).
+/// `AGIE_QN2` requests CCB030 (Ra 0.30 µm) for every qualified job.
+/// `AGIE_BERCO_RA035` requests CCB035 (Ra 0.35 µm) for one 20 mm polygon punch.
+pub(crate) fn quality_of(condition: &str) -> Option<Quality> {
+    match condition {
+        "AGIE_QN2" => Some(Quality::Ccb030),
+        "AGIE_BERCO_RA035" => Some(Quality::Ccb035),
+        _ => None,
+    }
+}
 
 /// The registry name that `name` selects: [`POST`] for its hidden alias, else `name`.
 #[must_use]
@@ -141,6 +151,18 @@ pub(super) fn post(
         _ => None,
     };
     let jobs = if round.is_some() { Vec::new() } else { group::jobs(world, &operations)? };
+    // The control checked CCB035 on one 20 mm polygon punch only (#2966).
+    let qualities = operations
+        .iter()
+        .map(|(_, op)| crate::operation::agie_quality(world, op))
+        .collect::<Result<Vec<_>, _>>()?;
+    let quality = match qualities.as_slice() {
+        [quality] if round.is_none() => *quality,
+        _ if qualities.iter().all(|q| *q == Quality::Ccb030) => Quality::Ccb030,
+        _ => {
+            return Err("AGIE_BERCO_RA035 is qualified for one closed polygon punch on a 20 mm plate only. Select AGIE_QN2 for a punch group or a DXF arc punch".into());
+        }
+    };
     let options = super::program_options_for_script(
         world,
         super::builtin_post_text(POST)?,
@@ -156,10 +178,18 @@ pub(super) fn post(
         Some((job, shape)) => {
             (camcraft_post::agie::export_round_with_review(job, shape, dest, name, separation)?, 1)
         }
-        None => (
-            camcraft_post::agie::export_group_with_review(&jobs, dest, name, separation)?,
-            jobs.len(),
-        ),
+        None => match (quality, jobs.as_slice()) {
+            (Quality::Ccb035, [job]) => (
+                camcraft_post::agie::export_punch_with_review(
+                    job, quality, dest, name, separation,
+                )?,
+                1,
+            ),
+            _ => (
+                camcraft_post::agie::export_group_with_review(&jobs, dest, name, separation)?,
+                jobs.len(),
+            ),
+        },
     };
     Ok(Posted {
         bundle_files: bundle.files,

@@ -31,6 +31,16 @@ Agie Control calculated these wire-centre offsets on the straight outside faces 
 
 The clearance check rounds the rough offset plus the wire radius up to the next tenth of a millimetre. For these four thicknesses this gives 0.4 mm on a straight face. At a pointed corner the post checks the miter for that thickness separately. Other thicknesses are refused. They need their own control measurements.
 
+### Request Ra 0.35 µm for one 20 mm punch
+
+For one closed polygon punch in 20 mm cold die steel, you can request quality **CCB035** instead of CCB030. Add a mounted machine condition with ID **AGIE_BERCO_RA035**, role **rough**, wire diameter **0.25 mm** and preview gap **0.005 mm**. Select **AGIE_BERCO_RA035** in the Wire Contour condition field. The project file keeps the selection. The job requests **Ra 0.35**, **Te 1.50** and **Tkm 1.00**, with three options disabled. All other files of the job are the same as for CCB030.
+
+On the offline control, TECCUT preselected the same 4-pass technology (`estbca25nnn060b030020`, a Ra 0.30 row) for this request as for CCB030. With that row assigned, all four passes used T100 and the offsets of the 20 mm row above: **0.245, 0.155, 0.140 and 0.134 mm**. The table also lists a 5-pass Ra 0.35 row of type S. CamCraft has no measured offsets for it. If the control preselects another row, or the offsets differ, stop and do not cut. Ra is the requested value; only a physical cut can measure the surface.
+
+CamCraft refuses AGIE_BERCO_RA035 for other stock thicknesses, a die opening, an open cutoff, a punch group and a DXF circle or racetrack. No file is written. Use AGIE_QN2 for those jobs.
+
+Run `cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/fine-punch.camscript` into a fresh `FINE20` directory.
+
 ## Try the synthetic punch
 
 From the project root, run the supplied script with a local CamCraft desktop CLI build.
@@ -111,7 +121,7 @@ Keep all files of the job directory together. A punch group has one ISO object f
 
 Select the newly created piece. After a repeat import, an earlier piece can retain its machining steps. Match the new work’s ISO geometry and threading hole to the setup. Check that the new work shows **[0]**. At this point **FORMALCHECK** should report undefined technology.
 
-1. Open **Work Details** on the new work. Verify steel **0001**, wire **Berco Cut 0.25**, the stock height you selected (**15**, **20**, **40** or **80 mm** for a punch, **20 mm** for a die) and the effective work quality. The requested **CCB030** values are **Ra 0.30**, **Te 1.50** and **Tkm 1.00**, with three options disabled. Check the two options the control displays. A resident quality with the same name can hold different values.
+1. Open **Work Details** on the new work. Verify steel **0001**, wire **Berco Cut 0.25**, the stock height you selected (**15**, **20**, **40** or **80 mm** for a punch, **20 mm** for a die) and the effective work quality. The requested **CCB030** values are **Ra 0.30**, **Te 1.50** and **Tkm 1.00**, with three options disabled. For **CCB035** the requested Ra is **0.35**. Check the two options the control displays. A resident quality with the same name can hold different values.
 2. If any visible value differs, use **Quality → Define** on this work to select the requested values. Confirm the effective settings before proceeding.
 3. Open **Technology**, select **TECCUT** and choose **Assign** on the matching row. Inspect the generated steps. The rough and trim offsets must agree with the row of the selected stock thickness in [QN2 offsets by stock thickness](#qn2-offsets-by-stock-thickness), in that order. The post review names the same four offsets. A die plate and an open cutoff are always 20 mm thick, so they use the 20 mm row. For 20 mm stock the offsets are **0.245, 0.155, 0.140 and 0.134 mm**.
 4. Run **FORMALCHECK**. Inspect errors and warnings. Save the piece and run **GRAFICHECK**. Check the installed XY datum and travel, the approach from the hole and the compensation: outside a punch, inside a die opening. Verify the 1 mm separation section, trimming sequence and support for release of the punch or the slug. CamCraft does not command a manual pause before the section cut.

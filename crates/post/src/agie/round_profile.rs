@@ -59,7 +59,7 @@ pub(super) fn prepare<'a>(
     if job.side != AgieSide::Punch || !job.contour.is_empty() {
         return Err("The native DXF circle or racetrack is a punch only".into());
     }
-    let setup = contour::punch_setup(job, program)?;
+    let setup = contour::punch_setup(job, program, crate::agie_setup::Quality::Ccb030)?;
     if setup.height_um != HEIGHT_UM {
         return Err("The native DXF circle or racetrack punch requires the qualified 20 mm stock height".into());
     }

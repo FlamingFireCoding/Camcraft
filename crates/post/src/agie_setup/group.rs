@@ -87,6 +87,7 @@ impl PunchGroup20<'_> {
             stock_min_um: self.stock_min_um,
             stock_max_um: self.stock_max_um,
             height_um: self.height_um,
+            quality: super::Quality::Ccb030,
         };
         let works: Vec<_> = self
             .punches
