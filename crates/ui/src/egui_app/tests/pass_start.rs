@@ -310,3 +310,45 @@ fn the_finish3d_passes_tab_offers_pass_start_and_names_the_unused_patterns() {
         assert_eq!(shown(&harness, &finish3d_no_ring_order(name)), line, "{name}");
     }
 }
+
+/// #3748: the Lead in / Lead out tab of 2D Offset keeps Helix, Ramp and
+/// Plunge selectable for Inside and Outside (the Type combo is never
+/// greyed out), and shows the advice - the selected type, the recommended
+/// Arc and the reason - next to the selector when one of them is
+/// selected. Arc and Auto show none; the 2D Adaptive twin, which has no
+/// Arc entry from the air, shows none either.
+#[test]
+fn the_leads_tab_advises_arc_next_to_the_entry_type_for_inside_and_outside() {
+    use camcraft_app::machining2d::entry_advice;
+    use camcraft_app::machining3d::Entry3D;
+    use egui_kittest::kittest::NodeT;
+    let leads = super::super::op_tabs::SECTIONS.iter().position(|s| s.starts_with("Lead"));
+    for ty in [OpType::Offset2D, OpType::Adaptive2D] {
+        let mut harness = shell_harness();
+        let cur = harness.state().state.op_ui.params.clone();
+        harness.state_mut().state.op_ui.params = crate::operations::retype(&cur, kind(ty));
+        harness.state_mut().state.op_tab = leads.unwrap_or(0);
+        for start in [PassStart::Inside, PassStart::Outside, PassStart::Auto] {
+            for kind_of in [Entry3D::Helix, Entry3D::Ramp, Entry3D::Plunge, Entry3D::Arc] {
+                match &mut harness.state_mut().state.op_ui.params {
+                    OpParams::Offset2D { pass_start, entry, .. } | OpParams::Adaptive2D { pass_start, entry, .. } => {
+                        *pass_start = start;
+                        *entry = kind_of;
+                    }
+                    _ => panic!("{ty:?}: the draft has no pass order"),
+                }
+                harness.run();
+                let name = format!("{kind_of:?}");
+                let combos: Vec<_> =
+                    harness.query_all_by(|n| n.role() == Role::ComboBox && n.value().as_deref() == Some(name.as_str())).collect();
+                assert!(!combos.is_empty(), "{ty:?} {start:?}: the Type combo shows {name}");
+                let greyed = combos.into_iter().filter(|n| n.accesskit_node().is_disabled()).count();
+                assert_eq!(greyed, 0, "{ty:?} {start:?}: the Type combo is greyed out");
+                let advice = entry_advice(start, kind_of);
+                let want = usize::from(ty == OpType::Offset2D && advice.is_some());
+                let shown = advice.map_or(0, |a| harness.query_all_by_label(a).count());
+                assert_eq!(shown, want, "{ty:?} {start:?} {kind_of:?}: the advice next to the selector");
+            }
+        }
+    }
+}

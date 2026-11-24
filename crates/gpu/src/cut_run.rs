@@ -219,24 +219,28 @@ fn deepest_local(item: &CutItem, grid: &CutGrid) -> Option<[u32; 3]> {
 }
 
 /// The CPU cut at absolute cell `at` from the layer value `start`, and
-/// the claim margin of the item that makes it (`0` when no item cuts
-/// deeper than `start`).
+/// the claim margin that bounds the GPU value there: the largest margin
+/// of an item whose CPU value is within its own margin of the result.
+/// An item that ties with the winner (or with a base value that wins, for
+/// example a spring pass over a keyframe) can come out up to its bound
+/// deeper on the GPU, so its margin counts too (#2629, S3b); a tie must
+/// not refuse a good GPU layer and latch the GPU path off. `0` when no
+/// item comes near.
 fn want_at(input: &CutInput, start: f32, at: [u32; 3]) -> (f32, f32) {
     let g = &input.grid;
-    let (mut want, mut margin) = (start, 0.0f32);
-    for item in &input.items {
-        let l: [i64; 3] = std::array::from_fn(|a| i64::from(at[a]) - i64::from(item.base[a]));
-        let inside = (0..3).all(|a| i64::from(item.lo[a]) <= l[a] && l[a] <= i64::from(item.hi[a]));
-        if !inside {
-            continue;
-        }
-        let l = l.map(|v| u32::try_from(v).unwrap_or(0));
-        if let Some(v) = cell_cut(item, l, g)
-            && v > want
-        {
-            (want, margin) = (v, item.margin);
-        }
-    }
+    let claims = || {
+        input.items.iter().filter_map(move |item| {
+            let l: [i64; 3] = std::array::from_fn(|a| i64::from(at[a]) - i64::from(item.base[a]));
+            let inside = (0..3).all(|a| i64::from(item.lo[a]) <= l[a] && l[a] <= i64::from(item.hi[a]));
+            if !inside {
+                return None;
+            }
+            let l = l.map(|v| u32::try_from(v).unwrap_or(0));
+            cell_cut(item, l, g).map(|v| (v, item.margin))
+        })
+    };
+    let want = claims().fold(start, |w, (v, _)| w.max(v));
+    let margin = claims().filter(|(v, m)| want - v <= *m).fold(0.0f32, |acc, (_, m)| acc.max(m));
     (want, margin)
 }
 

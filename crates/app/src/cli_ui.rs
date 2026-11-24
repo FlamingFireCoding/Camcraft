@@ -39,7 +39,7 @@ The windows are found through the link files in the user's folder
 (CAMCRAFT_UI_LINK_DIR overrides it). A window started with
 CAMCRAFT_UI_LINK=off opens no link.
 
-Exit: 0 stood, 1 refused, 2 usage, 3 no running window.
+Exit: 0 stood, 1 refused, 2 usage, 3 no running window, 4 window busy.
 ";
 
 /// The lane: `args` is everything after `--ui`. The windows are looked
