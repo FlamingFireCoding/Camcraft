@@ -757,17 +757,43 @@ function aiccOff() {
 // zero - after G49 (the preamble's line), at the reference height, before
 // the tool change and the first X/Y traverse, which states its height again.
 function uprightAfterTilt() {
-  var words = [], held = [], ls = ["A", "B", "C"];
-  for (var i = 0; i < ls.length; i++) {
-    var v = rotAt[ls[i]];
-    if (has(v) && Math.abs(v) > 1e-9 && statesRotary(ls[i])) { words.push(angleWord(ls[i], 0)); held.push(ls[i]); }
-  }
-  if (!words.length) return;
+  if (!heldRotaries().length) return;
   retractHome(false);
   if (optStr("safeRetract", "G28") !== "G53") block(["G90"]);
-  block(["G00"].concat(words));
-  for (var j = 0; j < held.length; j++) rotAt[held[j]] = 0;
+  rotariesToZero();
   xyUnknown = true;
+}
+// The rotaries the control holds away from zero (rotAt).
+function heldRotaries() {
+  var held = [], ls = ["A", "B", "C"];
+  for (var i = 0; i < ls.length; i++) {
+    var v = rotAt[ls[i]];
+    if (has(v) && Math.abs(v) > 1e-9 && statesRotary(ls[i])) held.push(ls[i]);
+  }
+  return held;
+}
+// One block that turns each held rotary to zero; no X/Y/Z word.
+function rotariesToZero() {
+  var held = heldRotaries(), words = [];
+  for (var i = 0; i < held.length; i++) { words.push(angleWord(held[i], 0)); rotAt[held[i]] = 0; }
+  if (words.length) block(["G00"].concat(words));
+}
+
+// #3540: the program ends upright too, so the operator unloads at zero
+// and the next program does not start under the old lean. Same order as
+// the return above: G49 (TCPM and the length offset off), Z to the
+// reference height, the angles to zero, then X/Y home - incremental
+// (G91 G28), so the via point is the current position, never work X0 Y0.
+// A trailing Go home already lifted Z (homedAt): only the angles follow.
+function uprightAtEnd() {
+  if (!heldRotaries().length) return false;
+  var homed = linesWritten() === homedAt;
+  var g28 = optStr("safeRetract", "G28") !== "G53";
+  if (!homed) { block(["G49"]); retractHome(false); }
+  if (g28 && !homed) block(["G90"]);  // a Go home wrote its own G90
+  rotariesToZero();
+  if (!homed && g28) block(["G91", "G28", "X0", "Y0"]);
+  return true;
 }
 
 function startPreamble() {
@@ -1360,7 +1386,7 @@ function onClose() {
   endPreamble();
   // #504: a trip home with nothing written after it (a trailing Go
   // home) already is the program-end home - written once, not twice.
-  if (linesWritten() !== homedAt) {
+  if (!uprightAtEnd() && linesWritten() !== homedAt) {
     retractHome(true);
   }
   var u = endUnitsWord();
