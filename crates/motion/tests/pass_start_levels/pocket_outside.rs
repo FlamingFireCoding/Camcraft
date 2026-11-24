@@ -10,7 +10,7 @@ use camcraft_motion::cl::Toolpath;
 use camcraft_motion::geo2d::Region;
 use camcraft_motion::links::Link;
 use camcraft_motion::machining2d::{
-    CornerRelief, PassStart, PocketParams, PocketStrategy, pocket_avoid_started_on, pocket_started_on,
+    CornerRelief, PassStart, PocketParams, PocketStrategy, StartSide, pocket_avoid_started_on, pocket_started_on,
 };
 use camcraft_motion::tools::ToolGeom;
 use camcraft_motion::verify::{AVOID_VERIFY_TOL, AvoidItem, AvoidSpec, Cutter, avoid_hits};
@@ -113,6 +113,54 @@ fn adaptive_fallback_rings_link_by_the_ring_law() {
         mask("pocket_adaptive_fallback", &band(&part), &path).assert_no_overcut();
         assert_no_crossing(&name, &path);
     }
+}
+
+/// The square fixture of `pocket_hsm_start_tests` (#3355): a sketch 96 mm
+/// wide less a 30 x 30 part, a 70 x 70 stock, a D10 tool, one level.
+fn hsm_square() -> PocketParams {
+    use camcraft_motion::entry::Entry3D;
+    PocketParams {
+        blend_radius: None,
+        tool_diameter: 10.0,
+        stepover: 4.0,
+        stock_to_leave: 0.0,
+        clearance_z: 40.0,
+        retract_z: None,
+        top_z: 10.0,
+        bottom_z: 5.0,
+        stepdown: 5.0,
+        feed: 1200.0,
+        plunge_feed: 300.0,
+        climb: true,
+        strategy: PocketStrategy::Adaptive,
+        entry: Entry3D::Helix,
+        helix_radius: 2.0,
+        optimal_load: camcraft_motion::load::DEFAULT_OPTIMAL_LOAD,
+        blend_turns: false,
+        links: camcraft_motion::links::Links::PLANAR,
+    }
+}
+
+/// #3822 pin (review of #3837): round a part with Outside and a stock, the
+/// Adaptive spiral runs its own air plan (no fallback to rings). It is no
+/// ring set, so the ring law does not link it: it posts the moves that
+/// main posted before #3818 (the digest read on `b2ff0ef1b`).
+#[test]
+fn adaptive_spiral_round_a_part_outside_equals_main_before_3818() {
+    use camcraft_motion::geo2d::Point2;
+    let sq = |s: f64| vec![Point2::new(-s, -s), Point2::new(s, -s), Point2::new(s, s), Point2::new(-s, s)];
+    let band = super::region(vec![sq(48.0), sq(15.0)]);
+    let stock = super::region(vec![sq(35.0)]);
+    let side = StartSide { start: PassStart::Outside, stock: Some(stock), around_part: true };
+    let path = pocket_started_on(&band, &hsm_square(), &[], &CornerRelief::default(), &side).expect("plan");
+    assert!(
+        !path.notes.iter().any(|n| n.contains("Offset rings cut this pocket")),
+        "the spiral falls back to rings: {:?}",
+        path.notes
+    );
+    let got = digest(&path);
+    eprintln!("adaptive square Outside: {} move(s), digest {got}", path.moves.len());
+    assert_eq!(got, 13_996_707_157_284_497_335, "the Adaptive spiral changed: {:?}", path.notes);
 }
 
 /// The Z of each lift off the floor at `Z` (a cut on the floor still to

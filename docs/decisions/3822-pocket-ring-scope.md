@@ -20,19 +20,21 @@
     the digest of the moves round the dog bone, Inside and Outside, with
     the digest read on main before #3818 (`b2ff0ef1b`). The pin fails when
     the predicate is removed.
-  - The Adaptive spiral never links by the ring law. Round a part with
-    Inside or Outside, the HSM plan cannot start on the start side (a hole
-    wall, or the air past the stock), and it falls back to Offset rings by
-    name. Those passes are rings, and the planner joins them by the in-air
-    join law of #3747 (`level_order`). So they also link by the ring law,
-    and the pins of the 2D Pocket apply to them:
+  - The Adaptive spiral is no ring set, so the ring law never links it.
+    Where the HSM plan runs its own spiral round a part (Outside with a
+    stock outline: the air plan of #3355), it posts the moves of main
+    before #3818. Pin: `adaptive_spiral_round_a_part_outside_equals_main_before_3818`
+    (the square fixture of `pocket_hsm_start_tests` with `around_part`,
+    the digest read on `b2ff0ef1b`); it fails when the predicate is
+    removed.
+  - Where the HSM plan cannot start on the start side (a hole wall Inside;
+    on the dog bone also Outside), it falls back to Offset rings by name.
+    Those passes are rings, and the planner joins them by the in-air join
+    law of #3747 (`level_order`). So they also link by the ring law, and
+    the pins of the 2D Pocket apply to them:
     `adaptive_fallback_rings_link_by_the_ring_law` (the fallback is named,
-    no overcut, no crossing feed, each lift named). This differs from the
-    coordinator's first wish (the Adaptive output equals main before
-    #3818): on the fixture the Adaptive output is always the fallback, and
-    a pass link by the old law after a join by the new law would mix two
-    laws in one ring set. The issue's second option (pin it as for the 2D
-    Pocket) is taken for the fallback.
+    no overcut, no crossing feed, each lift named). A pass link by the old
+    law after a join by the new law would mix two laws in one ring set.
 - **A failed ring link lifts to the plane of the user's pass link.** With
   `Link::Clearance` it lifts to the clearance height; with `Retract`,
   `KeepDown` or the default (`Links::PLANAR`, `Retract`) it lifts to the
