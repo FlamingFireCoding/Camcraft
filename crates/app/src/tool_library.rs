@@ -25,6 +25,14 @@
 //! and judge the tool's smaller holder cylinder, so it must refuse the
 //! file. An entry this build's library does not hold refuses the whole
 //! file by name.
+//!
+//! #3904: a tool's drawn cutter (`ToolCutter`, #93) rides its definition
+//! as `cutter` - the `[z, r, arc]` points a `.camproj` tool stores - and
+//! the file then says version 5 (`CUTTER_VERSION`): the stack laws read
+//! its neck (#852), so a reader that predates the key would drop it and
+//! judge a different tool; it must refuse the file. A cutter is judged as
+//! the project loader judges one (`project::cutter_from_dto`); one that
+//! disagrees with its tool's numbers refuses the whole file by name.
 
 use flecs_ecs::prelude::World;
 use serde_json::{Value, json};
@@ -32,7 +40,9 @@ use serde_json::{Value, json};
 use crate::model;
 use crate::project::{self, HolderRefDto, ToolBodyDto};
 use crate::schema::ToolBody;
+use crate::spun::SpunProfile;
 use crate::tool_body;
+use crate::tool_cutter;
 use crate::tools::Tool;
 
 /// The envelope's `format` tag.
@@ -48,6 +58,9 @@ pub const CUTTING_STEPS_VERSION: u64 = 3;
 /// #2016: older readers (including v0.22.0 at version 2 and version-3
 /// builds) must refuse libraries whose tools name a library holder (`holder`).
 pub const HOLDER_REF_VERSION: u64 = 4;
+/// #3904: older readers must refuse libraries whose tools carry a drawn
+/// cutter (`cutter`); a library without one keeps the older number.
+pub const CUTTER_VERSION: u64 = 5;
 /// The extension the file dialogs offer.
 pub const EXTENSION: &str = "camtools";
 
@@ -76,13 +89,16 @@ pub struct LibraryTool {
     /// a machine tool-table file (PathPilot `.csv` or Hurco `.TCM`),
     /// `None` for `.camtools` JSON which leaves numbers to the document.
     pub number: Option<u32>,
+    /// #3904: the drawn cutter the file carries for this tool (already
+    /// judged against it), `None` for the outline its numbers draw.
+    pub cutter: Option<SpunProfile>,
 }
 
 impl LibraryTool {
     /// A library tool with no body and no explicit controller number.
     #[must_use]
     pub fn bare(name: impl Into<String>, tool: Tool) -> Self {
-        Self { name: name.into(), tool, body: None, number: None }
+        Self { name: name.into(), tool, body: None, number: None, cutter: None }
     }
 }
 
@@ -90,7 +106,8 @@ impl LibraryTool {
 /// person can read and hand-edit it). Lengths are millimetres, as the
 /// document stores them, whatever the display units. Refuses an empty
 /// document: a library with no tools is never what the user meant.
-/// #889: a tool's body rides its definition as `body`.
+/// #889: a tool's body rides its definition as `body`; #3904: its drawn
+/// cutter as `cutter`.
 pub fn export_tool_library(world: &World) -> Result<String, String> {
     let mut tools: Vec<Value> = Vec::new();
     let mut version = VERSION;
@@ -119,6 +136,12 @@ pub fn export_tool_library(world: &World) -> Result<String, String> {
                 o.insert(key.into(), value);
             }
         }
+        if let Some(c) = tool_cutter::cutter_of(world, &e) {
+            version = version.max(CUTTER_VERSION);
+            if let Value::Object(o) = &mut def {
+                o.insert("cutter".into(), json!(project::spun_to_dto(&c)));
+            }
+        }
         tools.push(json!({ "name": n, "definition": def }));
     }
     if tools.is_empty() {
@@ -145,8 +168,8 @@ pub fn parse_tool_library(text: &str) -> Result<Vec<LibraryTool>, String> {
                 None => return Err(format!("not a tool library: no \"format\": \"{FORMAT}\"")),
             }
             match o.get("version").and_then(Value::as_u64) {
-                Some(VERSION | LEFT_HAND_VERSION | CUTTING_STEPS_VERSION | HOLDER_REF_VERSION) => {}
-                Some(v) => return Err(format!("tool library version {v} is not supported (this build reads {VERSION} to {HOLDER_REF_VERSION})")),
+                Some(VERSION | LEFT_HAND_VERSION | CUTTING_STEPS_VERSION | HOLDER_REF_VERSION | CUTTER_VERSION) => {}
+                Some(v) => return Err(format!("tool library version {v} is not supported (this build reads {VERSION} to {CUTTER_VERSION})")),
                 None => return Err("not a tool library: no \"version\"".into()),
             }
             if let Some(u) = o.get("units").and_then(Value::as_str)
@@ -182,7 +205,8 @@ pub fn parse_tool_library(text: &str) -> Result<Vec<LibraryTool>, String> {
             return Err(format!("tool '{name}' is refused: {why}"));
         }
         let body = read_body(def, &tool, name)?;
-        out.push(LibraryTool { name: name.to_owned(), tool, body, number: None });
+        let cutter = read_cutter(def, &tool, name)?;
+        out.push(LibraryTool { name: name.to_owned(), tool, body, number: None, cutter });
     }
     if out.is_empty() {
         return Err("the tool library holds no tools".into());
@@ -220,6 +244,17 @@ fn read_body(def: &Value, tool: &Tool, name: &str) -> Result<Option<ToolBody>, S
     };
     tool_body::fits(tool, &body).map_err(|e| format!("tool '{name}': {what} refused: {e}"))?;
     Ok(Some(body))
+}
+
+/// #3904: a definition's `cutter`, judged as the project loader judges
+/// it (`project::cutter_from_dto`), or the file refuses naming the tool.
+fn read_cutter(def: &Value, tool: &Tool, name: &str) -> Result<Option<SpunProfile>, String> {
+    let Some(raw) = def.get("cutter").filter(|v| !v.is_null()) else {
+        return Ok(None);
+    };
+    let pts: Vec<[f64; 3]> =
+        serde_json::from_value(raw.clone()).map_err(|e| format!("tool '{name}': cutter is malformed: {e}"))?;
+    project::cutter_from_dto(tool, &pts, name).map(Some)
 }
 
 /// How many of a library's tools carry a body (#889) - what the import

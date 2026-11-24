@@ -4,12 +4,15 @@
 //! overwritten (identical tool skipped, different tool renamed); a tool
 //! `is_sane` refuses, a corrupt file or malformed JSON refuse the whole
 //! import by name with nothing applied; undo removes exactly the imported
-//! tools and redo brings them back.
+//! tools and redo brings them back. #3904: a drawn cutter rides the file
+//! (version 5), is judged by name, and lands and undoes with its tool.
 //! Provenance: our own tests over our own format and commands.
 //!
 //! Gate map (M4.4): covers app::tool_library, app::commands (tool_import, tool).
 
-use camcraft_app::commands::{AddTool, History, ImportTools};
+use camcraft_app::commands::{AddTool, History, ImportMode, ImportTools, SetToolCutter};
+use camcraft_app::spun::{SpunPoint, SpunProfile};
+use camcraft_app::tool_cutter;
 use camcraft_app::model;
 use camcraft_app::project;
 use camcraft_app::tool_library::{
@@ -282,4 +285,85 @@ fn a_body_electrodes_outline_roundtrips_through_the_library() {
     v["tools"][0]["definition"]["diameter"] = json!(12.0);
     let why = parse_tool_library(&v.to_string()).expect_err("sizes off the outline");
     assert!(why.contains("tool 'E-L' is refused") && why.contains("the outline's X and Y extents"), "{why}");
+}
+
+const NECKED: &str = "EM-1000-4FL";
+
+/// EM-1000-4FL (Ø10 x 22 flutes, Ø10 shank) with a Ø8 neck from 22 to 30.
+fn necked_points() -> Vec<SpunPoint> {
+    [(0.0, 0.0), (0.0, 5.0), (22.0, 5.0), (22.0, 4.0), (30.0, 4.0), (30.0, 5.0), (62.0, 5.0), (62.0, 0.0)]
+        .into_iter()
+        .map(|(z, r)| SpunPoint::line(z, r))
+        .collect()
+}
+
+fn necked_world() -> (World, History) {
+    let (w, mut h) = world_with(&[(NECKED, cat(NECKED))]);
+    h.execute(&w, SetToolCutter::new(&w, NECKED, Some(necked_points())).expect("drawn cutter"));
+    (w, h)
+}
+
+fn cutter_named(w: &World, n: &str) -> Option<SpunProfile> {
+    model::find_by_name(w, n).and_then(|e| tool_cutter::cutter_of(w, &e))
+}
+
+#[test]
+fn a_drawn_cutter_round_trips_through_the_library_file() {
+    let (src, _) = necked_world();
+    let drawn = cutter_named(&src, NECKED).expect("a drawn cutter");
+    let text = export_tool_library(&src).expect("export");
+    let v: Value = serde_json::from_str(&text).expect("json");
+    assert_eq!(v["version"], 5, "a file with a cutter says version 5");
+    assert!(v["tools"][0]["definition"]["cutter"].is_array(), "the cutter is written: {text}");
+    let lib = parse_tool_library(&text).expect("parse");
+    assert_eq!(lib[0].cutter.as_ref(), Some(&drawn));
+    let (dst, mut h) = world_with(&[]);
+    import(&dst, &mut h, &text).expect("import");
+    assert_eq!(cutter_named(&dst, NECKED), Some(drawn), "the same drawn cutter lands");
+    assert!(h.undo(&dst));
+    assert!(tool_named(&dst, NECKED).is_none(), "undo removes the tool and its cutter");
+}
+
+#[test]
+fn a_cutter_that_disagrees_refuses_the_file_by_tool_name() {
+    let (src, _) = necked_world();
+    let mut v: Value = serde_json::from_str(&export_tool_library(&src).expect("export")).expect("json");
+    // The flutes drawn at Ø12 on a Ø10 tool.
+    v["tools"][0]["definition"]["cutter"][1][1] = json!(6.0);
+    v["tools"][0]["definition"]["cutter"][2][1] = json!(6.0);
+    let err = parse_tool_library(&v.to_string()).expect_err("a disagreeing cutter refuses");
+    assert!(err.contains(&format!("tool '{NECKED}'")) && err.contains("cutter"), "{err}");
+    v["tools"][0]["definition"]["cutter"] = json!("not points");
+    let err = parse_tool_library(&v.to_string()).expect_err("a malformed cutter refuses");
+    assert!(err.contains(&format!("tool '{NECKED}': cutter is malformed")), "{err}");
+}
+
+#[test]
+fn update_replaces_the_cutter_in_one_undo_step() {
+    let (src, _) = necked_world();
+    let text = export_tool_library(&src).expect("export");
+    let (w, mut h) = world_with(&[(NECKED, cat(NECKED))]);
+    assert!(cutter_named(&w, NECKED).is_none());
+    let lib = parse_tool_library(&text).expect("parse");
+    let cmd = ImportTools::with_mode(&w, lib, ImportMode::Update).expect("an update with only a new cutter is a change");
+    assert_eq!(cmd.report().updated, vec![NECKED.to_owned()]);
+    h.execute(&w, cmd);
+    assert_eq!(cutter_named(&w, NECKED), cutter_named(&src, NECKED));
+    assert!(h.undo(&w));
+    assert!(cutter_named(&w, NECKED).is_none(), "one undo restores the tool without a cutter");
+    assert_eq!(tool_named(&w, NECKED), Some(cat(NECKED)));
+    assert!(h.redo(&w));
+    assert_eq!(cutter_named(&w, NECKED), cutter_named(&src, NECKED));
+}
+
+#[test]
+fn a_library_without_a_cutter_keeps_version_4_or_lower() {
+    let (src, _) = world_with(&first_two());
+    let text = export_tool_library(&src).expect("export");
+    let v: Value = serde_json::from_str(&text).expect("json");
+    assert!(v["version"].as_u64().is_some_and(|n| n <= 4), "{text}");
+    assert!(v["tools"][0]["definition"].get("cutter").is_none(), "{text}");
+    // A file newer than this build refuses by version; nothing is dropped.
+    let err = parse_tool_library(r#"{"format":"camcraft-tools","version":6,"tools":[]}"#).expect_err("version 6");
+    assert!(err.contains("version 6") && err.contains("1 to 5"), "{err}");
 }
