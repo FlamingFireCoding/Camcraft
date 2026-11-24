@@ -432,6 +432,12 @@ pub enum Warning {
     /// decision): it names the cause of the shank and holder findings that
     /// follow it, and those findings hold the post.
     FluteShort { at: usize, flute_mm: f64, depth_mm: f64 },
+    /// #3748: a start-side pass ("Pass starts at" Inside, or Outside when
+    /// `inside` is false) round a part that the user set to the `entry`
+    /// lead-in, where Arc from the air is the recommended one. The entry
+    /// is used as selected, from the first cut at `at`. Advisory: the
+    /// path is verified like any other, so the post is not held.
+    EntryNotRecommended { at: usize, entry: super::AdvisedEntry, inside: bool },
 }
 
 impl Warning {
@@ -444,7 +450,8 @@ impl Warning {
                 | Warning::SinkerFinishOrder { .. }
                 | Warning::DrillUndersize { .. }
                 | Warning::StrategyFallback { .. }
-                | Warning::FluteShort { .. })
+                | Warning::FluteShort { .. }
+                | Warning::EntryNotRecommended { .. })
     }
 
     /// The envelope report's unjudged hidden half, as the warning that
@@ -598,6 +605,11 @@ impl core::fmt::Display for Warning {
                 "the tool's flute length is {flute_mm:.3} mm, but the cut goes {depth_mm:.3} mm below the stock top from move {at}: \
                  above the flutes, the shank or the holder goes into the cut; the findings after this one name the moves where \
                  it meets material - use a tool with a longer flute, or cut less deep (this finding alone does not hold the post)"
+            ),
+            Warning::EntryNotRecommended { at, entry, inside } => write!(
+                f,
+                "{}, from move {at} (the post is not held: the cut is verified)",
+                super::entry_advice(*entry, *inside)
             ),
         }
     }
