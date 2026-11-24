@@ -166,8 +166,9 @@ pub fn face_over(
 /// [`face_over`] that keeps the whole tool clear of protected items
 /// (#3343): at each level the rows are cut short at the [`FaceKeep`]
 /// keep-out and the facer links over it at the clearance plane. A level
-/// with no row piece left is skipped; when no level is left the cut is
-/// refused by name. `None` is [`face_over`] to the byte.
+/// with no row piece left would leave the face above Cut Z, so the cut is
+/// refused by name with the depth reached (#3526). `None` is
+/// [`face_over`] to the byte.
 pub fn face_over_kept(
     region: &Region,
     p: &FaceParams,

@@ -44,6 +44,25 @@ pub fn strategy_fallback(path: &Toolpath) -> Option<Warning> {
     Some(Warning::StrategyFallback { at, areas, cause })
 }
 
+/// #3748: the start-side pass whose user selected a Helix, Ramp or Plunge
+/// lead-in where the Arc entry from the air applies - one advisory
+/// warning that names the selected type, the recommended Arc and the
+/// reason. The ladder writes the advice note only where that air room
+/// exists (`machining2d::entry_advice`); the entry runs as selected.
+#[must_use]
+pub fn entry_not_recommended(path: &Toolpath) -> Option<Warning> {
+    use crate::machining2d::{PassStart, advised, entry_advice};
+    use crate::machining3d::Entry3D;
+    let starts = [PassStart::Inside, PassStart::Outside];
+    let kinds = [Entry3D::Helix, Entry3D::Ramp, Entry3D::Plunge];
+    let (entry, inside) = starts.iter().flat_map(|&s| kinds.iter().map(move |&k| (s, k))).find_map(|(s, k)| {
+        let note = entry_advice(s, k)?;
+        path.notes.iter().any(|n| n.contains(note)).then(|| advised(s, k)).flatten()
+    })?;
+    let at = path.moves.iter().position(|m| m.kind != crate::cl::MoveKind::Rapid).unwrap_or(0);
+    Some(Warning::EntryNotRecommended { at, entry, inside })
+}
+
 /// [`run_job`]'s body: every arm, unchanged.
 fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     let GenJob {
@@ -4034,6 +4053,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #3035: Adaptive areas cut by Offset rings - a warning, not
             // only a note; advisory (the rings are verified above).
             warns.extend(strategy_fallback(&path));
+            // #3748: a selected entry that is not the recommended Arc on a
+            // start-side pass - one advisory warning, the entry kept.
+            warns.extend(entry_not_recommended(&path));
             // The rotary kinds' bands and rapids (M13): `Mode::Rotary`
             // stood the vertical-column laws down; the radial field
             // reads rest material in the frame the work turns in.

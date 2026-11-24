@@ -133,6 +133,14 @@ impl EditOperationParams {
         super::gates::thread_gate(world, &params, &prev.tool)?;
         // #1489: the rest group's previous tool against the mounted one.
         super::gates::rest_gate(world, &params, &prev.tool)?;
+        // #3631: a Slot width or wall stock edit that leaves the mounted
+        // tool wider than the slot, by the #3475 door. Other edits keep
+        // an older document editable.
+        if let (OpParams::Slot { width, stock_to_leave, .. }, OpParams::Slot { width: w0, stock_to_leave: l0, .. }) = (&params, &prev.params)
+            && (width != w0 || stock_to_leave != l0)
+        {
+            slot_gate(world, prev.setup.as_deref(), &prev.src, &params, &prev.tool)?;
+        }
         if let Some(msg) = crate::operation::side_sane(world, &params, &prev.src) {
             return Err(CommandError::Invalid(msg));
         }
