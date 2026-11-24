@@ -2,7 +2,11 @@
 //! History the caller owns (the GUI's), so undo there reverts an agent's
 //! step; the loopback listener that carries it; and the CLI's flag.
 //!
-//! Gate map (M4.4): covers app::mcp (live, listen, bridge).
+//! Gate map (M4.4): covers app::mcp (live, listen, bridge, link,
+//! link_client) and app::cli_ui (the `--ui` lane, #3751).
+
+#[path = "mcp_live/ui_link.rs"]
+mod ui_link;
 
 use camcraft_app::commands::History;
 use camcraft_app::mcp::provider::{FallbackMode, parse_prompt};

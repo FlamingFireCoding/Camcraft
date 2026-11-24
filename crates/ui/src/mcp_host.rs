@@ -16,6 +16,18 @@ pub fn pump(state: &mut State) {
     for request in waiting {
         answer_request(state, request, false);
     }
+    // #3751: `camcraft-cli --ui` calls take the same door as an agent's.
+    // The link file follows the open project, for `--window <project>`.
+    if let Some(link) = state.ui_link.as_mut() {
+        link.note_project(state.project_path.as_deref());
+    }
+    let link_waiting: Vec<_> = state
+        .ui_link
+        .as_ref()
+        .map_or_else(Vec::new, |inbox| std::iter::from_fn(|| inbox.next()).collect());
+    for request in link_waiting {
+        answer_request(state, request, false);
+    }
     let ai_waiting: Vec<_> = state
         .ai_mcp_inbox
         .as_ref()

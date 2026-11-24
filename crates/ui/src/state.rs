@@ -1994,6 +1994,9 @@ pub struct State {
     /// #183: the live MCP session's inbox when the app was started with
     /// `--mcp-port` / `CAMCRAFT_MCP_PORT`; drained with `pending`.
     pub mcp: Option<camcraft_app::mcp::Inbox>,
+    /// #3751: the UI link's inbox (`camcraft-cli --ui`), opened at start
+    /// unless `CAMCRAFT_UI_LINK=off`; drained with `mcp` in `mcp_host::pump`.
+    pub ui_link: Option<camcraft_app::mcp::Inbox>,
     /// #1946: in-app AI chat panel state (conversations, worker handle, toggles).
     pub ai_chat: crate::egui_app::ai_chat::AiChatState,
     /// Sender used by the AI chat worker to dispatch MCP requests in-process.
@@ -2461,6 +2464,7 @@ impl State {
             pending: VecDeque::new(),
             picker_in_click: false,
             mcp: None,
+            ui_link: None,
             ai_chat: crate::egui_app::ai_chat::AiChatState::new(),
             ai_mcp_tx,
             ai_mcp_inbox: Some(ai_mcp_inbox),
