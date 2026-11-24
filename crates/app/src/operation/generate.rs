@@ -2799,8 +2799,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             holes,
             break_through,
             pass_start,
+            entry: bore_entry,
             ..
         } => {
+            // The circular ramp (Arc) has no meaning on a ring ladder.
+            if *bore_entry == Entry3D::Arc {
+                return Err(GenError::Invalid("a Bore enters with plunge, ramp or helix; arc is not offered".into()));
+            }
             // #1557: the stated break-through, the drill's own by default.
             let run = break_through.unwrap_or(drilling::THROUGH_CLEAR);
             broke = super::break_through::deepest(
@@ -2842,7 +2847,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 plunge_feed: *plunge_feed,
                 climb: *climb,
                 tolerance: *tolerance,
-                entry: Entry3D::Plunge,
+                entry: *bore_entry,
                 helix_radius: 1.0,
             }, *pass_start)?;
             (region, path)

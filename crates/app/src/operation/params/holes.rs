@@ -107,7 +107,15 @@ impl OpParams {
                 holes,
                 break_through,
                 pass_start,
+                entry,
             } => {
+                // Written only off Plunge, so every older op keeps its digest.
+                match entry {
+                    Entry3D::Plunge => {}
+                    Entry3D::Ramp => h.write_u8(0xE1),
+                    Entry3D::Helix => h.write_u8(0xE2),
+                    Entry3D::Arc => h.write_u8(0xE3),
+                }
                 // #1557: the break-through, written only when stated,
                 // so every older op keeps the digest it was cached under.
                 if let Some(b) = break_through {
