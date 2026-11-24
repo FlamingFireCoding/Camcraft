@@ -309,7 +309,7 @@ fn a_tip_form_round_trips_and_steps_the_version() {
     assert_eq!(got("BALL"), Some((TaperTip::Ball, 0.0, 0.5)));
     // The step is no number an older reader knows: one past holder refs
     // (version 5 waits for the drawn cutter of PR #3906).
-    assert!(TIP_FORM_VERSION > HOLDER_REF_VERSION);
+    const { assert!(TIP_FORM_VERSION > HOLDER_REF_VERSION) };
     let newer = text.replacen(&format!("\"version\": {TIP_FORM_VERSION}"), &format!("\"version\": {}", TIP_FORM_VERSION + 1), 1);
     assert!(parse_tool_library(&newer).is_err_and(|e| e.contains("not supported")), "a newer number is refused");
 }
