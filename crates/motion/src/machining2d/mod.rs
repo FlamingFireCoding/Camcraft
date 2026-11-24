@@ -59,6 +59,7 @@ mod contour_run_side;
 mod contour_run_stock;
 mod contour_start;
 mod contour_step;
+mod contour_wall_ramp;
 mod contour_whole;
 mod contour_whole_fence;
 mod contour_whole_reach;
