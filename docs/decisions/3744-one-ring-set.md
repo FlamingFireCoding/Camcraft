@@ -78,3 +78,38 @@ by the meter's own law. The pins are `fig8_outside_offset_cuts_no_move_at_full_w
 
 **Dropped.** A note for each place: the note names the count and the first
 place, as before.
+
+## #3788 (a) - fill rings at a ring merge
+
+**Decided (coordinator, maintainer away).** Fold #3788 into #3790 as (a)
+plus (c). Round a part, each band of the ring set (between ring `j - 1`
+and ring `j`) is tested for stock that a flank of one ring meets (0.9 tool
+radii) and the swath of the other ring leaves. Where there is such a zone,
+the band gets a fill: the same distance curve at half a step, and two at a
+quarter and three quarters where the half leaves stock. A fill is clipped
+to the zone grown by the tool radius (`ring_fill`). Ring `j` is level
+`4 j`, and its fills are the levels between. The mirror maps a level `l` to
+`top + 4 - l`, so Inside and Outside walk the same pieces.
+
+**Why fills, not a chord along the cusp.** The first try chained the sharp
+reflex corners of each ring into chords along the cusp. The fig8 outline is
+a polyline, so the rings have many reflex vertices along the whole waist
+notch, and few chords passed the vertex and crossing checks (495 -> 444
+points). A fill is a level curve of the same distance function, so it
+crosses no ring and needs no shared vertex. It also keeps the maintainer's
+rule: one ring set for each start side.
+
+**Reading.** fig8 Outside: 495 -> 21 meter points. The 21 are single
+samples at 7 ring corners on 3 levels, at the first arc of a pass, and the
+narrow note names them (6 cuts). A finer zone threshold does not change
+them. #3788 stays open for these corners. Inside: 10686 -> 10662 points;
+most are the first ring along the part wall, which the wall note names.
+No crossing on fig8 from either side.
+
+**Dropped.**
+- (b) The old stock-parallel Outside rings at the merge: the fig8 band is
+  one connected area, so a fallback for the area is the old Outside for the
+  whole band. A split along a seam makes the seam a wall in stock, with dead
+  ends and a full-width cut along it.
+- (d) Outside on the old rings until #3788 lands: this breaks the
+  maintainer's rule for Outside.

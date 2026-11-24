@@ -17,23 +17,26 @@ use crate::geo2d::{Loop, Point2, Region};
 use super::face::GenError;
 use super::level_order::{Piece, WALL, on_wall};
 use super::pass_start::{PassStart, StartSide};
+use super::ring_fill::RING;
 use super::ring::dist;
 use super::pocket_strategy::PocketStrategy;
 
 /// The pieces of one part's ring set, from the part out (the Inside
 /// walk), turned into the Outside walk of the same set: each piece runs
 /// the other way (the uncut side swaps with the cut side, so climb stays
-/// climb), the area's outer edge becomes ring 0, ring `j` of `top`
-/// becomes ring `top + 1 - j`, and the part wall is cut last. Core
-/// pieces (a part with no hole) keep their own order.
+/// climb), the area's outer edge becomes ring 0, a level `l` of `top`
+/// (ring `j` is level `RING * j`, its fills between, #3788) becomes
+/// `top + RING - l`, and the part wall is cut last. Core pieces (a part
+/// with no hole) keep their own order.
 pub(super) fn mirror(pieces: &mut [Piece]) {
-    let top = pieces.iter().filter(|p| !p.core && p.level != WALL).map(|p| p.level).max().unwrap_or(0);
+    let max = pieces.iter().filter(|p| !p.core && p.level != WALL).map(|p| p.level).max().unwrap_or(0);
+    let top = max.div_ceil(RING).saturating_mul(RING);
     for p in pieces.iter_mut().filter(|p| !p.core) {
         p.pts.reverse();
         p.level = match p.level {
             WALL => 0,
             0 => WALL,
-            j => top.saturating_add(1).saturating_sub(j),
+            l => top.saturating_add(RING).saturating_sub(l),
         };
     }
 }

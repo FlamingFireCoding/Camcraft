@@ -26,6 +26,7 @@ use super::pass_start::{PassStart, StartSide};
 use super::pocket::PocketParams;
 use super::pocket_plan::plan_passes;
 use super::pocket_strategy::PocketStrategy;
+use super::ring_fill::{Band, RING, closed_walk, fills};
 use super::ring_side::{mirror, share_ends};
 use super::ring::dist;
 
@@ -102,7 +103,7 @@ fn side_plan(
     let rings = matches!(strategy, PocketStrategy::Waterline | PocketStrategy::OffsetRings | PocketStrategy::Adaptive);
     if side.start != PassStart::Auto
         && rings
-        && let Some(pieces) = level_pieces(region, center, off, step, climb, side.start, side.around_part)?
+        && let Some(pieces) = level_pieces(region, center, off, step, climb, side, tool_r)?
     {
         let plan = order(pieces, center, tool_r, side)?;
         let left = unswept(center, &plan.passes, tool_r)?;
@@ -152,9 +153,10 @@ pub(super) fn level_pieces(
     off: f64,
     step: f64,
     climb: bool,
-    start: PassStart,
-    around: bool,
+    side: &StartSide,
+    tool_r: f64,
 ) -> Result<Option<Vec<Piece>>, GenError> {
+    let (start, around) = (side.start, side.around_part);
     let Some((lo, hi)) = center.bounds() else {
         return Err(GenError::Empty("empty pocket region".into()));
     };
@@ -186,14 +188,21 @@ pub(super) fn level_pieces(
             let hc = if off == 0.0 { holes } else { holes.offset(off)? };
             sides(&c, &hc.offset(SIDE_EPS)?, true, climb, &mut out)?;
             let mut done = false;
+            let mut last = 0;
             for j in 1..=cap {
                 let g = hc.offset(f64::from(j) * step)?;
                 // `g` lies on the left of its loops and is the cut side.
-                curves(&c, &g, j, !climb, &mut out)?;
+                // Ring `j` is level `RING * j`: its fills (#3788) lie between.
+                curves(&c, &g, RING.saturating_mul(j), !climb, &mut out)?;
+                last = j;
                 if c.difference(&g)?.is_empty() {
                     done = true;
                     break;
                 }
+            }
+            if side.around_part {
+                let fill = Band { c: &c, hc: &hc, j: 0, step, tool_r, climb };
+                add_fills(&mut out, first, &fill, last)?;
             }
             if start == PassStart::Outside {
                 mirror(out.get_mut(first..).unwrap_or_default());
@@ -225,6 +234,20 @@ pub(super) fn level_pieces(
     }
     share_ends(&mut out);
     Ok(Some(out))
+}
+
+/// The fills (#3788) of each band of one part's rings, `out[first..]`.
+fn add_fills(out: &mut Vec<Piece>, first: usize, band: &Band<'_>, last: u32) -> Result<(), GenError> {
+    let walks = |out: &[Piece], lev: u32| -> Vec<Vec<Point2>> {
+        out.iter().skip(first).filter(|p| !p.core && p.level == lev).map(closed_walk).collect()
+    };
+    let mut add = Vec::new();
+    for j in 1..=last {
+        let (inner, outer) = (walks(out, RING.saturating_mul(j - 1)), walks(out, RING.saturating_mul(j)));
+        add.extend(fills(&Band { j, ..*band }, &inner, &outer)?);
+    }
+    out.extend(add);
+    Ok(())
 }
 
 /// The parts of the material: each outer (counter-clockwise) loop with

@@ -8,6 +8,7 @@ use crate::machining2d::level_order::{Piece, WALL};
 use crate::machining2d::level_rings::level_pieces;
 use crate::machining2d::pass_start::{PassStart, StartSide};
 use crate::machining2d::pocket_strategy::PocketStrategy;
+use crate::machining2d::ring_fill::RING;
 
 const R: f64 = 4.0;
 const STEP: f64 = 2.0;
@@ -46,7 +47,7 @@ fn dog_bone() -> (Region, Region, Region) {
 
 fn pieces(start: PassStart) -> Vec<Piece> {
     let (_, band, center) = dog_bone();
-    match level_pieces(&band, &center, R, STEP, true, start, true) {
+    match level_pieces(&band, &center, R, STEP, true, &StartSide { start, stock: None, around_part: true }, R) {
         Ok(Some(p)) => p,
         other => panic!("{start:?}: {:?}", other.map(|o| o.map(|p| p.len()))),
     }
@@ -85,8 +86,9 @@ fn inside_and_outside_cut_the_same_rings() {
     assert!(same(&at(&inside, WALL), &at(&outside, 0)), "the outer edge is Outside's first ring and Inside's last");
     // The order runs the other way: the ring next to the part is cut
     // early by Inside and late by Outside.
-    let top = inside.iter().filter(|p| p.level != WALL).map(|p| p.level).max().unwrap_or(0);
-    assert!(same(&at(&inside, 1), &at(&outside, top)), "ring 1 of Inside is ring {top} of Outside");
+    // Ring 1 is level RING (#3788: the fills lie between the rings).
+    let top = inside.iter().filter(|p| p.level != WALL).map(|p| p.level).max().unwrap_or(0).div_ceil(RING) * RING;
+    assert!(same(&at(&inside, RING), &at(&outside, top)), "ring 1 of Inside is level {top} of Outside");
 }
 
 /// The mirror keeps the climb sense: a piece walked the other way has its
@@ -102,8 +104,9 @@ fn the_mirror_reverses_each_piece_and_swaps_the_ends_of_the_order() {
         Piece { level: 5, pts: vec![Point2::new(9.0, 9.0), Point2::new(8.0, 9.0)], closed: true, core: true },
     ];
     mirror(&mut ps);
+    // The highest level 3 rounds up to the ring level 4: l -> 8 - l.
     let levels: Vec<u32> = ps.iter().map(|p| p.level).collect();
-    assert_eq!(levels, vec![WALL, 2, 1, 0, 5]);
+    assert_eq!(levels, vec![WALL, 6, 5, 0, 5]);
     assert_eq!(ps[0].pts.first().map(|p| p.x), Some(1.0), "reversed");
     assert_eq!(ps[4].pts.first().map(|p| p.x), Some(9.0), "a core piece keeps its walk");
 }
