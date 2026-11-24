@@ -3,6 +3,7 @@ use super::*;
 
 pub(super) fn punch() -> AgieJob {
     AgieJob {
+        side: AgieSide::Punch,
         contour: vec![[-20., -10.], [20., -10.], [20., 10.], [-20., 10.]],
         start: [-30., 0.],
         stock_min: [-40., -30., -20.],
