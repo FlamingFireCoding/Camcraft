@@ -48,20 +48,33 @@ fn provider_message(error: &str) -> &str {
 /// Tells whether an error represents a provider authentication failure (#3804).
 /// Cloud providers reject invalid keys with HTTP 401 (Anthropic, OpenAI),
 /// HTTP 403 (Gemini / proxies), or HTTP 400 with explicit API key error details (Gemini).
-/// Non-authentication errors (HTTP 404, HTTP 503) and model names or endpoints
-/// are never classified as authentication evidence.
+/// Non-authentication errors (HTTP 404, HTTP 503) and echoed model names
+/// or request endpoints are never classified as authentication evidence.
 #[must_use]
-pub(crate) fn is_auth_failure(error: &str) -> bool {
+pub(crate) fn is_auth_failure(error: &str, model: &str) -> bool {
     let status = http_status(error);
     match status {
         Some(401 | 403) => true,
         Some(400) => {
             let msg = provider_message(error).to_ascii_lowercase();
-            msg.contains("api_key_invalid")
-                || msg.contains("api key not valid")
-                || msg.contains("api key invalid")
-                || msg.contains("invalid x-api-key")
-                || msg.contains("authentication_error")
+            if msg.starts_with("invalid model")
+                || msg.contains("not a valid model")
+                || msg.contains("model not found")
+                || msg.contains("unknown model")
+                || msg.contains("does not exist")
+            {
+                return false;
+            }
+            let trimmed = model.trim().to_ascii_lowercase();
+            let clean = if trimmed.is_empty() {
+                msg
+            } else {
+                msg.replace(&trimmed, "")
+            };
+            clean.contains("api_key_invalid")
+                || clean.contains("api key not valid")
+                || clean.contains("api key invalid")
+                || clean.contains("api key expired")
         }
         _ => false,
     }
@@ -76,7 +89,7 @@ pub(crate) fn test_failure(error: &str, model: &str, endpoint: &str) -> String {
     let lower = error.to_ascii_lowercase();
     let billing = lower.contains("credit") || lower.contains("billing");
     let status = http_status(error);
-    let (cause, hint) = if is_auth_failure(error) {
+    let (cause, hint) = if is_auth_failure(error, model) {
         (
             "the provider rejected the key",
             "Click Set API key... and paste a new key for this provider.",

@@ -226,6 +226,38 @@ fn service_failure_is_not_a_rejected_key() {
     );
 }
 
+#[test]
+fn bad_request_model_is_not_authentication_evidence() {
+    for (model, error) in [
+        (
+            "authentication_error",
+            "host answered HTTP 400: Invalid model name: authentication_error [status: INVALID_ARGUMENT] (endpoint: POST https://host/models/authentication_error:generateContent)",
+        ),
+        (
+            "api_key_invalid",
+            "host answered HTTP 400: Invalid model name: api_key_invalid [status: INVALID_ARGUMENT] (endpoint: POST https://host/models/api_key_invalid:generateContent)",
+        ),
+        (
+            "api key not valid",
+            "host answered HTTP 400: Invalid model name: 'api key not valid' [status: INVALID_ARGUMENT] (endpoint: POST https://host/models/api-key:generateContent)",
+        ),
+        (
+            "api key expired",
+            "host answered HTTP 400: The model `api key expired` is not found [status: INVALID_ARGUMENT] (endpoint: POST https://host/models/expired:generateContent)",
+        ),
+    ] {
+        let text = test_failure(error, model, "https://host");
+        assert!(
+            !text.contains("rejected the key"),
+            "must not treat echoed model '{model}' as key rejection: {text}"
+        );
+        assert!(
+            text.contains("the provider refused the request or the model name (HTTP 400)"),
+            "must show model refusal for '{model}': {text}"
+        );
+    }
+}
+
 /// Fails the first check like a stopped server, then answers like a started one.
 struct StartsLater(AtomicUsize);
 
