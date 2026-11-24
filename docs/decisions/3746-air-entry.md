@@ -50,9 +50,14 @@ maintainer's "Inside" and is not taken here.
 **Scope kept small.**
 - Only the Arc entry changes. A user-selected Helix, Ramp or Plunge keeps
   its entry. The warning for that choice and the Arc default are #3748.
-- Only the first entry of a level changes. The re-entries after a lift
-  (`entry_restart`, the pass links) are #3747 and #3748. The "plunged into
-  material" notes come from those re-entries.
+- The first entry of each level changes. A re-entry after a pass-link
+  lift onto a start in material (`entry_restart`) now tries the air entry
+  first, and on a start-side pass a clear helix before the named plunge.
+  On fig8 Outside, four such re-entries still plunge, named: no air lead,
+  helix or ramp reaches their starts clear of the cut rings. The lifts
+  themselves are the pass links of #3747; the pin
+  `fig8_outside_offset_has_no_plunge_into_material` is known-fail on #3747.
+  The pass links are not changed here.
 - The avoid route (`pocket_avoid`, fixtures and clamps) keeps its old
   entry: its keep-outs are not known outside the area, so the air there is
   not proved. Follow-up: #3810.
