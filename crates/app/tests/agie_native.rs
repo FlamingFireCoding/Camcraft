@@ -20,6 +20,8 @@ use std::{collections::BTreeMap, fs};
 mod cutoff;
 #[path = "agie_native/die.rs"]
 mod die;
+#[path = "agie_native/group.rs"]
+mod group;
 #[path = "agie_native/reentrant.rs"]
 mod reentrant;
 

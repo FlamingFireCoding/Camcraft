@@ -9,7 +9,10 @@ use flecs_ecs::prelude::World;
 use super::{Posted, mounts};
 use crate::post::{cnc, options::OptionValue};
 use crate::schema::{PostOptions, PostRef};
-use crate::{model, operation};
+use crate::model;
+
+#[path = "posting_agie_group.rs"]
+mod group;
 
 pub(crate) use camcraft_post::agie::{AgieJob, AgieSide};
 pub use camcraft_post::agie::valid_name;
@@ -78,11 +81,27 @@ pub(super) fn post(
     let name = dest.file_name().and_then(|x| x.to_str()).filter(|s| valid_name(s))
         .ok_or("Choose a new native wire EDM job directory named with 1 to 8 uppercase letters or digits, starting with a letter")?;
     let ops = super::program_ops(world)?;
-    let [(op_name, entity)] = ops.as_slice() else {
-        return Err("A native wire EDM job requires exactly one active Wire Contour operation".into());
-    };
-    let op = model::operation_of(world, entity).ok_or("The Wire Contour operation is unavailable")?;
+    if !(1..=2).contains(&ops.len()) {
+        return Err("A native wire EDM job requires exactly one active Wire Contour operation, or two for a group of captured punches".into());
+    }
+    let operations = ops
+        .iter()
+        .map(|(name, entity)| {
+            model::operation_of(world, entity)
+                .map(|op| (name.as_str(), op))
+                .ok_or("The Wire Contour operation is unavailable")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let (_, op) = operations
+        .first()
+        .ok_or("A native wire EDM job requires an active Wire Contour operation")?;
     let setup = op.setup.as_deref();
+    if operations
+        .iter()
+        .any(|(_, other)| other.setup != op.setup || other.tool != op.tool)
+    {
+        return Err("The punches of a group must use the same setup and wire tool".into());
+    }
     if crate::setup_post_options::of(world, setup) != PostOptions::default() {
         return Err("Native wire EDM jobs require default post options and One program output".into());
     }
@@ -99,7 +118,7 @@ pub(super) fn post(
     // Use the ordinary post's current operation order, freshness, warning
     // records, setup laws and verification. The wire centres in the stream
     // are only verification evidence; the writer receives the nominal ring.
-    for (_, records) in super::op_streams_by(world, false)? {
+    for (op_name, records) in super::op_streams_by(world, false)? {
         for record in records {
             if let cnc::Record::Warn { text } = record {
                 return Err(format!("Native wire EDM post blocked - {op_name}: {text}"));
@@ -113,7 +132,7 @@ pub(super) fn post(
             report.problems.join("; ")
         ));
     }
-    let job = operation::agie_job(world, &op, op_name)?;
+    let jobs = group::jobs(world, &operations)?;
     let options = super::program_options_for_script(
         world,
         super::builtin_post_text(POST)?,
@@ -125,11 +144,11 @@ pub(super) fn post(
         .get("separationLengthMm")
         .and_then(|v| v.as_f64())
         .ok_or("The native wire EDM post must declare its separation cut length in millimetres")?;
-    let bundle = camcraft_post::agie::export_with_review(&job, dest, name, separation)?;
+    let bundle = camcraft_post::agie::export_group_with_review(&jobs, dest, name, separation)?;
     Ok(Posted {
         bundle_files: bundle.files,
         controller_review: Some(bundle.controller_review),
-        ops: 1,
+        ops: jobs.len(),
         lines: 0,
         program: String::new(),
         line_pos: Vec::new(),

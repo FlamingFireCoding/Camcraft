@@ -4,8 +4,10 @@ use std::path::{Path, PathBuf};
 
 mod contour;
 mod cutoff;
+mod group;
 mod spacing;
 pub use crate::agie_setup::valid_stem as valid_name;
+pub use group::export_group_with_review;
 
 /// The retained side of a closed contour, or the kerf side of a directed open
 /// cut. The control applies the wire offset toward the waste: outside a punch,
@@ -96,6 +98,19 @@ pub fn export_with_review(
     };
     let setup = setup.map_err(|error| error.to_string())?;
     let iso_name = format!("{program}.ISO");
+    let files = [
+        (iso_name.clone(), iso(&iso_name, &points)),
+        (format!("{program}.SBR"), setup.sbr),
+        (format!("{program}.SBL"), setup.sbl),
+    ];
+    Ok(ExportedJob {
+        files: publish(destination, &files)?,
+        controller_review: setup.controller_review,
+    })
+}
+
+/// The nominal ISO geometry of one work, with CRLF line ends.
+fn iso(iso_name: &str, points: &[[f64; 2]]) -> String {
     let mut iso = format!("( {iso_name} )\r\n");
     for (i, point) in points.iter().enumerate() {
         let motion = if i == 0 { "G00" } else { "G01" };
@@ -107,15 +122,7 @@ pub fn export_with_review(
         ));
     }
     iso.push_str(&format!("N{:04} M02 ;\r\n", points.len() + 1));
-    let files = [
-        (iso_name, iso),
-        (format!("{program}.SBR"), setup.sbr),
-        (format!("{program}.SBL"), setup.sbl),
-    ];
-    Ok(ExportedJob {
-        files: publish(destination, &files)?,
-        controller_review: setup.controller_review,
-    })
+    iso
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -143,7 +150,7 @@ fn publish(destination: &Path, files: &[(String, String)]) -> Result<Vec<PathBuf
             ));
         }
     }
-    // The staging directory and the final name share a filesystem. The rename commits all three
+    // The staging directory and the final name share a filesystem. The rename commits all
     // files together. Its no-replace mode also protects a destination created since the check.
     let stage = tempfile::Builder::new()
         .prefix(".camcraft-agie-")
@@ -223,6 +230,8 @@ fn publish(_: &Path, _: &[(String, String)]) -> Result<Vec<PathBuf>, String> {
 mod cutoff_tests;
 #[cfg(test)]
 mod die_tests;
+#[cfg(test)]
+mod group_tests;
 #[cfg(test)]
 mod reentrant_tests;
 #[cfg(test)]

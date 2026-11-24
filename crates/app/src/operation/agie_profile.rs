@@ -7,7 +7,14 @@ use crate::geo2d::{Loop, Region};
 use crate::{model, posting::agie, schema::Operation, setup};
 use flecs_ecs::prelude::World;
 
-pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie::AgieJob, String> {
+/// The nominal job of `op`, which must cut the modeled workpiece `source`.
+/// The caller chooses the source and checks that no other model is present.
+pub(crate) fn agie_job(
+    world: &World,
+    op: &Operation,
+    name: &str,
+    source: &str,
+) -> Result<agie::AgieJob, String> {
     let OpParams::WireContour(wire) = &op.params else {
         return Err("The native wire EDM job requires a Wire Contour".into());
     };
@@ -38,16 +45,12 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
     } else if !wire.capture || wire.start.is_none() {
         return Err("The native wire EDM job requires a captured closed contour and a predrilled 2 mm start hole on the waste side".into());
     }
-    let models = model::model_entities(world);
-    let [(source, _)] = models.as_slice() else {
-        return Err("The native wire EDM job requires exactly one modeled workpiece; additional parts or fixture models can intersect the controller path".into());
-    };
     let on_source = match &op.src {
         SrcRef::Entity(name) => source == name,
         SrcRef::Selection(picks) => {
             !picks.is_empty()
                 && picks.iter().all(|pick| {
-                    pick.entity == *source && matches!(pick.feature, FeatureSel::Chain(_))
+                    pick.entity == source && matches!(pick.feature, FeatureSel::Chain(_))
                 })
         }
         SrcRef::Stock => false,

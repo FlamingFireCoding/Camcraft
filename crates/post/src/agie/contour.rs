@@ -109,6 +109,15 @@ pub(super) fn prepare<'a>(
     job: &AgieJob,
     program: &'a str,
 ) -> Result<(Vec<[f64; 2]>, PunchSetup20<'a>), String> {
+    prepare_with_reach(job, program).map(|(points, setup, _)| (points, setup))
+}
+
+/// [`prepare`], and the largest distance in mm from a nominal vertex to its
+/// rough miter. A punch group bounds each work with it (#2961).
+pub(super) fn prepare_with_reach<'a>(
+    job: &AgieJob,
+    program: &'a str,
+) -> Result<(Vec<[f64; 2]>, PunchSetup20<'a>, f64), String> {
     let setup = punch_setup(job, program)?;
     let [rough_um, ..] = qn2_offsets_um(setup.height_um)
         .ok_or("The QN2 recipe has no measured offset for this stock thickness")?;
@@ -184,7 +193,7 @@ pub(super) fn prepare<'a>(
     }
     // The hole (radius 1 mm) and the swept rough pass both fit in the convex
     // stock. The straight perpendicular entry between them fits too.
-    check_cut_envelope(&outline, job, rough_um)?;
+    let mut reach = check_cut_envelope(&outline, job, rough_um)?;
     let start = job
         .start
         .ok_or("The closed contour requires a predrilled 2 mm start hole")?;
@@ -200,7 +209,7 @@ pub(super) fn prepare<'a>(
     // A rounded seam on the waste side adds a small corner and slightly
     // changes its neighbours. Check the envelope of the actual ISO lines.
     if !exact_face {
-        check_cut_envelope(&vertices, job, rough_um)?;
+        reach = reach.max(check_cut_envelope(&vertices, job, rough_um)?);
     }
     if job.side == AgieSide::Die {
         // The control read the die opening as counter-clockwise nominal ISO
@@ -212,7 +221,7 @@ pub(super) fn prepare<'a>(
         .into_iter()
         .map(|p| [p[0] as f64 / UNITS, p[1] as f64 / UNITS])
         .collect();
-    Ok((vertices, setup))
+    Ok((vertices, setup, reach))
 }
 
 /// The measured rough wire-centre offset plus the 125 µm wire radius, rounded
@@ -232,7 +241,8 @@ fn stock_margin(rough_um: u16) -> i64 {
 /// vertex. A miter reaches the intersection of the two parallel face lines
 /// offset toward the waste. The segments that connect adjacent joins stay
 /// inside the convex stock bounds.
-fn check_cut_envelope(ring: &[Point], job: &AgieJob, rough_um: u16) -> Result<(), String> {
+/// Returns the longest miter in mm.
+fn check_cut_envelope(ring: &[Point], job: &AgieJob, rough_um: u16) -> Result<f64, String> {
     // The miter below uses the exact offset.
     let margin_um = margin_um(rough_um);
     let stock_margin = stock_margin(rough_um);
@@ -308,7 +318,7 @@ fn check_cut_envelope(ring: &[Point], job: &AgieJob, rough_um: u16) -> Result<()
         let clearance = (2.0 * (max_miter + rough_offset)).ceil() as i64;
         super::spacing::check_feature_spacing(ring, clearance)?;
     }
-    Ok(())
+    Ok(max_miter / UNITS)
 }
 
 pub(super) fn vector(a: Point, b: Point) -> Point {

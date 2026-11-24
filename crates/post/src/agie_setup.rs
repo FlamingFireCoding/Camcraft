@@ -112,6 +112,14 @@ pub enum SetupError {
         "Place the entry and exit points in air beyond opposite faces of the stock and inside the 350 × 250 mm XY span."
     )]
     CutoffEndpoints,
+    #[error(
+        "Use a 20 mm plate for a punch group. The control checked the punch group at 20 mm only."
+    )]
+    UnqualifiedGroupHeight,
+    #[error(
+        "Use two punch works with distinct ISO stems. The control checked a group of two punches only."
+    )]
+    GroupWorks,
 }
 
 /// The stock thickness of the control-checked die cycle (#2957).
@@ -138,9 +146,11 @@ impl WorkSide {
 }
 
 mod cutoff;
+mod group;
 mod piece;
-use piece::{attribute_call, checked};
 pub use cutoff::{CUTOFF_HEIGHT_UM, CutoffSetup20, CutoffSide};
+pub use group::{GROUP_HEIGHT_UM, GroupPunch, PunchGroup20};
+use piece::{attribute_call, checked};
 
 impl PunchSetup20<'_> {
     /// Encode one native work with zero erosion steps on import.
@@ -190,16 +200,20 @@ impl PunchSetup20<'_> {
             ),
             _ => "",
         };
-        let work = piece::Work {
+        let piece = piece::Piece {
             stem: self.stem,
             stock_min_um: self.stock_min_um,
             stock_max_um: self.stock_max_um,
             height_um: self.height_um,
+        };
+        let work = piece::Work {
+            geometry: self.stem,
             side: side.native(),
             start_um: self.start_hole_um,
             exit_um: None,
         };
         Ok(setup_files(
+            &piece,
             &work,
             "geometry and start hole",
             [rough, trim1, trim2, trim3],
@@ -210,14 +224,15 @@ impl PunchSetup20<'_> {
 
 /// The SBL, the SBR and the operator review of one zero-step work.
 fn setup_files(
+    piece: &piece::Piece<'_>,
     work: &piece::Work<'_>,
     points: &str,
     [rough, trim1, trim2, trim3]: [u16; 4],
     side_check: &str,
 ) -> SetupFiles {
     SetupFiles {
-        sbl: piece::piece(work),
-        sbr: format!("AGIE.USING_{0}.ISO IMPORT {0}.ISO;\r\n", work.stem),
+        sbl: piece::piece(piece, std::slice::from_ref(work)),
+        sbr: resources(std::slice::from_ref(work)),
         controller_review: format!(
             concat!(
                 "Import the ISO into ISO Sys and keep its SBR beside the SBL during script import. ",
@@ -229,7 +244,7 @@ fn setup_files(
                 "{trim3} µm in order before GRAFICHECK and FORMALCHECK.{side_check}",
             ),
             points = points,
-            height = work.height_um / 1000,
+            height = piece.height_um / 1000,
             rough = rough,
             trim1 = trim1,
             trim2 = trim2,
@@ -237,6 +252,14 @@ fn setup_files(
             side_check = side_check,
         ),
     }
+}
+
+/// The SBR import manifest: one ISO resource line for each work.
+fn resources(works: &[piece::Work<'_>]) -> String {
+    works
+        .iter()
+        .map(|work| format!("AGIE.USING_{0}.ISO IMPORT {0}.ISO;\r\n", work.geometry))
+        .collect()
 }
 
 /// Whether the stem can name the matching ISO, SBR and SBL on Agie Control.
