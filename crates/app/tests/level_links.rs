@@ -50,6 +50,7 @@ fn contour_op(links: Links) -> OpParams {
         blend_turns: true,
         tilt: None,
         links,
+        chain_overrides: Vec::new(),
     }
 }
 
@@ -57,6 +58,7 @@ fn contour_op(links: Links) -> OpParams {
 /// standing above each level - the blind bore, cleared to its floor.
 fn pocket_op(entry: Entry3D, links: Links) -> OpParams {
     OpParams::Pocket3D {
+        pass_start: Default::default(),
         links,
         stepover: 4.0,
         stock_to_leave: 0.0,

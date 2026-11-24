@@ -1,5 +1,6 @@
 // Original CAMCraft example. Run from the project root with a fresh output name.
 cam.call("load_machine", {builtin: "AGIECUT Classic 2S (template)"});
+// This synthetic job explicitly selects the resident recipe and its preview gap.
 cam.call("edit_machine", {patch: {edm: {conditions: [{
   id: "AGIE_QN2", role: "rough", gap: 0.005, wire_diameter: 0.25
 }]}}});
@@ -9,6 +10,7 @@ cam.call("set_stock", {box: {dx: 130, dy: 70, dz: 20}});
 cam.call("set_wcs", {origin: [0, 0, 20]});
 const features = cam.call("list_features", {model: "plate", kinds: ["faces", "chains"]});
 const top = features.faces.find(face => face.facing === "up");
+// Select the complete rim of each opening on the upper face of the retained plate.
 const holes = top.loops.filter(loop => loop.kind === "hole" && loop.complete);
 for (const op of [{name: "DieL", x: -35.5}, {name: "DieR", x: 24.5}]) {
   const rim = holes.find(loop => {
@@ -25,4 +27,4 @@ for (const op of [{name: "DieL", x: -35.5}, {name: "DieR", x: 24.5}]) {
   });
 }
 cam.generate();
-cam.post({to: "DUODI20", cps: "Agie native wire EDM", options: {separationLengthMm: 1.0}});
+cam.post({to: "DUODI20", cps: "Native wire EDM job files", options: {separationLengthMm: 1.0}});

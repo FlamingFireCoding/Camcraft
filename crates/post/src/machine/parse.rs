@@ -185,21 +185,26 @@ pub fn parse_mch_with(text: &str, holders: Option<super::HolderLookup>) -> Resul
         return Err("machine file: expected a machine object".to_owned());
     }
 
+    super::installation::check_input_form(&v)?;
     let general = v.pointer("/general");
     let mut m = Machine {
         model: text_of(general.and_then(|g| g.get("model"))),
         vendor: text_of(general.and_then(|g| g.get("vendor"))),
+        controller_identity: super::installation::identity(&v)?,
+        tool_change: super::installation::tool_change(&v)?,
         ..Default::default()
     };
 
     // The declared kind (M3.3 C) and its per-kind door rules.
     let declared = super::kind::declared_kind(&v)?;
     m.kind = declared.as_ref().map(|(_, w)| w.clone());
+    m.operator_side = super::operator_side::parse(&v)?; // #2632
 
     // #828: the spindle mount and the default holder, refused by name.
     let (mount, holder) = super::tooling::parse_tooling(&v, holders).map_err(|e| format!("machine file: {e}"))?;
     m.spindle_mount = mount;
     m.default_holder = holder;
+    m.reserved_tools = super::reservations::parse(&v).map_err(|e| format!("machine file: {e}"))?;
 
     // #760: optional controller coordinate rotation capability (`G68` / `ROT`).
     m.coordinate_rotation = match v.pointer("/controller/coordinate_rotation") {
@@ -211,6 +216,8 @@ pub fn parse_mch_with(text: &str, holders: Option<super::HolderLookup>) -> Resul
             ));
         }
     };
+
+    m.post = super::post_name::parse_post_name(&v).map_err(|e| format!("machine file: controller.post: {e}"))?;
 
     let kine = v.pointer("/kinematics/default/parts");
     let f = mm_factor(v.pointer("/kinematics/default/units")).unwrap_or(1.0);
@@ -243,6 +250,7 @@ pub fn parse_mch_with(text: &str, holders: Option<super::HolderLookup>) -> Resul
                 Some(serde_json::Value::Bool(b)) => Some(*b),
                 Some(x) => return Err(format!("machine file: spindle.rigid_tapping must be true or false, not {x}")),
             };
+            m.spindle_orientation = super::judge::stated_orientation(sp)?; // #1445
             let ts = head.get("tool_station");
             m.max_tool_length = scale(rate(ts.and_then(|t| t.get("max_tool_length"))), f);
             m.max_tool_diameter = scale(rate(ts.and_then(|t| t.get("max_tool_diameter"))), f);

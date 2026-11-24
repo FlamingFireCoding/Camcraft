@@ -10,7 +10,9 @@
 //!   the offset from the profile and material the drawing calls cut is
 //!   left standing. Every point of the profile must therefore lie
 //!   within the offset (plus [`COVER_TOL`]) of the path; the worst
-//!   point that does not is refused by name, with its spot.
+//!   point that does not is refused by name, with its spot. Profile
+//!   points carry no arc or mesh provenance, so their shape cannot
+//!   justify a larger tolerance (#3208).
 //! - **Kerf law.** No move - the leads included - brings the wire's
 //!   centre nearer the profile than the offset (less [`PATH_TOL`]): the
 //!   kerf never enters the product. The path is built to hold this; the
@@ -75,9 +77,32 @@ impl UncutRest {
 }
 
 /// The corner minimum: every point of the profile `given` lies within
-/// the kerf offset of the wire-centre `path_ring`.
-pub(super) fn cover(given: &[Point2], path_ring: &[Point2], p: &WireParams) -> Result<(), GenError> {
+/// the kerf offset of the wire-centre `path_ring` - or, when `p` states
+/// sharp inside corners (#3207), within twice it. The worst rest past
+/// [`COVER_TOL`] that the option let pass is returned.
+pub(super) fn cover(given: &[Point2], path_ring: &[Point2], p: &WireParams) -> Result<Option<UncutRest>, GenError> {
     cover_run(given, true, path_ring, true, p)
+}
+
+/// The rest (mm) a stated sharp inside corner may keep (#3207): the
+/// kerf offset itself - the wire's own corner radius. A sharp corner of
+/// 60 degrees or more leaves no more than that; a narrower one, or a
+/// slot deeper than the offset that the kerf cannot enter, still does.
+fn sharp_reach(p: &WireParams) -> f64 {
+    if p.sharp_corners {
+        p.kerf_offset()
+    } else {
+        0.0
+    }
+}
+
+/// What a stated sharp inside corner left (#3207), said on the path.
+pub(super) fn sharp_note(r: UncutRest, k: f64) -> String {
+    format!(
+        "{} - the tightest inside corner keeps the wire's own radius {k:.4} mm (wire radius + spark gap); worst uncut rest {:.4} mm near X{:.3} Y{:.3}",
+        super::SHARP_NOTE,
+        r.depth, r.at.x, r.at.y
+    )
 }
 
 /// [`cover`] with an explicit `heal_tolerance` (`0.0` enforces strict
@@ -89,7 +114,7 @@ pub(super) fn cover_healed(
     p: &WireParams,
     heal_tolerance: f64,
 ) -> Result<Option<UncutRest>, GenError> {
-    cover_run_with(given, true, path_ring, true, p, heal_tolerance)
+    cover_run_with(given, true, path_ring, true, p, heal_tolerance, false)
 }
 
 /// [`cover`] over a ring or an open run (#1109): `given_closed` and
@@ -100,8 +125,8 @@ pub(super) fn cover_run(
     path: &[Point2],
     path_closed: bool,
     p: &WireParams,
-) -> Result<(), GenError> {
-    cover_run_with(given, given_closed, path, path_closed, p, 0.0).map(|_| ())
+) -> Result<Option<UncutRest>, GenError> {
+    cover_run_with(given, given_closed, path, path_closed, p, sharp_reach(p), p.sharp_corners)
 }
 
 fn cover_run_with(
@@ -111,10 +136,11 @@ fn cover_run_with(
     path_closed: bool,
     p: &WireParams,
     heal_tolerance: f64,
+    sharp: bool,
 ) -> Result<Option<UncutRest>, GenError> {
     let k = p.kerf_offset();
-    let strict = k + COVER_TOL;
-    let reach = k + heal_tolerance.max(COVER_TOL);
+    // Coordinates alone cannot distinguish mesh facets from authored
+    // corners. Keep the strict cover tolerance without arc provenance.
     let step = step_for(k, perimeter(given, given_closed));
     let mut worst_over: Option<(f64, Point2)> = None;
     let mut worst_healed: Option<(f64, Point2)> = None;
@@ -122,9 +148,11 @@ fn cover_run_with(
         let (a, b) = (given[i], given[j]);
         let len = dist(a, b);
         let steps = (len / step).ceil().clamp(1.0, 65_536.0) as u32;
-        for j in 0..steps {
-            let f = f64::from(j) / f64::from(steps);
+        for s in 0..steps {
+            let f = f64::from(s) / f64::from(steps);
             let q = Point2::new(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f);
+            let strict = k + COVER_TOL;
+            let reach = k + heal_tolerance.max(COVER_TOL);
             let d = to(q, path, path_closed);
             // A NaN distance is never "covered".
             if d.is_nan() {
@@ -141,7 +169,16 @@ fn cover_run_with(
     }
     if let Some((d, q)) = worst_over {
         let rest = d - k;
-        let msg = if heal_tolerance == 0.0 {
+        let msg = if sharp {
+            format!(
+                "wire contour: an inside corner or slot of the profile near X{:.3} Y{:.3} is tighter than the wire can cut on the {} side, even with sharp inside corners stated - the kerf would leave {rest:.4} mm standing there, past the wire's own corner radius {k:.4} mm (wire radius {:.4} + spark gap {:.4}); open the corner to 60 degrees or more, round it, or cut with a thinner wire",
+                q.x,
+                q.y,
+                p.side.word(),
+                p.wire_diameter * 0.5,
+                p.gap,
+            )
+        } else if heal_tolerance == 0.0 {
             format!(
                 "wire contour: an inside corner or slot of the profile near X{:.3} Y{:.3} is tighter than the wire can cut on the {} side - the minimum inside radius is {k:.4} mm (wire radius {:.4} + spark gap {:.4}), and the kerf would leave {rest:.4} mm standing there; round it to at least that radius, or cut with a thinner wire",
                 q.x,

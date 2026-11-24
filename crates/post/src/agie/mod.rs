@@ -4,16 +4,17 @@ use std::path::{Path, PathBuf};
 
 mod contour;
 mod cutoff;
-mod jescript;
-mod quality;
+mod group;
 mod round_profile;
+mod spacing;
+pub use crate::agie_setup::Quality;
+pub use crate::agie_setup::valid_stem as valid_name;
+pub use group::export_group_with_review;
+pub use round_profile::export_round_with_review;
 
-pub use quality::AgieQuality;
-
-/// Maximum independently qualified punch works per native group. Geometry aliases use one digit.
-pub const MAX_PUNCH_WORKS: usize = 9;
-
-/// The closed cycle or the kerf side of a directed open cut.
+/// The retained side of a closed contour, or the kerf side of a directed open
+/// cut. The control applies the wire offset toward the waste: outside a punch,
+/// inside a die opening, left or right of an open line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgieSide {
     Punch,
@@ -23,6 +24,7 @@ pub enum AgieSide {
 }
 
 impl AgieSide {
+    /// Whether the side is that of an open cut with two air endpoints.
     pub fn is_open(self) -> bool {
         matches!(self, Self::Left | Self::Right)
     }
@@ -30,28 +32,19 @@ impl AgieSide {
 
 /// Nominal geometry in setup coordinates (millimetres, stock top at zero).
 pub struct AgieJob {
-    pub quality: AgieQuality,
     pub side: AgieSide,
     pub contour: Vec<[f64; 2]>,
-    pub round_profile: Option<camcraft_geometry::wire_round_profile::RoundProfile>,
+    /// The predrilled start hole of a closed contour. `None` for an open cut.
     pub start: Option<[f64; 2]>,
     pub stock_min: [f64; 3],
     pub stock_max: [f64; 3],
 }
 
-/// The job name doubles as a controller file stem. Reject DOS device names
-/// and directory components even when the host filesystem permits them.
-pub fn valid_name(name: &str) -> bool {
-    let bytes = name.as_bytes();
-    (1..=8).contains(&bytes.len())
-        && bytes[0].is_ascii_uppercase()
-        && bytes
-            .iter()
-            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
-        && !matches!(name, "CON" | "AUX" | "NUL" | "PRN")
-        && !(bytes.len() == 4
-            && (name.starts_with("COM") || name.starts_with("LPT"))
-            && bytes[3].is_ascii_digit())
+/// Published setup files and the checks to perform on the imported work.
+#[derive(Debug)]
+pub struct ExportedJob {
+    pub files: Vec<PathBuf>,
+    pub controller_review: String,
 }
 
 /// Write a complete controller job to a new directory.
@@ -64,174 +57,113 @@ pub fn export(
     program: &str,
     separation_length_mm: f64,
 ) -> Result<Vec<PathBuf>, String> {
-    export_works(
-        std::slice::from_ref(job),
-        destination,
-        program,
-        separation_length_mm,
-    )
+    export_with_review(job, destination, program, separation_length_mm).map(|result| result.files)
 }
 
-struct Work {
-    side: AgieSide,
-    geometry: String,
-    points: Vec<[f64; 2]>,
-    arc_centers: Vec<Option<[f64; 2]>>,
-    entry: [f64; 2],
-    exit: Option<[f64; 2]>,
-    // Bounds of the captive solid, full threading corridor, separation and swept wire.
-    min: [f64; 2],
-    max: [f64; 2],
-}
-
-impl Work {
-    fn prepare(job: &AgieJob, geometry: String, separation: f64) -> Result<Self, String> {
-        if job.side.is_open() && separation != 0.0 {
-            return Err("Set separationLengthMm to zero for an Agie open cutoff".into());
-        }
-        if !job.side.is_open() && separation != 1.0 {
-            return Err("Set the Agie separation cut length (separationLengthMm) to 1.0 mm for this closed contour. A zero or unspecified separation cannot pass the control formal check".into());
-        }
-        if let Some(shape) = job.round_profile {
-            return round_profile::prepare(job, shape, geometry);
-        }
-        let (points, entry, exit, reach) = if job.side.is_open() {
-            let cut = cutoff::prepare(job)?;
-            (cut.line.to_vec(), cut.entry, Some(cut.exit), 0.0)
-        } else {
-            let (mut points, reach) = contour::prepare_with_reach(job)?;
-            let seam = *points.first().ok_or("Agie requires a closed contour")?;
-            points.push(seam);
-            (
-                points,
-                job.start.ok_or("Agie requires a start hole")?,
-                None,
-                reach,
-            )
-        };
-        // The nominal ring encloses the retained punch. The wire can also reach
-        // the longest miter, a 3 mm lead, and one wire radius. The same padded
-        // rectangle includes the complete 2 mm threading hole and its return.
-        let margin = reach + 3.0 + 0.125;
-        let min = std::array::from_fn(|axis| {
-            points.iter().fold(entry[axis], |v, p| v.min(p[axis])) - margin
-        });
-        let max = std::array::from_fn(|axis| {
-            points.iter().fold(entry[axis], |v, p| v.max(p[axis])) + margin
-        });
-        Ok(Self {
-            side: job.side,
-            geometry,
-            points,
-            arc_centers: Vec::new(),
-            entry,
-            exit,
-            min,
-            max,
-        })
-    }
-}
-
-/// Export a single work, independent punches, or two die openings on common 20 mm stock.
+/// Publish a setup-only punch, die opening or open cut and return the required operator checks.
 ///
 /// # Errors
-/// Refuses unsupported groups and shared cutting space before publishing the directory.
-pub fn export_works(
-    jobs: &[AgieJob],
+/// Returns the same validation and publication errors as [`export`].
+pub fn export_with_review(
+    job: &AgieJob,
     destination: &Path,
     program: &str,
-    separation: f64,
-) -> Result<Vec<PathBuf>, String> {
-    let first = jobs.first().ok_or("Agie requires an active Wire Contour")?;
-    if !valid_name(program) {
-        return Err("Agie program name must be a non-reserved 1–8 character DOS name starting with a letter and using uppercase letters or digits".into());
-    }
-    if jobs
-        .iter()
-        .any(|job| job.quality == AgieQuality::FinePlusRa035)
-        && (jobs.len() != 1 || first.side != AgieSide::Punch)
-    {
-        return Err("AGIE_BERCO_RA035 requires a single closed punch in 20 mm stock".into());
-    }
-    if jobs.len() > 1 {
-        if jobs.len() > MAX_PUNCH_WORKS
-            || (first.side == AgieSide::Die && jobs.len() != 2)
-            || first.side.is_open()
-            || jobs.iter().any(|job| {
-                job.side != first.side
-                    || job.round_profile.is_some()
-                    || job.stock_min != first.stock_min
-                    || job.stock_max != first.stock_max
-                    || job.stock_min[2] != -20.0
-            })
-        {
-            return Err(format!(
-                "The Agie work group requires 2 to {MAX_PUNCH_WORKS} independent closed punches or two die openings on the same 20 mm stock"
-            ));
-        }
-        if program.len() > 7 {
-            return Err("Choose an Agie group name up to seven characters so each work has a distinct geometry filename".into());
-        }
-    }
-    let mut works = Vec::with_capacity(jobs.len());
-    for (i, job) in jobs.iter().enumerate() {
-        let geometry = if jobs.len() == 1 {
-            program.to_owned()
-        } else {
-            format!("{program}{}", i + 1)
-        };
-        if !valid_name(&geometry) {
+    separation_length_mm: f64,
+) -> Result<ExportedJob, String> {
+    // An open cut has no separation section (#2962). A closed contour keeps
+    // the 1 mm separation rule of #2984 unchanged.
+    if job.side.is_open() {
+        if separation_length_mm != 0.0 {
             return Err(
-                "Choose an Agie group name that produces non-reserved geometry filenames".into(),
+                "Set the separation cut length (separationLengthMm) to zero for an open cutoff"
+                    .into(),
             );
         }
-        works.push(Work::prepare(job, geometry, separation)?);
+    } else if separation_length_mm != 1.0 {
+        return Err("Set the separation cut length (separationLengthMm) to 1.0 mm for this closed contour. A zero or unspecified separation cannot pass the control formal check".into());
     }
-    for (index, work) in works.iter().enumerate() {
-        for previous in &works[..index] {
-            if !(0..2).any(|axis| {
-                work.max[axis] < previous.min[axis] || previous.max[axis] < work.min[axis]
-            }) {
-                return Err(format!(
-                    "Agie works {} and {} share a cutting area. Separate their threading holes, leads and compensated cuts",
-                    previous.geometry, work.geometry
-                ));
-            }
-        }
+    if !valid_name(program) {
+        return Err("The job program name must be a non-reserved 1–8 character DOS name starting with a letter and using uppercase letters or digits".into());
     }
-    let mut files = Vec::new();
-    let mut resources = String::new();
-    for work in &works {
-        let iso_name = format!("{}.ISO", work.geometry);
-        resources.push_str(&format!("AGIE.USING_{iso_name} IMPORT {iso_name};\r\n"));
-        files.push((iso_name.clone(), iso(&iso_name, work)));
-    }
-    files.push((format!("{program}.SBR"), resources));
-    files.push((
-        format!("{program}.SBL"),
-        jescript::piece(first, program, separation, &works),
-    ));
-    publish(destination, &files)
+    // A closed contour returns to its first point. An open cut ends in air.
+    let (points, setup) = if job.side.is_open() {
+        let (cut, setup) = cutoff::prepare(job, program)?;
+        (cut.line.to_vec(), setup.encode())
+    } else {
+        let (mut points, setup) = contour::prepare(job, program)?;
+        let seam = *points.first().ok_or("The job requires a closed contour")?;
+        points.push(seam);
+        let setup = match job.side {
+            AgieSide::Die => setup.encode_die(),
+            _ => setup.encode(),
+        };
+        (points, setup)
+    };
+    let setup = setup.map_err(|error| error.to_string())?;
+    let iso_name = format!("{program}.ISO");
+    let files = [
+        (iso_name.clone(), iso(&iso_name, &points)),
+        (format!("{program}.SBR"), setup.sbr),
+        (format!("{program}.SBL"), setup.sbl),
+    ];
+    Ok(ExportedJob {
+        files: publish(destination, &files)?,
+        controller_review: setup.controller_review,
+    })
 }
 
-fn iso(iso_name: &str, work: &Work) -> String {
-    let points = &work.points;
+/// Publish one closed punch with the requested work quality (#2966).
+/// [`Quality::Ccb030`] writes the bytes of [`export_with_review`].
+/// [`Quality::Ccb035`] is qualified for one polygon punch on a 20 mm plate only:
+/// a die, an open cut, a group and a DXF arc punch keep CCB030.
+///
+/// # Errors
+/// The errors of [`export_with_review`], a side other than a punch, and a
+/// thickness that the quality has no measured offsets for.
+pub fn export_punch_with_review(
+    job: &AgieJob,
+    quality: Quality,
+    destination: &Path,
+    program: &str,
+    separation_length_mm: f64,
+) -> Result<ExportedJob, String> {
+    if quality == Quality::Ccb030 {
+        return export_with_review(job, destination, program, separation_length_mm);
+    }
+    if job.side != AgieSide::Punch {
+        return Err(format!(
+            "Quality {} is qualified for one closed punch only. Select AGIE_QN2 for a die opening or an open cutoff",
+            quality.name()
+        ));
+    }
+    if separation_length_mm != 1.0 {
+        return Err("Set the separation cut length (separationLengthMm) to 1.0 mm for this closed contour. A zero or unspecified separation cannot pass the control formal check".into());
+    }
+    if !valid_name(program) {
+        return Err("The job program name must be a non-reserved 1–8 character DOS name starting with a letter and using uppercase letters or digits".into());
+    }
+    let (mut points, setup, _) = contour::prepare_with_reach(job, program, quality)?;
+    let seam = *points.first().ok_or("The job requires a closed contour")?;
+    points.push(seam);
+    let setup = setup
+        .encode_quality(quality)
+        .map_err(|error| error.to_string())?;
+    let iso_name = format!("{program}.ISO");
+    let files = [
+        (iso_name.clone(), iso(&iso_name, &points)),
+        (format!("{program}.SBR"), setup.sbr),
+        (format!("{program}.SBL"), setup.sbl),
+    ];
+    Ok(ExportedJob {
+        files: publish(destination, &files)?,
+        controller_review: setup.controller_review,
+    })
+}
+
+/// The nominal ISO geometry of one work, with CRLF line ends.
+fn iso(iso_name: &str, points: &[[f64; 2]]) -> String {
     let mut iso = format!("( {iso_name} )\r\n");
     for (i, point) in points.iter().enumerate() {
-        if let (Some(Some(center)), Some(start)) = (
-            work.arc_centers.get(i),
-            i.checked_sub(1).and_then(|prev| points.get(prev)),
-        ) {
-            iso.push_str(&format!(
-                "N{:04} G03 X{:.5} Y{:.5} I{:.5} J{:.5} ;\r\n",
-                i + 1,
-                point[0],
-                point[1],
-                center[0] - start[0],
-                center[1] - start[1]
-            ));
-            continue;
-        }
         let motion = if i == 0 { "G00" } else { "G01" };
         iso.push_str(&format!(
             "N{:04} {motion} X{:.5} Y{:.5} ;\r\n",
@@ -252,19 +184,19 @@ fn publish(destination: &Path, files: &[(String, String)]) -> Result<Vec<PathBuf
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     if destination.file_name().is_none() {
-        return Err("Choose a new directory name for the Agie bundle".into());
+        return Err("Choose a new directory name for the job bundle".into());
     }
     match fs::symlink_metadata(destination) {
         Ok(_) => {
             return Err(format!(
-                "Agie destination {} already exists; choose a new directory",
+                "Job destination {} already exists; choose a new directory",
                 destination.display()
             ));
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => {
             return Err(format!(
-                "Cannot inspect Agie destination {}: {e}",
+                "Cannot inspect job destination {}: {e}",
                 destination.display()
             ));
         }
@@ -274,7 +206,7 @@ fn publish(destination: &Path, files: &[(String, String)]) -> Result<Vec<PathBuf
     let stage = tempfile::Builder::new()
         .prefix(".camcraft-agie-")
         .tempdir_in(parent)
-        .map_err(|e| format!("Cannot stage Agie job in {}: {e}", parent.display()))?;
+        .map_err(|e| format!("Cannot stage the job in {}: {e}", parent.display()))?;
     let mut paths = Vec::new();
     for (name, text) in files {
         let mut file = fs::OpenOptions::new()
@@ -288,7 +220,7 @@ fn publish(destination: &Path, files: &[(String, String)]) -> Result<Vec<PathBuf
         paths.push(destination.join(name));
     }
     rename_new(stage.path(), destination)
-        .map_err(|e| format!("Cannot publish Agie job to {}: {e}", destination.display()))?;
+        .map_err(|e| format!("Cannot publish the job to {}: {e}", destination.display()))?;
     // The temporary name ceased to exist at the rename. Disarm its path-based cleanup.
     let _old_name = stage.keep();
     Ok(paths)
@@ -336,14 +268,28 @@ fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
 fn rename_new(_: &Path, _: &Path) -> std::io::Result<()> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
-        "atomic Agie bundle publication is unavailable on this platform",
+        "atomic job bundle publication is unavailable on this platform",
     ))
 }
 
 #[cfg(target_arch = "wasm32")]
 fn publish(_: &Path, _: &[(String, String)]) -> Result<Vec<PathBuf>, String> {
-    Err("Agie bundle output requires a local filesystem".into())
+    Err("Job bundle output requires a local filesystem".into())
 }
 
+#[cfg(test)]
+mod cutoff_tests;
+#[cfg(test)]
+mod die_group_tests;
+#[cfg(test)]
+mod die_tests;
+#[cfg(test)]
+mod group_tests;
+#[cfg(test)]
+mod quality_tests;
+#[cfg(test)]
+mod reentrant_tests;
+#[cfg(test)]
+mod round_profile_tests;
 #[cfg(test)]
 mod tests;
