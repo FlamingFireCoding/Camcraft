@@ -38,7 +38,7 @@ fn setup_tool_list_edit_opens_tool_settings_in_properties() {
 }
 
 #[test]
-fn browser_library_door_and_tool_selection_focus_their_own_dock_tabs() {
+fn browser_library_door_opens_the_window_and_tool_selection_focuses_properties() {
     let mut h = shell_harness();
     h.get_by_label("View").click();
     h.run_steps(2);
@@ -47,7 +47,8 @@ fn browser_library_door_and_tool_selection_focus_their_own_dock_tabs() {
     assert!(h.query_by_label("Import library…").is_some(), "the browser door opens the catalog");
     select_tool(&mut h);
     assert!(here(&h, "Diameter"), "selecting a tool brings Properties in front of the catalog");
-    assert!(h.query_by_label("Import library…").is_none(), "the catalog stays behind Properties");
+    // #3892: the library is a window beside the dock, so it stays open.
+    assert!(h.query_by_label("Import library…").is_some(), "the library window stays open beside Properties");
     crate::actions::open_tool_shape_editor(&mut h.state_mut().state, TOOL);
     h.run_steps(2);
     assert!(h.state().state.tool_shape_editor.is_some());
