@@ -19,7 +19,6 @@ use crate::state::{State, is_spun_kind};
 /// The group's heading, and its AccessKit name.
 pub(crate) const HEADING: &str = "Holder and stick-out";
 
-const NOTE: Color32 = Color32::from_rgb(0x9E, 0xA8, 0xB8);
 const WARN: Color32 = Color32::from_rgb(230, 170, 60);
 const BAD: Color32 = Color32::from_rgb(230, 90, 80);
 
