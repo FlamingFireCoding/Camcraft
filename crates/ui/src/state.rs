@@ -57,6 +57,9 @@ mod test_import;
 mod program_info;
 #[path = "state_tool_library.rs"]
 mod tool_library_io;
+#[path = "state_tool_library_dialog.rs"]
+mod tool_library_dialog;
+pub use tool_library_dialog::{ToolEditorTab, ToolLibraryView, ToolSource};
 #[path = "state_setup_mount.rs"]
 mod setup_mount;
 #[path = "state_pockets.rs"]
@@ -1616,8 +1619,6 @@ pub enum LayoutRequest {
     Toggle(Panel),
     /// Open and focus a panel without toggling it closed.
     Show(Panel),
-    /// Open and focus the independent tool library.
-    ToolLibrary,
     /// Open the Debug info panel (#2262) as a dock tab, or close it.
     ToggleDebugInfo,
     /// Rebuild the default three-pane dock.
@@ -2172,6 +2173,8 @@ pub struct State {
     /// tool vanishes (the ghost law, mirrored from
     /// [`State::pane_target`]).
     pub tool_shape_editor: Option<String>,
+    /// #3892: the tool library window - `None` closed (view state).
+    pub tool_library: Option<ToolLibraryView>,
     /// #2397: Properties is showing the blank new-tool form. The Tool
     /// target with the empty name is the destination; this says which of
     /// its two faces shows - the pointer to the library, or the draft.
@@ -2517,6 +2520,7 @@ impl State {
                 ..ToolUi::default()
             },
             tool_shape_editor: None,
+            tool_library: None,
             new_tool_form: false,
             tool_body_ui: ToolBodyUi::default(),
             tool_profile_ui: ToolProfileUi::default(),
