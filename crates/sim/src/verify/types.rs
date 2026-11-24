@@ -316,6 +316,8 @@ pub enum Warning {
     /// Rapid `move` travels through stock: under the clearance plane,
     /// or (#2121) at it under the stock top.
     RapidInStock { at: usize },
+    /// The tool assembly meets the finished part on rapid move `at` (#3520).
+    RapidInPart { at: usize },
     /// #2901: the path starts at `height_mm`, under the `top_mm` of the
     /// start stock or of a fixture (`fixture`). The first traverse comes
     /// from an X/Y the machine does not know, so it can cross that top
@@ -365,13 +367,11 @@ pub enum Warning {
         gouge_mm: f64,
         rest_mm: f64,
     },
-    /// A 3-D finish's envelope verdict could not judge the material
-    /// hidden under overhangs (M13.1): the hidden-rest scan stopped at
-    /// its budget (`cells` the lattice, `claims` the plane claims
-    /// binned when it stopped), so whatever rest the verdict reports
-    /// speaks for the ridge law alone. "Not judged", never a zero -
-    /// reported at the first cutting move, and like every cached
-    /// warning it holds the post.
+    /// The envelope could not judge rest. For ball scans the hidden-rest
+    /// scan stopped at its budget (`cells` in the lattice, `claims` plane
+    /// claims binned), so the reported rest covers only the ridge law.
+    /// Zero cells and claims mark the bull-nose sweep, which measures no
+    /// rest. Reported at the first cutting move; holds the post.
     RestUnjudged { at: usize, cells: usize, claims: usize },
     /// A 3-D finish's spacing left a scallop past tolerance (M13.9,
     /// the ridge flank law): `mm` standing outside every ball at a
@@ -450,6 +450,12 @@ pub enum Warning {
     /// is shown and named everywhere a warning is and the post is not
     /// held.
     PlungeTooDeep { at: usize, mm: f64, limit_mm: f64 },
+    /// #3748: a start-side pass ("Pass starts at" Inside, or Outside when
+    /// `inside` is false) round a part that the user set to the `entry`
+    /// lead-in, where Arc from the air is the recommended one. The entry
+    /// is used as selected, from the first cut at `at`. Advisory: the
+    /// path is verified like any other, so the post is not held.
+    EntryNotRecommended { at: usize, entry: super::AdvisedEntry, inside: bool },
 }
 
 impl Warning {
@@ -466,7 +472,8 @@ impl Warning {
                 | Warning::DrillUndersize { .. }
                 | Warning::StrategyFallback { .. }
                 | Warning::FluteShort { .. }
-                | Warning::PlungeTooDeep { .. })
+                | Warning::PlungeTooDeep { .. }
+                | Warning::EntryNotRecommended { .. })
     }
 
     /// The envelope report's unjudged hidden half, as the warning that
@@ -521,6 +528,9 @@ impl core::fmt::Display for Warning {
             Warning::RapidInStock { at } => {
                 write!(f, "rapid move {at} travels through stock (below the clearance plane, or at it below the stock top)")
             }
+            Warning::RapidInPart { at } => {
+                write!(f, "tool meets the part on rapid move {at}")
+            }
             Warning::FirstTraverseLow { at, height_mm, top_mm, fixture, tilted: false } => write!(
                 f,
                 "the first rapid (move {at}) comes from an unknown X/Y at the clearance height Z{height_mm:.3}, under the {} \
@@ -566,6 +576,7 @@ impl core::fmt::Display for Warning {
                 f,
                 "finish envelope near move {at}: {gouge_mm:.4} mm gouge, {rest_mm:.4} mm rest"
             ),
+            Warning::RestUnjudged { at, cells: 0, claims: 0 } => write!(f, "bull-nose rest unmeasured from move {at}"),
             Warning::RestUnjudged { at, cells, claims } => write!(
                 f,
                 "finish envelope from move {at}: hidden rest NOT JUDGED - the scan's budget ran out ({cells} cells, {claims} plane claims); material under an overhang may stand unreported"
@@ -622,6 +633,11 @@ impl core::fmt::Display for Warning {
                 "feed plunge at move {at} reaches {mm:.3} mm below the floor that no level above cut, deeper than one \
                  stepdown ({limit_mm:.3} mm) - cut the levels above first, or plunge in pecks of one stepdown (the post is \
                  not held: the risk is the tool load)"
+            ),
+            Warning::EntryNotRecommended { at, entry, inside } => write!(
+                f,
+                "{}, from move {at} (the post is not held: the cut is verified)",
+                super::entry_advice(*entry, *inside)
             ),
         }
     }

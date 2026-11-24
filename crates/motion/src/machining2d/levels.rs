@@ -171,6 +171,11 @@ pub(super) struct Motion {
     /// path already cut (the start-side plan's open pieces end on walls,
     /// beside stock no cut has reached yet).
     pub(super) cleared_links: bool,
+    /// #3747: a ring area round a part links ring to ring in the plane.
+    pub(super) ring_links: Option<super::ring_links::RingLinks>,
+    /// #3746: a start-side ladder's air round the stock box; its Arc
+    /// entry plunges there and arcs onto the first ring.
+    pub(super) air: Option<super::air_entry::AirRoom>,
 }
 
 impl Motion {
@@ -199,13 +204,9 @@ impl Motion {
             ring_zig: false,
             solid_restart: false,
             cleared_links: false,
+            ring_links: None,
+            air: None,
         }
-    }
-
-    /// #3316: prove keep-down pass links through cut material too.
-    pub(super) fn with_cleared_links(mut self, on: bool) -> Self {
-        self.cleared_links = on;
-        self
     }
 
     /// #2265: enter a solid pass start by the entry arm (the pocket).
@@ -320,6 +321,7 @@ pub(super) fn run_levels(
 /// came out degenerate still crosses in over new material.
 /// Mutable ladder cursor shared between `run_level_walks` and
 /// per-level keep-out walks (#2055).
+#[derive(Clone)]
 pub(super) struct WalkState {
     first: bool,
     pub(super) last_cut_z: Option<f64>,

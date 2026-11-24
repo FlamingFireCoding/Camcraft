@@ -11,7 +11,7 @@ use crate::post::{cnc, options::OptionValue};
 use crate::schema::{PostOptions, PostRef};
 use crate::{model, operation};
 
-pub(crate) use camcraft_post::agie::AgieJob;
+pub(crate) use camcraft_post::agie::{AgieJob, AgieSide};
 pub use camcraft_post::agie::valid_name;
 
 /// The registry name of the native wire EDM post, the one place it is spelled (#3537).
@@ -128,7 +128,7 @@ pub(super) fn post(
     let bundle = camcraft_post::agie::export_with_review(&job, dest, name, separation)?;
     Ok(Posted {
         bundle_files: bundle.files,
-        controller_review: Some(bundle.controller_review.into()),
+        controller_review: Some(bundle.controller_review),
         ops: 1,
         lines: 0,
         program: String::new(),
