@@ -48,7 +48,7 @@ the part, and Auto offset both edges (`waterline_passes`).
 - The ring ends are snapped onto the boundary walk within 0.1 um
   (`ring_side::share_ends`). The closing chord of a closed walk is
   included. Before, the test was 1 nm, and a ring end that the clip put
-  3 um off its chord was not shared. On the block of `shoulder_adaptive`,
+  3 nm off its chord was not shared. On the block of `shoulder_adaptive`,
   the verifier then read a crossing at that end. Inside had the same gap.
   The ends of an open walk never move, because ring 0 and a wall share
   them.

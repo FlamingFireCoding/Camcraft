@@ -45,8 +45,7 @@ pub(super) fn mirror(pieces: &mut [Piece]) {
 /// Every other case (a pocket, a row strategy, a side already chosen)
 /// is returned as it is.
 pub(super) fn resolve(center: &Region, strategy: PocketStrategy, tool_r: f64, side: &StartSide) -> Result<StartSide, GenError> {
-    let rings = matches!(strategy, PocketStrategy::Waterline | PocketStrategy::OffsetRings);
-    if side.start != PassStart::Auto || !side.around_part || !rings {
+    if !resolves(strategy, side) {
         return Ok(side.clone());
     }
     if !(tool_r.is_finite() && tool_r > 0.0) {
@@ -67,6 +66,12 @@ pub(super) fn resolve(center: &Region, strategy: PocketStrategy, tool_r: f64, si
     };
     let start = if open { PassStart::Outside } else { PassStart::Inside };
     Ok(StartSide { start, ..side.clone() })
+}
+
+/// Does [`resolve`] choose a side for `side` (Auto round a part, a ring
+/// strategy)?
+pub(super) fn resolves(strategy: PocketStrategy, side: &StartSide) -> bool {
+    side.start == PassStart::Auto && side.around_part && matches!(strategy, PocketStrategy::Waterline | PocketStrategy::OffsetRings)
 }
 
 /// The counter-clockwise loops of `region` that no other one encloses:
@@ -94,7 +99,7 @@ fn outer_loops(region: &Region) -> Result<Vec<&Loop>, GenError> {
 /// a vertex of the boundary walk it stands on (ring 0 or a wall): the
 /// two then share the point exactly, so the verifier's crossing law
 /// reads a touch there, never a crossing. #3744: the clip puts an end on
-/// Clipper's lattice, some microns off the boundary chord it stands on,
+/// Clipper's lattice, some nanometres off the boundary chord it stands on,
 /// so the end is snapped within [`SNAP`] (a closed walk's closing chord
 /// included): onto the chord as a new vertex, or onto the vertex it
 /// stands next to.

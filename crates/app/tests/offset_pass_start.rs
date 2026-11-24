@@ -213,6 +213,20 @@ fn fig8_outside_offset_cuts_no_move_at_full_width() {
     assert!(named.is_empty(), "the band starts in air, so no pass start warning: {named:?}");
 }
 
+/// #3744 pin: the one ring set gives no crossing feeds on fig8, from
+/// either side. The maintainer's Inside run on a private model gave 414
+/// `Warning::Crossing` (#3741); a crossing blocks the post.
+#[test]
+#[ignore = "heavy lane (#3744 fig8 Inside and Outside): two generations and their verify run past the 60 s debug budget - run with --release -- --ignored"]
+fn fig8_start_sides_have_no_crossing() {
+    for start in [PassStart::Inside, PassStart::Outside] {
+        let (world, mut h, name, stock) = fig8_world();
+        let (_, warnings) = offset_op(&world, &mut h, &name, stock.0.z, start);
+        let crossed: Vec<&String> = warnings.iter().filter(|w| w.starts_with("Crossing")).collect();
+        assert!(crossed.is_empty(), "{start:?}: {} crossing(s), the first {:?}", crossed.len(), crossed.first());
+    }
+}
+
 /// #3316: Inside on the Outside band starts each level on the part wall,
 /// a cut of the full tool width - the toolpath names that case.
 #[test]

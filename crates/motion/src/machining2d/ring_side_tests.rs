@@ -132,11 +132,11 @@ fn auto_picks_one_side_of_the_one_ring_set() {
 }
 
 /// #3744 (seen on the block of `shoulder_adaptive`): a ring end that the
-/// clip put 3 um off its boundary chord, or on a closed walk's closing
+/// clip put 3 nm off its boundary chord, or on a closed walk's closing
 /// chord, becomes a vertex of that walk, so the two meet at one shared
 /// point and the verifier reads a touch, not a crossing.
 #[test]
-fn a_ring_end_off_the_boundary_chord_by_microns_is_shared() {
+fn a_ring_end_off_the_boundary_chord_by_nanometres_is_shared() {
     let edge = Piece { level: 0, pts: vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0), Point2::new(10.0, 10.0)], closed: false, core: false };
     let wall = Piece { level: WALL, pts: vec![Point2::new(20.0, 0.0), Point2::new(30.0, 0.0), Point2::new(30.0, 10.0)], closed: true, core: false };
     let ring = |a: Point2, b: Point2| Piece { level: 1, pts: vec![a, Point2::new(5.0, 5.0), b], closed: false, core: false };
@@ -144,7 +144,7 @@ fn a_ring_end_off_the_boundary_chord_by_microns_is_shared() {
     let far = Point2::new(5.0, 0.01);
     let mut ps = vec![edge, wall, ring(e1, far), ring(e2, Point2::new(10.0, 10.0))];
     share_ends(&mut ps);
-    assert!(ps[0].pts.contains(&e1), "the end 3 um off the chord is a vertex: {:?}", ps[0].pts);
+    assert!(ps[0].pts.contains(&e1), "the end 3 nm off the chord is a vertex: {:?}", ps[0].pts);
     assert!(!ps[0].pts.contains(&far), "an end 10 um off stays off");
     assert_eq!(ps[0].pts.first(), Some(&Point2::new(0.0, 0.0)), "an open walk's ends never move");
     assert!(ps[1].pts.contains(&e2), "the closing chord of a closed walk takes the end: {:?}", ps[1].pts);

@@ -163,6 +163,12 @@ pub enum CommandKind {
     /// Post NC through the save-dialog law (M1.7b): path via rfd, gate
     /// via `posting::post_setup`.
     PostProgramDialog,
+    ExportAgieInspection(String),
+    ImportAgieDrawing,
+    CreateAgieInspection {
+        name: String, tool: String, drawing: String,
+        chain: camcraft_app::geometry::sketch_chains::ChainId, start: [f64; 2], setup: Option<String>,
+    },
     /// The same post at a known path - what the headless tests run.
     PostProgramFile(PathBuf),
     /// One file per operation into a known folder (#111) - the
@@ -1038,7 +1044,7 @@ impl Default for OpUi {
                 plunge_feed: 300.0,
                 climb: true,
                 // Opt-in, like `seed_face` (M11.1 A).
-                blend_turns: false,
+                blend_turns: false, blend_radius: None,
             },
         }
     }
@@ -1934,6 +1940,16 @@ pub struct State {
     /// preference (kept beside the theme), the `holders` parameter of
     /// the `ImportTools` command an import runs. On by default.
     pub import_tool_holders: bool,
+    /// #2428: check GitHub for a newer release once per day on startup.
+    pub check_for_updates: bool,
+    /// #2428: UTC Unix timestamp (seconds) of the last update check.
+    pub last_update_check_utc: Option<u64>,
+    /// #2428: strictly newer release discovered by the startup check (or test injection).
+    pub update_available: Option<camcraft_app::update_check::ReleaseInfo>,
+    /// #2428: top-band Settings dropdown open flag.
+    pub ribbon_settings_open: bool,
+    /// #2428: non-blocking watcher for the one-shot startup update check.
+    pub(crate) update_watcher: crate::update_check::UpdateWatcher,
     /// The dock's closable panels as of this frame (see [`PanelsOpen`]).
     pub panels_open: PanelsOpen,
     /// The View door's pending dock ask (see [`LayoutRequest`]).
@@ -2410,6 +2426,7 @@ impl State {
             ribbon_mode_open: false,
             ribbon_view_open: false,
             ribbon_theme_open: false,
+            ribbon_settings_open: false,
             home_page: None,
             ribbon_recent_open: None,
             recent: camcraft_app::recent::RecentFiles::default(),
@@ -2417,6 +2434,10 @@ impl State {
             view_store: None,
             prefs_store: None,
             import_tool_holders: true,
+            check_for_updates: true,
+            last_update_check_utc: None,
+            update_available: None,
+            update_watcher: crate::update_check::UpdateWatcher::default(),
             panels_open: PanelsOpen { browser: true, properties: true, machines: false, ai_chat: false },
             layout_request: None,
             panel_setups: camcraft_app::prefs::PanelSetups::default(),
@@ -3340,6 +3361,8 @@ impl State {
         self.poll_generation();
         // #31: a file the browser's picker has read since the last frame.
         self.take_picked_files();
+        // #2428: non-blocking check for the one-shot startup update result.
+        self.poll_update_check();
         drop(s);
         // A refusal that no longer describes the page retires, with its
         // status-strip mirror (crate::feedback).
@@ -3467,6 +3490,11 @@ impl State {
             CommandKind::SaveProjectFile(path) => self.save_project_path(path),
             CommandKind::OpenRecent(kind, path) => self.open_recent(kind, path),
             CommandKind::ClearRecent(kind) => self.clear_recent(kind),
+            CommandKind::ImportAgieDrawing => self.import_agie_drawing(),
+            CommandKind::CreateAgieInspection { name, tool, drawing, chain, start, setup } => {
+                self.create_agie_inspection(name, tool, drawing, chain, start, setup);
+            }
+            CommandKind::ExportAgieInspection(name) => self.export_agie_inspection(&name),
             CommandKind::PostProgramDialog => self.post_program_dialog(),
             CommandKind::PostProgramFile(path) => self.post_program_path(path),
             CommandKind::PostProgramFolder(dir) => self.post_program_folder(dir),
