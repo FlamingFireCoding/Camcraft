@@ -43,7 +43,7 @@ pub const R: f64 = 5.0;
 pub const EPS: f64 = 1e-3;
 
 pub fn pocket(top: f64, bottom: f64) -> OpParams {
-    OpParams::Pocket { rest: None,
+    OpParams::Pocket { pass_start: Default::default(), rest: None,
         blend_radius: None,
         stepover: 4.0,
         stock_to_leave: 0.0,
@@ -86,7 +86,7 @@ pub fn contour(top: f64, bottom: f64, want: Side) -> OpParams {
 
 pub fn face(cut: f64) -> OpParams {
     OpParams::Face { holes: Default::default(),
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         tilt: None,
         stepover: 6.0,
         clearance_z: Height::fixed(40.0),

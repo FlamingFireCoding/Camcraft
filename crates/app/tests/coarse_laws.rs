@@ -219,7 +219,7 @@ fn probed(coarse: Option<f64>, ask: f64, sink: f64) -> World {
         bar_advance: 0.0,
         bar_unload: true,
         bar_transfer: true,
-        inspect_tol: ask,
+        inspect_tol: ask, kerf: Default::default(),
     };
     create(&world, &mut h, "P1", "GT-0300", part);
     let e = model::find_by_name(&world, "G2").expect("op");
@@ -316,7 +316,7 @@ fn face() -> OpParams {
         feed: 1200.0,
         plunge_feed: 300.0,
         climb: true,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
     }
 }
 

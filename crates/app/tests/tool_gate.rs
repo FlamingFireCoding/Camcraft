@@ -60,7 +60,7 @@ fn world_with(machine: Option<&str>, tools: &[&str]) -> (World, History) {
 
 fn face() -> OpParams {
     OpParams::Face { holes: Default::default(),
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         tilt: None,
         stepover: 3.0,
         clearance_z: Height::fixed(25.0),
@@ -224,6 +224,7 @@ fn the_refusal_names_a_fitting_catalog_entry() {
         (OpType::Finish3D, "'BN-0600' (6 mm ball-nose)"),
         (OpType::FormTurning, "'FG-0600-04' (4 mm form gauge)"),
         (OpType::WireContour, "'EDM-W025' (0.25 mm wire)"),
+        (OpType::WaterjetProfile, "'WJ-KERF-080' (0.8 mm waterjet nozzle)"),
         (OpType::SlotUndercut, "'TS-2000-0600' (20 mm T-slot cutter)"),
     ] {
         let why = tool_gate::create_refusal(&world, ty.info()).expect("empty rack");

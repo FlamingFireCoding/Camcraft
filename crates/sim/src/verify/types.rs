@@ -186,6 +186,10 @@ pub struct VerifyContext<'a> {
     /// that traces one at the untightened `gouge_tol`
     /// ([`VerifyContext::loop_tol`]). Empty everywhere else.
     pub rims: &'a [(crate::geo2d::Point2, f64)],
+    /// Geometric upper bound of the finished hole walls (#3451).
+    /// Only the axial cone boundary check reads this cap. `None` keeps
+    /// the stock-top cap; the rapid and collision laws always use stock.
+    pub rim_top_z: Option<f64>,
     /// The spindle a turning nose path cuts about (#1408): given, the
     /// envelope law (f) reads the hidden half as the turning work sees
     /// it (`stock_sim::envelope_scan_turned`). `None` - every mill
@@ -232,6 +236,7 @@ impl Default for VerifyContext<'_> {
             model_excess: 0.0,
             file_tolerance: false,
             rims: &[],
+            rim_top_z: None,
             lathe_axis: None,
             corner_reliefs: &[],
         }
@@ -258,6 +263,20 @@ pub enum FixturePart {
     /// the edge milling into clamping steel - the worst thing this law
     /// can report, and named as itself, never as a "shank".
     Flute,
+}
+
+/// What fell back to the Offset rings in a [`Warning::StrategyFallback`]
+/// (#3542): the text names the operation's own choice. Absent in a cache
+/// saved before #3542: read as the Adaptive plan, the only cause then.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FallbackCause {
+    /// The Adaptive plan could not cut an area (#3035).
+    #[default]
+    Adaptive,
+    /// The selected "Pass starts at" side would leave material uncut, so
+    /// the area is cut in the Auto order (the completeness guard, #3316).
+    PassStart,
 }
 
 /// Serde derives: the operation layer persists warnings with the cached
@@ -288,6 +307,8 @@ pub enum Warning {
     /// Rapid `move` travels through stock: under the clearance plane,
     /// or (#2121) at it under the stock top.
     RapidInStock { at: usize },
+    /// The tool assembly meets the finished part on rapid move `at` (#3520).
+    RapidInPart { at: usize },
     /// #2901: the path starts at `height_mm`, under the `top_mm` of the
     /// start stock or of a fixture (`fixture`). The first traverse comes
     /// from an X/Y the machine does not know, so it can cross that top
@@ -399,8 +420,20 @@ pub enum Warning {
     /// level) to the Offset rings (#3035), from the first cut at `at`.
     /// The notes name each one. Advisory: the rings are verified like any
     /// path, so the post is not held - but the strategy the user asked for
-    /// did not cut those areas, and the op says so.
-    StrategyFallback { at: usize, areas: usize },
+    /// did not cut those areas, and the op says so. `cause` (#3542): the
+    /// Adaptive plan, or a "Pass starts at" side cut in the Auto order.
+    StrategyFallback {
+        at: usize,
+        areas: usize,
+        #[serde(default)]
+        cause: FallbackCause,
+    },
+    /// #3525: the operation cuts `depth_mm` below the stock top, deeper
+    /// than the tool's `flute_mm` flute length, from the cutting move
+    /// `at` on ([`super::flute_reach`]). Always advisory (#3525
+    /// decision): it names the cause of the shank and holder findings that
+    /// follow it, and those findings hold the post.
+    FluteShort { at: usize, flute_mm: f64, depth_mm: f64 },
 }
 
 impl Warning {
@@ -412,7 +445,8 @@ impl Warning {
                 | Warning::ProbeSearch { .. }
                 | Warning::SinkerFinishOrder { .. }
                 | Warning::DrillUndersize { .. }
-                | Warning::StrategyFallback { .. })
+                | Warning::StrategyFallback { .. }
+                | Warning::FluteShort { .. })
     }
 
     /// The envelope report's unjudged hidden half, as the warning that
@@ -466,6 +500,9 @@ impl core::fmt::Display for Warning {
             ),
             Warning::RapidInStock { at } => {
                 write!(f, "rapid move {at} travels through stock (below the clearance plane, or at it below the stock top)")
+            }
+            Warning::RapidInPart { at } => {
+                write!(f, "tool meets the part on rapid move {at}")
             }
             Warning::FirstTraverseLow { at, height_mm, top_mm, fixture, tilted: false } => write!(
                 f,
@@ -547,10 +584,21 @@ impl core::fmt::Display for Warning {
                 f,
                 "undersize hole at move {at}: the hole is {hole_mm:.3} mm, and the {drill_mm:.3} mm drill makes it {drill_mm:.3} mm - use a {hole_mm:.3} mm drill, or follow with a Bore or a reamer (the post is not held: a pilot drill is a valid plan)"
             ),
-            Warning::StrategyFallback { at, areas } => write!(
+            Warning::StrategyFallback { at, areas, cause: FallbackCause::Adaptive } => write!(
                 f,
                 "Adaptive fell back to Offset rings on {areas} area{} from move {at}: the notes name each one and why (the post is not held: the rings are verified)",
                 if *areas == 1 { "" } else { "s" }
+            ),
+            Warning::StrategyFallback { at, areas, cause: FallbackCause::PassStart } => write!(
+                f,
+                "Pass starts at: the selected start side would leave material uncut in {areas} area{}, so the Auto order was used there instead, from move {at}: the notes name each one (the post is not held: the cut is verified)",
+                if *areas == 1 { "" } else { "s" }
+            ),
+            Warning::FluteShort { at, flute_mm, depth_mm } => write!(
+                f,
+                "the tool's flute length is {flute_mm:.3} mm, but the cut goes {depth_mm:.3} mm below the stock top from move {at}: \
+                 above the flutes, the shank or the holder goes into the cut; the findings after this one name the moves where \
+                 it meets material - use a tool with a longer flute, or cut less deep (this finding alone does not hold the post)"
             ),
         }
     }

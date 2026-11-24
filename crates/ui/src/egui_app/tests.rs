@@ -105,10 +105,14 @@ mod machines_edit;
 mod machine_wire_edm;
 mod unsaved;
 mod post_refusal;
+#[cfg(not(target_arch = "wasm32"))]
+mod agie_post;
 mod program_units;
 mod gcode_viewer;
 mod first_setup;
 mod work_envelope;
+// #2632: the operator-side arrow and text of the work envelope.
+mod operator_side;
 mod lathe_gizmo;
 // #2172: the bodies stand on the floor of the work envelope.
 mod floor;
@@ -118,6 +122,7 @@ mod camera_target;
 mod structural;
 // #2181: the transport row of the calculation before playback.
 mod transport_precalc;
+mod sim_op_steps;
 mod page_layout;
 mod page_layout_windows;
 mod anchors;
@@ -132,10 +137,12 @@ mod catalog_filters;
 mod cycle_combo;
 mod holes_break_through;
 mod holes_fine_bore;
+mod ma_deburr_page;
 mod radial_step_field;
 mod auto_input_manual;
 // #1509: 2D Adaptive's Method choice on the Passes tab.
 mod adaptive_method;
+mod pass_start;
 mod adaptive3d_method;
 // #661: every operation kind wears its own SVG-mastered glyph.
 mod op_icon_table;
@@ -183,6 +190,10 @@ mod setup_eye;
 mod program_entry;
 // #2055: "Do not touch" protected faces/edges in Boundaries.
 mod do_not_touch;
+// #3349: Engrave takes "Do not touch" protected faces/edges.
+mod do_not_touch_engrave;
+// #3335: real viewport clicks into the "Do not touch" group.
+mod do_not_touch_click;
 // #371: the tool editor's Body section.
 mod tool_body;
 mod tool_body_assembly;
@@ -208,11 +219,15 @@ mod theme_door;
 mod recent_door;
 // #2384: the Home button and the recent projects start page.
 mod home_page;
+// #2428: startup update check, Settings dropdown toggle, and title-bar notice.
+mod update_check;
 // #1431: the browser build's Save, Save As and Post as downloads; the rest refused by name.
 mod browser_files;
 mod browser_delete;
 // #1450: a model file dropped on the window.
 mod file_drop;
+// #2950: the browser loads .mch and .cps files from a pick, a folder or a drop.
+mod browser_setup_files;
 // #645: the browser's "Show origin names" switch and the per-user view file.
 mod view_names;
 mod prefs_door;
@@ -1042,7 +1057,7 @@ fn every_field_lives_on_exactly_one_section() {
             vec![
                 ("Geometry", vec!["Click selects:"]),
                 ("Heights", vec!["Clearance Z", "Cut Z", "Levels"]),
-                ("Passes", vec!["Stepover (Y spacing)"]),
+                ("Passes", vec!["Stepover (Y spacing)", "Pass starts at"]),
                 ("Feeds", vec!["Feed", "Plunge feed", "Climb milling"]),
             ],
         ),
@@ -1070,7 +1085,7 @@ fn every_field_lives_on_exactly_one_section() {
             vec![
                 ("Geometry", vec!["Click selects:"]),
                 ("Heights", vec!["Clearance Z", "Levels", "Top Z", "Bottom Z", "Stepdown"]),
-                ("Passes", vec!["Stepover", "Stock to leave", "Strategy", "Rest machining"]),
+                ("Passes", vec!["Stepover", "Stock to leave", "Strategy", "Pass starts at", "Rest machining"]),
                 ("Lead in / Lead out", vec!["Entry", "Level to level", "Between levels", "Between passes", "Plunge", "Ramp / helix / arc feed", "Entry plunge feed", "Lead-in feed", "Engagement", "Minimum radius", "Helix pitch"]),
                 ("Feeds", vec!["Feed", "Plunge feed", "Climb milling"]),
             ],
@@ -1125,7 +1140,7 @@ fn every_field_lives_on_exactly_one_section() {
                     "Heights",
                     vec!["Clearance Z", "Levels", "Top Z", "Bottom Z", "Stepdown"],
                 ),
-                ("Passes", vec!["Stepover", "Stock to leave"]),
+                ("Passes", vec!["Stepover", "Pass starts at", "Stock to leave"]),
                 ("Lead in / Lead out", vec!["Entry", "Level to level", "Between levels", "Between passes"]),
                 ("Feeds", vec!["Feed", "Plunge feed", "Climb milling"]),
             ],
@@ -1246,7 +1261,7 @@ fn every_field_lives_on_exactly_one_section() {
                         "Stepdown",
                     ],
                 ),
-                ("Passes", vec!["Stock to leave", "Tolerance"]),
+                ("Passes", vec!["Pass starts at", "Stock to leave", "Tolerance"]),
                 ("Lead in / Lead out", vec!["Level to level", "Between levels", "Between passes"]),
                 ("Feeds", vec!["Feed", "Plunge feed", "Climb milling"]),
             ],
@@ -1277,6 +1292,7 @@ fn every_field_lives_on_exactly_one_section() {
                     "Stepover",
                     "Stock to leave",
                     "Strategy",
+                    "Pass starts at",
                     "Offset shells",
                     "Rest roughing",
                     "Feed optimization",
@@ -1307,9 +1323,11 @@ fn every_field_lives_on_exactly_one_section() {
                 ),
                 ("Passes", vec![
                     "Pattern",
+                    "Pass starts at",
                     "Stepover",
                     "Minimum step",
                     "Ramp between lines",
+                    "Steep flanks",
                     "Tolerance",
                 ]),
                 ("Feeds", vec!["Feed", "Plunge feed", "Climb milling"]),
@@ -1968,6 +1986,7 @@ fn origin_page_shows_the_anchor_grid_and_arms_pick_mode() {
 /// including the View3D readback and the fallback-adapter law).
 #[test]
 fn headless_run_succeeds() {
+    let _gpu = super::gpu_test_lock::gpu_guard(); // #3589
     headless::run(None).map_err(|err| panic!("egui headless run failed: {err}")).ok();
 }
 
@@ -2880,6 +2899,8 @@ fn tips_match_the_imgui_table() {
             == camcraft_app::operation::Family::WireEdm;
         let is_sinker = camcraft_app::operation::KindInfo::ALL[i].family()
             == camcraft_app::operation::Family::Sinker;
+        let is_waterjet = camcraft_app::operation::KindInfo::ALL[i].family()
+            == camcraft_app::operation::Family::Waterjet;
         let want = if is_turn {
             "The document's machine is a mill - turning operations do not drive it; mount a lathe or a mill-turn (Setup > Machine)".to_owned()
         } else if is_wire {
@@ -2891,6 +2912,9 @@ fn tips_match_the_imgui_table() {
         } else if is_sinker {
             // #541: nor the electrode's.
             "The document's machine is a mill - sinker EDM operations do not drive it; mount a sinker EDM (Setup > Machine)".to_owned()
+        } else if is_waterjet {
+            // #1883: nor the jet's.
+            "The document's machine is a mill - waterjet operations do not drive it; mount a waterjet (Setup > Machine)".to_owned()
         } else if let Some(reason) = tool_law {
             // M10.1 B: the demo's one flat end mill cannot cut every
             // mill kind - those cells say which tool kind is missing.
@@ -3888,6 +3912,195 @@ fn finish3d_pattern_and_stepover_apply_through_commands() {
             _ => panic!("kind drift"),
         });
     assert_eq!(back, Some(None), "undo restores the march's own floor");
+}
+
+#[test]
+fn finish3d_waterlines_radio_consequence_apply_undo_and_status_note() {
+    use camcraft_app::commands::{GenerateOperation, ImportModel, SetStock};
+    use camcraft_app::geometry::{Point3, cube};
+    use camcraft_app::stock::StockShape;
+    use camcraft_app::schema::Location;
+
+    let mut harness = shell_harness();
+    {
+        let st = &mut harness.state_mut().state;
+        rack(st, &["BN-0600"]);
+        let prism = cube(Point3::new(-10.0, -10.0, 0.0), Point3::new(10.0, 10.0, 10.0));
+        st.history.execute(&st.world, ImportModel::from_mesh("Prism", prism));
+        st.history.execute(
+            &st.world,
+            SetStock::new(&st.world, StockShape::Box { dx: 40.0, dy: 40.0, dz: 12.0 }, Location::default())
+                .expect("stock"),
+        );
+        crate::actions::add_operation(st, camcraft_app::operation::OpType::Finish3D as usize);
+        if let OpParams::Finish3D { top_z, bottom_z, tolerance, .. } = &mut st.op_ui.params {
+            *top_z = Height::fixed(10.0);
+            *bottom_z = Height::fixed(0.0);
+            *tolerance = 0.1;
+        }
+        st.op_tab = 2; // Passes
+    }
+    harness.run_steps(2);
+    harness.get_by_label("Apply").scroll_to_me();
+    harness.run();
+    harness.get_by_label("Apply").click();
+    harness.run();
+
+    harness.get_by_label("Steep flanks").scroll_to_me();
+    harness.run();
+    assert!(harness.query_by_label("Waterlines").is_some());
+    assert!(harness.query_by_label("Leave uncut").is_some());
+    assert!(harness.query_by_label_contains("Steep flanks (>45 deg) stay uncut").is_none());
+
+    harness.get_by_label("Leave uncut").click();
+    harness.run();
+    assert!(
+        harness.query_by_label_contains("Steep flanks (>45 deg) stay uncut").is_some(),
+        "consequence caption must appear when Leave uncut is chosen"
+    );
+    assert!(
+        !harness.state().state.pending.iter().any(|c| matches!(c, CommandKind::EditOperationParams { .. })),
+        "radio click stages draft only; Apply commits"
+    );
+
+    harness.get_by_label("Apply").scroll_to_me();
+    harness.run();
+    harness.get_by_label("Apply").click();
+    harness.run();
+
+    let live_wl = model::find_by_name(&harness.state().state.world, "3D Finish1")
+        .and_then(|e| model::operation_of(&harness.state().state.world, &e))
+        .map(|o| matches!(o.params, OpParams::Finish3D { waterlines: false, .. }));
+    assert_eq!(live_wl, Some(true), "Apply commits waterlines: false");
+
+    // Generate and check the UI status banner surfaces the steep-flank warning.
+    {
+        let st = &mut harness.state_mut().state;
+        let cmd = GenerateOperation::new(&st.world, "3D Finish1").expect("generate");
+        st.history.execute(&st.world, cmd);
+        st.doc_version += 1;
+    }
+    harness.run();
+    let (line, tone, details) = super::op_page::status_text(&harness.state().state, "3D Finish1");
+    assert_eq!(tone, super::layout::Tone::Warn, "status banner tone: {line}");
+    assert!(line.contains("warning"), "status banner line: {line}");
+    assert!(
+        details.iter().any(|d| d.starts_with("warning: ") && d.contains(camcraft_app::finishing3d::WATERLINES_OFF_NOTE)),
+        "status details must expose uncut steep flanks: {details:?}"
+    );
+    harness.get_by_label_contains("OK ·").scroll_to_me();
+    harness.run();
+    harness.get_by_label_contains("OK ·").click();
+    harness.run();
+    assert!(
+        harness.query_by_label_contains(camcraft_app::finishing3d::WATERLINES_OFF_NOTE).is_some(),
+        "expanded status banner must render the steep-flank warning"
+    );
+
+    // Undo GenerateOperation, then undo EditOperationParams -> waterlines returns to true.
+    for _ in 0..2 {
+        harness.input_mut().events.push(Event::ModifiersChanged(Modifiers::COMMAND));
+        harness.input_mut().events.push(Event::Key {
+            key: Key::Z,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::COMMAND,
+        });
+        harness.run_steps(2);
+    }
+    let back_wl = model::find_by_name(&harness.state().state.world, "3D Finish1")
+        .and_then(|e| model::operation_of(&harness.state().state.world, &e))
+        .map(|o| matches!(o.params, OpParams::Finish3D { waterlines: true, .. }));
+    assert_eq!(back_wl, Some(true), "Ctrl+Z undo restores waterlines: true");
+}
+
+#[test]
+fn finish3d_waterlines_pattern_switch_resets_and_stays_visible_when_off() {
+    use camcraft_app::commands::{GenerateOperation, ImportModel, SetStock};
+    use camcraft_app::finishing3d::FinishPattern;
+    use camcraft_app::geometry::{Point3, cube};
+    use camcraft_app::schema::Location;
+    use camcraft_app::stock::StockShape;
+
+    let mut harness = shell_harness();
+    {
+        let st = &mut harness.state_mut().state;
+        rack(st, &["BN-0600"]);
+        let prism = cube(Point3::new(-10.0, -10.0, 0.0), Point3::new(10.0, 10.0, 10.0));
+        st.history.execute(&st.world, ImportModel::from_mesh("Prism", prism));
+        st.history.execute(
+            &st.world,
+            SetStock::new(&st.world, StockShape::Box { dx: 40.0, dy: 40.0, dz: 12.0 }, Location::default())
+                .expect("stock"),
+        );
+        crate::actions::add_operation(st, camcraft_app::operation::OpType::Finish3D as usize);
+        if let OpParams::Finish3D { top_z, bottom_z, tolerance, .. } = &mut st.op_ui.params {
+            *top_z = Height::fixed(10.0);
+            *bottom_z = Height::fixed(0.0);
+            *tolerance = 0.1;
+        }
+        st.op_tab = 2; // Passes
+    }
+    harness.run_steps(2);
+
+    for (target_pat, pat_label) in [
+        (FinishPattern::Blend, "Blend"),
+        (FinishPattern::Morph, "Morph"),
+        (FinishPattern::Waterline, "Waterline"),
+    ] {
+        // Set Parallel + Leave uncut first.
+        if let OpParams::Finish3D { pattern, waterlines, .. } = &mut harness.state_mut().state.op_ui.params {
+            *pattern = FinishPattern::Parallel;
+            *waterlines = true;
+        }
+        harness.run();
+        harness.get_by_label("Leave uncut").scroll_to_me();
+        harness.run();
+        harness.get_by_label("Leave uncut").click();
+        harness.run();
+        assert!(matches!(harness.state().state.op_ui.params, OpParams::Finish3D { waterlines: false, .. }));
+
+        harness.get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("Parallel")).scroll_to_me();
+        harness.run();
+        harness.get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("Parallel")).click();
+        harness.run_steps(2);
+        harness.get_by_label(pat_label).scroll_to_me();
+        harness.run();
+        harness.get_by_label(pat_label).click();
+        harness.run_steps(2);
+        let draft = match &harness.state().state.op_ui.params {
+            OpParams::Finish3D { pattern, waterlines, .. } => (*pattern, *waterlines),
+            _ => panic!("kind drift"),
+        };
+        assert_eq!(draft, (target_pat, true), "switching to {pat_label} resets waterlines to true");
+    }
+
+    // Apply & Generate on Waterline works without refusal.
+    harness.get_by_label("Apply").scroll_to_me();
+    harness.run();
+    harness.get_by_label("Apply").click();
+    harness.run();
+    {
+        let st = &mut harness.state_mut().state;
+        let cmd = GenerateOperation::new(&st.world, "3D Finish1").expect("generate Waterline after reset");
+        st.history.execute(&st.world, cmd);
+    }
+
+    // Even if Waterline or Blend enters with waterlines: false, Steep flanks stays visible so the user can re-enable Waterlines.
+    for pat in [FinishPattern::Waterline, FinishPattern::Blend, FinishPattern::Morph] {
+        if let OpParams::Finish3D { pattern, waterlines, .. } = &mut harness.state_mut().state.op_ui.params {
+            *pattern = pat;
+            *waterlines = false;
+        }
+        harness.run();
+        assert!(harness.query_by_label("Steep flanks").is_some(), "{pat:?} with waterlines=false must show Steep flanks");
+        harness.get_by_label("Waterlines").scroll_to_me();
+        harness.run();
+        harness.get_by_label("Waterlines").click();
+        harness.run();
+        assert!(matches!(harness.state().state.op_ui.params, OpParams::Finish3D { waterlines: true, .. }));
+    }
 }
 
 #[test]
@@ -5222,6 +5435,7 @@ mod dropdown_theme;
 mod review_1710_evidence;
 mod guide_projects;
 mod guide_images;
+mod step_units_prompt;
 
 
 #[test]

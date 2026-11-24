@@ -109,7 +109,7 @@ fn slot(a: f64, b: f64, bottom: f64) -> OpParams {
         plunge_feed: 200.0,
         climb: true,
         entry: Entry3D::Plunge,
-        helix_radius: 1.0,
+        helix_radius: 1.0, blend_turns: false, blend_radius: None,
         tilt: None,
         extend_start: 0.0,
         extend_end: 0.0,
@@ -143,6 +143,7 @@ fn trochoid(a: f64, b: f64, bottom: f64) -> OpParams {
 /// A Circular of `radius` about the pocket's centre, from the top to `bottom`.
 fn circular(radius: f64, bottom: f64) -> OpParams {
     OpParams::Circular {
+        pass_start: Default::default(),
         links: camcraft_app::links::Links::PLANAR,
         center: Point2::new(0.0, 0.0),
         radius,
