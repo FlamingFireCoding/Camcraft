@@ -250,7 +250,13 @@ pub(super) fn pocket_avoid_over(
             .with_holes(holes)
             .with_solid_restart()
             .with_cleared_links(cleared_links)
-            .with_ramp_starts(ramp_starts);
+            .with_ramp_starts(ramp_starts)
+            .with_ring_links(match &src {
+                AvoidSource::Plain { side, .. } if cleared_links => {
+                    super::ring_links::for_side(side, p.tool_diameter * 0.5, Some(ko.union(&ko_entry)?))?
+                }
+                _ => None,
+            });
         let cert_entry = room.as_ref().map(|rm| Cert::Region(&rm.tess));
         let cert_center = Cert::Region(&level_center);
         let cert_links = Cert::Region(&links_center);
