@@ -171,6 +171,7 @@ mod contact;
 mod crossing;
 mod cut_index;
 mod engine;
+mod entry_advice;
 mod excess;
 mod fine_bore;
 mod finish;
@@ -241,6 +242,7 @@ pub use excess::{band_growth, excess_floor, excess_floor_for, strict_floor, PROM
 pub use first_traverse::{box_top, first_traverse_low, first_traverse_low_swept, swept_top, SweptSteel};
 pub use first_traverse_posed::{first_traverse_low_posed, posed_top, PosedTurn, PosedWork};
 pub use live_traverse::{live_first_traverse, LiveHit, LiveSolids, LiveStart, LiveUnjudged};
+pub use entry_advice::{AdvisedEntry, entry_advice};
 pub use types::{FallbackCause, FixturePart, Mode, VerifyContext, Warning};
 #[doc(hidden)]
 pub use crossing::{crossed_pairs, crossed_pairs_all};

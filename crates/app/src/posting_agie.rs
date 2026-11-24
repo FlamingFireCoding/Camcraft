@@ -11,7 +11,7 @@ use crate::post::{cnc, options::OptionValue};
 use crate::schema::{PostOptions, PostRef};
 use crate::{model, operation};
 
-pub(crate) use camcraft_post::agie::AgieJob;
+pub(crate) use camcraft_post::agie::{AgieJob, AgieSide};
 pub use camcraft_post::agie::valid_name;
 
 /// The registry name of the native wire EDM post, the one place it is spelled (#3537).

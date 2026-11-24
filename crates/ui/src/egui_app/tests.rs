@@ -178,6 +178,8 @@ mod wcs_page_picks;
 // #343: the per-setup browser tree.
 mod setup_tree;
 mod mcp_live;
+// #3751: camcraft-cli --ui drives the window; Ctrl+Z undoes it.
+mod ui_link;
 // #389: per-setup post options and the tool-list export.
 mod setup_post_options;
 // #2374: the machine's own post offered on the Post page.
