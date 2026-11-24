@@ -82,6 +82,29 @@ cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/cutoff-uppe
 
 The examples select opposite sides of synthetic 80 × 60 × 20 mm stock. Each writes one native job, named `LOWER20` or `UPPER20`. Each job opens with zero erosion steps and no separation cut. The left job has the side `c_left` and the right job has `c_right`. The entry point `stp1` and the exit point `stp2` are 4 mm beyond opposite stock faces and 3 mm to the waste side of the line. Assign the matching TECCUT row on the control before the formal check.
 
+## Punch from a DXF circle or racetrack
+
+Create box stock of 20 mm thickness, import one DXF profile and place it on the stock top. Create a captured vertical **Wire Contour** punch. In **Geometry**, select the closed chain of the punch outline. The chain must be one DXF `CIRCLE`, or a racetrack of two straight lines and two tangent semicircular `ARC` entities with the same radius. The straight sides must be at least 6 mm long. Other geometry of the drawing must stay clear of the cut.
+
+The generator and the wire laws use a polygon that encloses each true arc within 0.000025 mm. The native ISO object has the nominal arcs: `G03` blocks with the exact arc centres as incremental `I` and `J` values. The control applies its own wire offset. The setup script is that of the modeled punch.
+
+The native job has these limits:
+
+- The racetrack has straight sides parallel to X or Y. Place the threading hole at least 3 mm outside a straight side, with at least 3 mm of that side on each side of the perpendicular entry.
+- The circle has a radius from 6 to 15 mm. Place the threading hole on a horizontal or vertical radius, at least 3 mm beyond the circle. The ISO object starts at that point of the circle and has two semicircles. The control applies the 1 mm separation along the circle.
+- The centres, the radius and the arc ends must be on the five-decimal ISO grid.
+- The stock must have at least 0.4 mm beyond each arc extremum, and the complete hole must be inside the stock. The rest of the drawing must stay outside the same area.
+
+Die openings with arcs, other stock heights and groups are refused. Run the original examples from the repository root, each with a fresh destination:
+
+```sh
+cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/racetrack.camscript
+cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/circle-punch.camscript
+cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/north-circle.camscript
+```
+
+The `RACE20` job has an R10 racetrack, moved and turned by 90 degrees, with its cap centres at X−6 Y1 and X10 Y1. The `CIRCLE20` job has an R10 circle with the hole at X−17 Y0. The `NORTH15` job has an R15 circle with the hole at X0 Y22.
+
 ## Open the job in Agie Control
 
 Keep all files of the job directory together. A punch group has one ISO object for each work: import each of them. In the control’s file manager, open **Imp/exp** and import the ISO object into **ISO Sys**. Then import the SBL into **SBL Sys**, keeping the matching SBR beside the SBL. In the workpiece list choose **New workpiece → Script Files**, select the imported SBL and confirm with **OK**.

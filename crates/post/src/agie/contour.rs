@@ -8,7 +8,7 @@ const UNITS: f64 = 100_000.0; // Five decimal places in the native ISO geometry 
 const MAX_VERTICES: usize = 4096;
 mod entry;
 
-fn quantize(v: f64) -> Result<i64, String> {
+pub(super) fn quantize(v: f64) -> Result<i64, String> {
     if !v.is_finite() || v.abs() > 9999.9999 {
         return Err("Job coordinates must be finite and within ±9999.9999 mm".into());
     }
@@ -51,7 +51,7 @@ pub(super) fn micrometres(value: f64) -> Result<i32, String> {
     Ok(microns)
 }
 
-fn punch_setup<'a>(job: &AgieJob, program: &'a str) -> Result<PunchSetup20<'a>, String> {
+pub(super) fn punch_setup<'a>(job: &AgieJob, program: &'a str) -> Result<PunchSetup20<'a>, String> {
     let [width, depth, height] = std::array::from_fn(|i| job.stock_max[i] - job.stock_min[i]);
     if !(width > 0.0 && width <= 350.0 && depth > 0.0 && depth <= 250.0) {
         return Err("The stock must fit the stated 350 × 250 mm working span".into());
@@ -231,7 +231,7 @@ fn margin_um(rough_um: u16) -> u32 {
 }
 
 /// The straight and round swept envelope of the rough pass and wire, in ISO lattice units.
-fn stock_margin(rough_um: u16) -> i64 {
+pub(super) fn stock_margin(rough_um: u16) -> i64 {
     i64::from(margin_um(rough_um)) * 100
 }
 

@@ -132,7 +132,15 @@ pub(super) fn post(
             report.problems.join("; ")
         ));
     }
-    let jobs = group::jobs(world, &operations)?;
+    // One selected DXF circle or racetrack posts native arcs (#2022). A
+    // group reads modeled punches only.
+    let round = match operations.as_slice() {
+        [(op_name, op)] if crate::operation::wire_sketch::selected(&op.src, &op.params) => {
+            Some(crate::operation::agie_sketch_job(world, op, op_name)?)
+        }
+        _ => None,
+    };
+    let jobs = if round.is_some() { Vec::new() } else { group::jobs(world, &operations)? };
     let options = super::program_options_for_script(
         world,
         super::builtin_post_text(POST)?,
@@ -144,11 +152,19 @@ pub(super) fn post(
         .get("separationLengthMm")
         .and_then(|v| v.as_f64())
         .ok_or("The native wire EDM post must declare its separation cut length in millimetres")?;
-    let bundle = camcraft_post::agie::export_group_with_review(&jobs, dest, name, separation)?;
+    let (bundle, works) = match &round {
+        Some((job, shape)) => {
+            (camcraft_post::agie::export_round_with_review(job, shape, dest, name, separation)?, 1)
+        }
+        None => (
+            camcraft_post::agie::export_group_with_review(&jobs, dest, name, separation)?,
+            jobs.len(),
+        ),
+    };
     Ok(Posted {
         bundle_files: bundle.files,
         controller_review: Some(bundle.controller_review),
-        ops: jobs.len(),
+        ops: works,
         lines: 0,
         program: String::new(),
         line_pos: Vec::new(),

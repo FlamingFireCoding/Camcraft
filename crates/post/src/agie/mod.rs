@@ -5,9 +5,11 @@ use std::path::{Path, PathBuf};
 mod contour;
 mod cutoff;
 mod group;
+mod round_profile;
 mod spacing;
 pub use crate::agie_setup::valid_stem as valid_name;
 pub use group::export_group_with_review;
+pub use round_profile::export_round_with_review;
 
 /// The retained side of a closed contour, or the kerf side of a directed open
 /// cut. The control applies the wire offset toward the waste: outside a punch,
@@ -234,5 +236,7 @@ mod die_tests;
 mod group_tests;
 #[cfg(test)]
 mod reentrant_tests;
+#[cfg(test)]
+mod round_profile_tests;
 #[cfg(test)]
 mod tests;
