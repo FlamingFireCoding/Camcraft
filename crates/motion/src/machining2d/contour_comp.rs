@@ -18,6 +18,7 @@
 //! Our own model; no vendor material consulted.
 
 use crate::cl::{CompSide, CompSpan, Move, MoveKind, PathBuilder};
+use crate::entry::Entry3D;
 use crate::geo2d::{Point2, Region};
 use crate::geometry::Point3;
 use crate::links::{Compensation, Link};
@@ -88,6 +89,20 @@ pub(super) fn door(p: &ContourParams) -> Result<(), GenError> {
     }
     if p.links.level == Link::KeepDown || p.links.pass == Link::KeepDown {
         return Err(refused_as(p, "needs Clearance or Retract links - a keep-down link engages the next cut without a lead"));
+    }
+    // #3888: a Ramp or Helix descends along the lead-in and the ring (the
+    // wall side's zig-zag, the bore side's zig-zag, orbit and links) before
+    // the lead-in move that engages G41/G42, so the register never applies
+    // to it: a register over the nominal radius, or a positive wear value,
+    // cuts the wall there. Only the dive at the lead-in's start stays off it.
+    for (what, arm) in [("entry", Some(p.entry)), ("level transition", p.links.transition)] {
+        if let Some(arm @ (Entry3D::Ramp | Entry3D::Helix)) = arm {
+            let name = if arm == Entry3D::Ramp { "Ramp" } else { "Helix" };
+            return Err(refused_as(p, format!(
+                "does not ride a {name} {what} - its descent runs on the lead-in and the ring before G41/G42 engages, \
+                 so the register does not apply to it; pick the Plunge or Arc {what}, or Computer compensation"
+            )));
+        }
     }
     Ok(())
 }

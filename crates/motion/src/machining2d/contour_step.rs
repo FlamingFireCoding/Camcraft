@@ -21,6 +21,7 @@ use crate::approach::CENTER_CUT_REFUSAL;
 use super::contour_bore::{BoreStep, bore_entry};
 use super::contour_entry::Engage;
 use super::contour_params::Lead;
+use super::contour_wall_ramp::wall_ramp;
 use super::descent::feed_down;
 
 /// What one level's engagement reads beyond the shared [`Engage`].
@@ -54,6 +55,9 @@ pub(super) struct Step {
 #[derive(Default)]
 pub(super) struct Said {
     refused: bool,
+    /// The helix stood down to the wall-side ramp (said once, apart from
+    /// the graze refusal: a later tabbed level can still graze).
+    helixed: bool,
     tabbed: bool,
 }
 
@@ -119,18 +123,30 @@ pub(super) fn engage_level(b: &mut PathBuilder, eng: &Engage, s: &Step, lead: &[
         bore_entry(b, eng, &bs, lead, walk)
     } else {
         // The wall side (explicit Outside, and every direct Auto): the
-        // graze this generator has always posted, and the only one that
-        // can be certified - the grown region holds the part's own
-        // interior, so a dive_room or a chord on it would certify
-        // descents THROUGH the body (M8.1's rule). The other arms are
-        // refused by name - once, because the reason is structural.
-        if !matches!(s.arm, Entry3D::Plunge | Entry3D::Arc) && !said.refused {
-            b.note(format!(
-                "entry: the {} needs bounded air only a bore (Side::Inside) \
-                 has - grazing dive at the lead-in, unchanged",
-                word(s.arm)
-            ));
-            said.refused = true;
+        // grown region holds the part's own interior, so a dive_room or a
+        // chord on it would certify descents THROUGH the body (M8.1's
+        // rule). A ramp needs neither: it zig-zags along the lead-in and
+        // the ring, the path the level cuts at full depth anyway
+        // (contour_wall_ramp). A helix has no bounded air here and stands
+        // down to that ramp, named once. Where the ramp cannot stand (a
+        // tabbed level, a path too short for the angle) the graze this
+        // generator has always posted does, named once.
+        if matches!(s.arm, Entry3D::Ramp | Entry3D::Helix) {
+            if !s.tabbed && wall_ramp(b, eng, s, tz, lead, walk) {
+                if s.arm == Entry3D::Helix && !said.helixed {
+                    b.note("entry: the helix needs bounded air only a bore (Side::Inside) has - ramp along the lead-in and the ring instead");
+                    said.helixed = true;
+                }
+                return None;
+            }
+            if !said.refused {
+                b.note(format!(
+                    "entry: the {} cannot stand on the wall side here ({}) - grazing dive at the lead-in",
+                    word(s.arm),
+                    if s.tabbed { "a standing tab is material the path cannot see" } else { "the lead-in and ring are too short for the ramp angle" }
+                ));
+                said.refused = true;
+            }
         }
         let cur = b.at();
         b.push(MoveKind::Rapid, Point3::new(e2.x, e2.y, cur.z), None);
