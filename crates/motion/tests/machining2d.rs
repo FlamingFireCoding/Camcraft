@@ -987,6 +987,22 @@ fn a_wall_side_helix_stands_down_to_the_same_ramp_and_says_so_once() {
 }
 
 #[test]
+fn a_wall_side_helix_names_its_ramp_and_its_tabbed_graze_each_once() {
+    // Three levels (-1, -2, -3), two tabs 1.5 high: -1 is untabbed (the helix
+    // stands down to the ramp), -2 and -3 are tabbed (they graze). Both
+    // substitutions are said, once each (review of #3833).
+    let mut p = outside_ramped(Entry3D::Helix, 5.0);
+    p.tab_count = 2;
+    p.tab_width = 5.0;
+    p.tab_height = 1.5;
+    let t = contour(&rect(0.0, 0.0, 30.0, 30.0), &p).expect("tabbed helix");
+    let said = |what: &str| t.notes.iter().filter(|n| n.contains(what)).count();
+    assert_eq!(said("needs bounded air"), 1, "{:?}", t.notes);
+    assert_eq!(said("a standing tab is material"), 1, "{:?}", t.notes);
+    assert!(t.moves.iter().any(|m| m.kind == MoveKind::Plunge), "the tabbed levels graze: {:?}", t.moves);
+}
+
+#[test]
 fn a_wall_side_ramp_too_short_for_its_angle_grazes_and_says_why() {
     // A 4 x 4 part: the ring is too short for 0.005 deg over 1 mm (64 legs).
     let t = contour(&rect(0.0, 0.0, 4.0, 4.0), &outside_ramped(Entry3D::Ramp, 0.005)).expect("graze");

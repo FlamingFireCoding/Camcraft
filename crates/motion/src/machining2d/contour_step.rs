@@ -51,6 +51,9 @@ pub(super) struct Step {
 #[derive(Default)]
 pub(super) struct Said {
     refused: bool,
+    /// The helix stood down to the wall-side ramp (said once, apart from
+    /// the graze refusal: a later tabbed level can still graze).
+    helixed: bool,
     tabbed: bool,
 }
 
@@ -123,9 +126,9 @@ pub(super) fn engage_level(b: &mut PathBuilder, eng: &Engage, s: &Step, lead: &[
         // generator has always posted does, named once.
         if matches!(s.arm, Entry3D::Ramp | Entry3D::Helix) {
             if !s.tabbed && wall_ramp(b, eng, s, tz, lead, walk) {
-                if s.arm == Entry3D::Helix && !said.refused {
+                if s.arm == Entry3D::Helix && !said.helixed {
                     b.note("entry: the helix needs bounded air only a bore (Side::Inside) has - ramp along the lead-in and the ring instead");
-                    said.refused = true;
+                    said.helixed = true;
                 }
                 return None;
             }
