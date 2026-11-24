@@ -127,6 +127,8 @@ mod page_layout;
 mod page_layout_windows;
 // #3892: the tool library window (page_layout.rs is full).
 mod page_layout_tool_library;
+// #3893: the tool editor in the tool library window.
+mod tool_library_editor;
 mod anchors;
 mod stock_fit;
 mod stock_source_default;

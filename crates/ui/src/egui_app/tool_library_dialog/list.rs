@@ -9,7 +9,7 @@
 use super::super::panes::kind_name;
 use crate::{
     actions,
-    state::{CommandKind, ErrorScope, State, ToolSource, UiTarget},
+    state::{CommandKind, ErrorScope, State, ToolSource},
 };
 use camcraft_app::tools::{self, Tool, ToolKind};
 use camcraft_app::{model, tool_body, tool_numbers};
@@ -104,7 +104,7 @@ fn file_row(ui: &mut Ui, state: &mut State) {
 }
 
 /// The document's tools, by name, in document order.
-fn document_tools(state: &State) -> Vec<(String, Tool)> {
+pub(super) fn document_tools(state: &State) -> Vec<(String, Tool)> {
     state
         .tool_names()
         .into_iter()
@@ -165,8 +165,8 @@ fn filtered(state: &State, rows: Vec<(String, Tool)>) -> Vec<(String, Tool)> {
 }
 
 /// The Document list: one row for each tool with the columns of #3663.
-/// "Edit" shows the tool in Properties (view state, as the setup's tool
-/// list does); the window stays open.
+/// #3893: "Edit" opens the tool in this window's editor (view state); the
+/// Properties subject and the document selection do not change.
 fn document_list(ui: &mut Ui, state: &mut State, rows: &[(String, Tool)]) {
     let numbers = tool_numbers::numbers(&state.world).unwrap_or_default();
     let mut edit: Option<String> = None;
@@ -188,14 +188,14 @@ fn document_list(ui: &mut Ui, state: &mut State, rows: &[(String, Tool)]) {
             ui.label(t.flutes.map_or_else(|| "-".to_owned(), |z| z.to_string()));
             ui.label(holder_of(state, name));
             ui.label(t.cutting.len().to_string());
-            if ui.small_button("Edit").on_hover_text("show this tool in Properties").clicked() {
+            if ui.small_button("Edit").on_hover_text("edit this tool in this window").clicked() {
                 edit = Some(name.clone());
             }
             ui.end_row();
         }
     });
     if let Some(name) = edit {
-        actions::target(state, UiTarget::Tool(name));
+        state.open_tool_in_library(&name);
     }
 }
 
