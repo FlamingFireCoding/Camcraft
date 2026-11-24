@@ -8,7 +8,8 @@
 use super::*;
 use camcraft_app::tools::Tool;
 use egui::accesskit::Role;
-use egui_kittest::kittest::{Node, NodeT};
+use egui_kittest::Node;
+use egui_kittest::kittest::NodeT;
 
 type H = Harness<'static, ShellUi>;
 
