@@ -42,7 +42,7 @@ mod inspection;
 mod publish;
 mod quality;
 pub use inspection::{INSPECTION_RECEIPT, InspectionProfile, InspectionSegment};
-pub use quality::{CCB035_OFFSETS_UM, Quality};
+pub use quality::{CCB035_OFFSETS_UM, CCB035_TECHNOLOGY, Quality};
 
 /// Wire-centre offsets in µm of the rough pass and the three trims on a
 /// straight outside face, for each measured stock thickness in mm. Offline
@@ -57,7 +57,10 @@ pub const QN2_OFFSETS_UM: [(u16, [u16; 4]); 4] = [
 
 /// The measured QN2 offsets for a stock thickness in µm, if it is qualified.
 pub fn qn2_offsets_um(height_um: i32) -> Option<[u16; 4]> {
-    Quality::Ccb030.offsets_um(height_um)
+    QN2_OFFSETS_UM
+        .iter()
+        .find(|(mm, _)| i32::from(*mm) * 1000 == height_um)
+        .map(|(_, offsets)| *offsets)
 }
 
 /// Setup coordinates for a closed punch or die opening with a predrilled 2 mm start hole.
@@ -197,11 +200,10 @@ impl PunchSetup20<'_> {
         if !valid_stem(self.stem) {
             return Err(SetupError::InvalidStem);
         }
-        let [rough, trim1, trim2, trim3] =
-            quality.offsets_um(self.height_um).ok_or(match quality {
-                Quality::Ccb030 => SetupError::UnqualifiedHeight,
-                Quality::Ccb035 => SetupError::UnqualifiedQualityHeight,
-            })?;
+        let offsets = quality.offsets_um(self.height_um).ok_or(match quality {
+            Quality::Ccb030 => SetupError::UnqualifiedHeight,
+            Quality::Ccb035 => SetupError::UnqualifiedQualityHeight,
+        })?;
         for (axis, stroke_um) in [350_000, 250_000].into_iter().enumerate() {
             let min = i64::from(self.stock_min_um[axis]);
             let max = i64::from(self.stock_max_um[axis]);
@@ -238,7 +240,7 @@ impl PunchSetup20<'_> {
             &piece,
             &work,
             "geometry and start hole",
-            [rough, trim1, trim2, trim3],
+            offsets,
             die_check,
         ))
     }
@@ -249,7 +251,7 @@ fn setup_files(
     piece: &piece::Piece<'_>,
     work: &piece::Work<'_>,
     points: &str,
-    [rough, trim1, trim2, trim3]: [u16; 4],
+    offsets: &[u16],
     side_check: &str,
 ) -> SetupFiles {
     SetupFiles {
@@ -261,20 +263,31 @@ fn setup_files(
                 "Select the newly created piece. Earlier pieces can retain their steps on repeat import. ",
                 "Match this work's ISO resource, {points} to the setup. Confirm zero steps. ",
                 "Verify steel 0001, Berco Cut 0.25 and {height} mm. {quality} requests Ra {ra}, Te 1.50, ",
-                "Tkm 1.00 and three disabled options. Check the effective values and both visible options ",
-                "on this work. Assign the matching TECCUT row. Check offsets of {rough}, {trim1}, {trim2} and ",
-                "{trim3} µm in order before GRAFICHECK and FORMALCHECK.{side_check}",
+                "Tkm 1.00 and {options}. Check the effective values and both visible options ",
+                "on this work. {teccut} Check offsets of {offsets} ",
+                "µm in order before GRAFICHECK and FORMALCHECK.{side_check}",
             ),
             points = points,
             height = piece.height_um / 1000,
             quality = piece.quality.name(),
             ra = piece.quality.ra(),
-            rough = rough,
-            trim1 = trim1,
-            trim2 = trim2,
-            trim3 = trim3,
+            options = piece.quality.options_text(),
+            teccut = piece.quality.teccut_text(),
+            offsets = offset_list(offsets),
             side_check = side_check,
         ),
+    }
+}
+
+/// "a, b, c and d": the offsets of all passes in µm, main cut first.
+fn offset_list(offsets: &[u16]) -> String {
+    match offsets.split_last() {
+        Some((last, [])) => last.to_string(),
+        Some((last, rest)) => {
+            let rest: Vec<String> = rest.iter().map(u16::to_string).collect();
+            format!("{} and {last}", rest.join(", "))
+        }
+        None => String::new(),
     }
 }
 

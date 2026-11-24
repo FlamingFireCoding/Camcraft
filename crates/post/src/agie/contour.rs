@@ -69,11 +69,11 @@ pub(super) fn punch_setup<'a>(
         return Err(format!("{profile} requires stock top Z0"));
     }
     // Only a measured thickness has known offsets. No height is interpolated.
-    let table = quality.offsets_table();
-    let Some(&(mm, _)) = table.iter().find(|(mm, _)| height == f64::from(*mm)) else {
+    let table = quality.thicknesses_mm();
+    let Some(&mm) = table.iter().find(|mm| height == f64::from(**mm)) else {
         let supported = table
             .iter()
-            .map(|(mm, _)| mm.to_string())
+            .map(u16::to_string)
             .collect::<Vec<_>>()
             .join(", ");
         return Err(format!(
@@ -128,8 +128,8 @@ pub(super) fn prepare_with_reach<'a>(
 ) -> Result<(Vec<[f64; 2]>, PunchSetup20<'a>, f64), String> {
     let setup = punch_setup(job, program, quality)?;
     // The clearance and miter checks use the rough offset of this quality.
-    let [rough_um, ..] = quality
-        .offsets_um(setup.height_um)
+    let rough_um = quality
+        .rough_um(setup.height_um)
         .ok_or("The selected quality has no measured offset for this stock thickness")?;
     let input = &job.contour;
     if input.len() < 3 || input.len() > MAX_VERTICES + 1 {
@@ -290,7 +290,7 @@ fn check_cut_envelope(ring: &[Point], job: &AgieJob, rough_um: u16) -> Result<f6
             reentrant = true;
             // At an inside turn the two offset faces intersect outside the
             // drawing corner. The strict wire cover law permits 0.002 mm of
-            // rest. Use the largest resident offset across all four passes.
+            // rest. Use the largest resident offset of all passes (the main cut).
             if reach - rough_offset > 0.002 * UNITS {
                 return Err(
                     "The rough compensation cannot reach the reentrant corner within 0.002 mm"

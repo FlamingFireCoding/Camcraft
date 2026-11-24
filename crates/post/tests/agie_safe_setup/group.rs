@@ -1,6 +1,5 @@
 //! Setup-only punch group records from CamCraft's offline controller-checked synthetic punch pair (#2961).
 //! Groups of three and nine punches from the CLI examples `punch-trio` and `punch-grid` (#2980).
-//! Gate map: covers camcraft_post::agie_setup::PunchGroup20.
 use camcraft_post::agie_setup::{
     GroupPunch, MAX_PUNCH_WORKS, PunchGroup20, PunchSetup20, SetupError,
 };
@@ -35,11 +34,11 @@ fn trio_and_grid_files_match_their_goldens_with_one_quality() {
     let trio = grid_files("TRIO20", &[[-32, 0], [0, 0], [32, 0]]);
     assert_eq!(
         trio.sbl.as_bytes(),
-        include_bytes!("golden/agie-setup/TRIO20.SBL")
+        include_bytes!("../golden/agie-setup/TRIO20.SBL")
     );
     assert_eq!(
         trio.sbr.as_bytes(),
-        include_bytes!("golden/agie-setup/TRIO20.SBR")
+        include_bytes!("../golden/agie-setup/TRIO20.SBR")
     );
     let centers: Vec<[i32; 2]> = [-32, 0, 32]
         .into_iter()
@@ -49,11 +48,11 @@ fn trio_and_grid_files_match_their_goldens_with_one_quality() {
     let grid = grid_files("NINE20", &centers);
     assert_eq!(
         grid.sbl.as_bytes(),
-        include_bytes!("golden/agie-setup/NINE20.SBL")
+        include_bytes!("../golden/agie-setup/NINE20.SBL")
     );
     assert_eq!(
         grid.sbr.as_bytes(),
-        include_bytes!("golden/agie-setup/NINE20.SBR")
+        include_bytes!("../golden/agie-setup/NINE20.SBR")
     );
     for (files, count) in [(&trio, 3), (&grid, 9)] {
         // One quality object for the piece; each work refers to it (#2984).
@@ -91,11 +90,11 @@ fn group_files_match_the_zero_step_punch_pair() {
     let files = pair(&PUNCHES).encode().unwrap();
     assert_eq!(
         files.sbl.as_bytes(),
-        include_bytes!("golden/agie-setup/PAIR20.SBL")
+        include_bytes!("../golden/agie-setup/PAIR20.SBL")
     );
     assert_eq!(
         files.sbr.as_bytes(),
-        include_bytes!("golden/agie-setup/PAIR20.SBR")
+        include_bytes!("../golden/agie-setup/PAIR20.SBR")
     );
     let cuts: Vec<_> = files
         .sbl

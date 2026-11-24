@@ -20,7 +20,7 @@ sub SetOrigin
   ok=JE_GenerateAttrib(c_tecalert,c_tecalert_sea)
 end sub
 sub CutPunch
-  ok=JE_CreateQuality(je_piece,"CCB035","0.35,1.50,1.00,F,F,F",je_q1)
+  ok=JE_CreateQuality(je_piece,"CCB035","0.35,1.50,1.00,T,F,F",je_q1)
   if (ok<>0) then
     stop
   end if
