@@ -25,6 +25,8 @@ use crate::geo2d::{Loop, Point2, Region};
 use crate::geometry::Point3;
 
 use super::descent::{Cuts, Descent, Lvl, plan_arm, ramp_fallback};
+use super::pass_start::{PassStart, StartSide};
+use super::pocket_strategy::PocketStrategy;
 use super::descent_xy::{XyArc, arc_at};
 use super::levels::{Cert, Motion};
 
@@ -67,6 +69,27 @@ impl AirRoom {
         let inner = rect(lo.x + shrink, lo.y + shrink, hi.x - shrink, hi.y - shrink)?;
         let legal = outer.difference(&inner).ok()?.union(center).ok()?;
         Some(Self { lo, hi, grow, legal, side: if inside { "Inside" } else { "Outside" } })
+    }
+
+    /// The room of a resolved start `side` (Inside or Outside round a
+    /// part, with the stock known) for a ring `strategy`; `None` for every
+    /// other ladder.
+    pub(super) fn for_side(side: &StartSide, strategy: PocketStrategy, center: &Region, tool_r: f64, approach: f64) -> Option<Self> {
+        let rings = matches!(strategy, PocketStrategy::Waterline | PocketStrategy::OffsetRings);
+        let started = matches!(side.start, PassStart::Inside | PassStart::Outside);
+        let stock = side.stock.as_ref().filter(|_| side.around_part && rings && started)?;
+        Self::new(stock, center, tool_r, approach, side.start == PassStart::Inside)
+    }
+
+    /// #3810: the room less `keepout` - the fixtures and clamps of an
+    /// avoid level, in cutter-centre terms, over the whole descent - so
+    /// that no plunge or lead in the air touches them. `None` when the
+    /// difference fails (the ladder then keeps its old entry).
+    pub(super) fn without(mut self, keepout: &Region) -> Option<Self> {
+        if !keepout.is_empty() {
+            self.legal = self.legal.difference(keepout).ok()?;
+        }
+        Some(self)
     }
 
     /// The XY distance of `p` from the stock box (0 inside it).

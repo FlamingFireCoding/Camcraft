@@ -186,3 +186,71 @@ fn outside_entry_is_no_plunge_into_material() {
     assert_eq!(first_solid_plunge(&t, R, &solid), None, "{:?}", t.notes);
     assert!(!t.notes.iter().any(|n| n.contains("axial dive") || n.contains("plunged into material")), "{:?}", t.notes);
 }
+
+fn block(min: [f64; 3], max: [f64; 3]) -> Vec<crate::geometry::Triangle> {
+    use crate::geometry::{Point3, Triangle};
+    let v = |i: usize| Point3::new([min[0], max[0]][i & 1], [min[1], max[1]][(i >> 1) & 1], [min[2], max[2]][(i >> 2) & 1]);
+    let quad = |a: usize, b: usize, c: usize, d: usize| [Triangle::new(v(a), v(b), v(c)), Triangle::new(v(a), v(c), v(d))];
+    [quad(4, 5, 7, 6), quad(0, 2, 3, 1), quad(0, 1, 5, 4), quad(2, 6, 7, 3), quad(1, 3, 7, 5), quad(2, 0, 4, 6)]
+        .into_iter()
+        .flatten()
+        .collect()
+}
+
+fn avoid_cut(items: Vec<crate::verify::AvoidItem>) -> Toolpath {
+    use crate::machining2d::pocket_avoid_started_on;
+    use crate::verify::{AvoidSpec, Cutter};
+    let geom = crate::tools::ToolGeom {
+        radius: R,
+        nose_radius: 0.0,
+        flute_len: 20.0,
+        shank_radius: R,
+        shank_len: 20.0,
+        holder_radius: 12.0,
+        holder_len: 20.0,
+    };
+    let spec = AvoidSpec { items, cutter: Cutter::flat(&geom), clearance: 1.0 };
+    let (stock, band) = dog_bone();
+    let side = StartSide { start: PassStart::Outside, stock: Some(stock), around_part: true };
+    match pocket_avoid_started_on(&band, &params(Entry3D::Arc, 0.0, 0.0), &spec, &CornerRelief::default(), &side) {
+        Ok(t) => t,
+        Err(e) => panic!("avoid: {e}"),
+    }
+}
+
+/// #3810: with fixtures to avoid, the Arc entry of Outside still plunges
+/// in air outside the stock box; with a clamp over that plunge point the
+/// entry moves off it or stands down by name, and no move touches the
+/// clamp.
+#[test]
+fn avoid_route_entry_plunges_in_air_clear_of_a_clamp() {
+    use crate::verify::{AVOID_VERIFY_TOL, AvoidItem, AvoidSpec, Cutter, avoid_hits};
+    let need = R + crate::approach::DEFAULT_APPROACH_DISTANCE;
+    let free = avoid_cut(Vec::new());
+    let (p, _) = entry(&free);
+    assert!(off_box(p.to.x, p.to.y) >= need - 1e-6, "the free plunge stands {:.3} mm off the box: {p:?}", off_box(p.to.x, p.to.y));
+    first_arc(&free);
+    // A clamp 8 mm square, from the table to over the stock, on the plunge point.
+    let (cx, cy) = (p.to.x, p.to.y);
+    let clamp = AvoidItem { label: "clamp".into(), tris: block([cx - 4.0, cy - 4.0, 0.0], [cx + 4.0, cy + 4.0, 20.0]), edges: vec![] };
+    let t = avoid_cut(vec![clamp.clone()]);
+    let geom = crate::tools::ToolGeom {
+        radius: R,
+        nose_radius: 0.0,
+        flute_len: 20.0,
+        shank_radius: R,
+        shank_len: 20.0,
+        holder_radius: 12.0,
+        holder_len: 20.0,
+    };
+    let spec = AvoidSpec { items: vec![clamp], cutter: Cutter::flat(&geom), clearance: 1.0 };
+    let hits = avoid_hits(&t, &spec, AVOID_VERIFY_TOL).unwrap_or_else(|e| panic!("verify: {e}"));
+    assert!(hits.is_empty(), "the path touches the clamp: {hits:?}");
+    // The clamp's keep-out covers the corner lead: the entry moves off the
+    // clamp in air, or stands down by name - never onto the clamp.
+    let named = t.notes.iter().any(|n| n.starts_with("entry: Outside pass - no air entry"));
+    let moved = t.moves.iter().find(|m| m.kind == MoveKind::Plunge && (m.to.z - BOTTOM).abs() < 1e-9).is_some_and(|q| {
+        (q.to.x - cx).hypot(q.to.y - cy) > 4.0 + R && off_box(q.to.x, q.to.y) >= need - 1e-6
+    });
+    assert!(named || moved, "the entry neither moved off the clamp nor was named: {:?}", t.notes);
+}

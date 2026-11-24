@@ -43,7 +43,9 @@ feeds through the stock to the first ring) is dropped: it would refuse
 every Inside post. Inside takes the air entry only where a lead reaches its
 first ring without a crossing (for example an open piece that the stock
 box cuts). Else it takes the named stand-in above (a helix, then the
-ramp). It is never a plunge into material. A change
+ramp). It is never a plunge into material. This follows the
+maintainer's rule on #3748: when the selected entry is not possible, use a
+safe entry and name it. A change
 of the Inside order (cut the outer rings first) would change the
 maintainer's "Inside" and is not taken here.
 
@@ -53,14 +55,18 @@ maintainer's "Inside" and is not taken here.
 - The first entry of each level changes. A re-entry after a pass-link
   lift onto a start in material (`entry_restart`) now tries the air entry
   first, and on a start-side pass a clear helix before the named plunge.
-  On fig8 Outside, four such re-entries still plunge, named: no air lead,
-  helix or ramp reaches their starts clear of the cut rings. The lifts
-  themselves are the pass links of #3747; the pin
-  `fig8_outside_offset_has_no_plunge_into_material` is known-fail on #3747.
-  The pass links are not changed here.
-- The avoid route (`pocket_avoid`, fixtures and clamps) keeps its old
-  entry: its keep-outs are not known outside the area, so the air there is
-  not proved. Follow-up: #3810.
+  On fig8 Outside, after the ring links of #3747, four pass links still
+  lift across the part to a start inside ring 0, and those re-entries
+  plunge, named: an air lead would cross ring 0 at the cut Z, and no helix
+  or ramp fits clear of the cut rings. The cause is the link code, filed
+  as #3825; the pin `fig8_outside_offset_has_no_plunge_into_material` is
+  known-fail on #3825. The pass links are not changed here.
+- The avoid route (`pocket_avoid`, fixtures and clamps, #3810, folded in
+  here): each level takes the same air room, less that level's keep-outs
+  over the whole descent up to clearance (`ko` joined with `ko_entry`,
+  in cutter-centre terms). A plunge or a lead that would touch a fixture
+  or a clamp is not proved, so the entry moves to another side or stands
+  down by name. Pin: `avoid_route_entry_plunges_in_air_clear_of_a_clamp`.
 - The Lead in / Lead out page on `main` offers all four entry kinds for
   each start side and greys none out (`lead_page.rs`), as the maintainer's
   clarification on #3748 asks. No page change here; the warning text next
