@@ -75,7 +75,7 @@ fn face(cut_z: f64, stepover: f64) -> OpParams {
     OpParams::Face {
         holes: Default::default(),
         tilt: None,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         stepover,
         clearance_z: Height::fixed(30.0),
         cut_z: Height::fixed(cut_z),
@@ -132,6 +132,7 @@ fn plate_with_pocket() -> Mesh {
 
 fn pocket(bottom_z: f64, stepover: f64, rest_rough: bool) -> OpParams {
     OpParams::Pocket3D {
+        pass_start: Default::default(),
         links: camcraft_app::links::Links::ROUGH3D,
         stepover,
         stock_to_leave: 0.0,
@@ -193,7 +194,7 @@ fn contour() -> OpParams {
         tab_height: 0.0,
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         chain_overrides: Vec::new(),
     }

@@ -306,6 +306,9 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             // Adaptive's fallback to Offset rings (#3035): advisory, its
             // own line, clear of the keys above (224 is the table's).
             Warning::StrategyFallback { .. } => (225, false),
+            // #3525: a cut deeper than the flute length - the cause of
+            // the shank findings after it, its own line (advisory).
+            Warning::FluteShort { .. } => (226, false),
             // A lathe holder's rub (#369) splits part from stock too.
             Warning::HolderHit { part, .. } => (212 + *part as u8, false),
         }
@@ -332,7 +335,8 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             | Warning::ProbeSearch { at, .. }
             | Warning::SinkerFinishOrder { at, .. }
             | Warning::DrillUndersize { at, .. }
-            | Warning::StrategyFallback { at, .. } => *at,
+            | Warning::StrategyFallback { at, .. }
+            | Warning::FluteShort { at, .. } => *at,
         }
     }
     let mut lines: Vec<(String, Option<usize>)> = Vec::new();
@@ -418,7 +422,7 @@ mod height_row_tests {
     #[test]
     fn the_pane_note_appears_only_while_something_is_unresolved() {
         let world = new_world();
-        let ok = OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false,
+        let ok = OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false, blend_radius: None,
             stepover: 3.0,
             clearance_z: Height::fixed(25.0),
             cut_z: Height::fixed(19.5),
@@ -429,7 +433,7 @@ mod height_row_tests {
             climb: true,
         };
         assert_eq!(unresolved_note(&world, None, None, &ok), None, "all fixed - no alarm");
-        let broken = OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false,
+        let broken = OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false, blend_radius: None,
             stepover: 3.0,
             clearance_z: Height::fixed(25.0),
             cut_z: Height::of(HeightReference::BottomOfStock, 0.0),
@@ -523,7 +527,7 @@ mod height_row_tests {
             tab_height: 1.0,
             entry: camcraft_app::machining3d::Entry3D::Plunge,
             helix_radius: 1.0,
-            blend_turns: false,
+            blend_turns: false, blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             chain_overrides: Vec::new(),
         }
@@ -655,7 +659,7 @@ mod warning_fold_tests {
         let mut w = vec![
             Warning::UndercutLift { at: 2 },
             Warning::DrillUndersize { at: 3, hole_mm: 6.0, drill_mm: 5.0 },
-            Warning::StrategyFallback { at: 4, areas: 1 },
+            Warning::StrategyFallback { at: 4, areas: 1, cause: camcraft_app::verify::FallbackCause::PassStart },
         ];
         w.extend(parts.iter().enumerate().map(|(i, &part)| Warning::AvoidHit { at: 10 + i, item: 1, part, short_mm: 0.5 }));
         assert!(w[0].blocks_post(), "an undercut lift must still block posting");

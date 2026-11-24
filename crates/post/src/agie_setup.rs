@@ -28,8 +28,13 @@
 //! # Ok::<(), camcraft_post::agie_setup::SetupError>(())
 //! ```
 
+mod inspection;
+mod publish;
+pub use inspection::{INSPECTION_RECEIPT, InspectionProfile, InspectionSegment};
+
 /// Setup coordinates for a closed punch with a predrilled 2 mm start hole.
 /// XY coordinates are integer micrometres in the same work frame as the ISO.
+#[derive(Debug)]
 pub struct PunchSetup20<'a> {
     /// Common DOS file stem for the ISO, SBR and SBL (for example, `CCSEP20`).
     pub stem: &'a str,
@@ -102,7 +107,8 @@ impl PunchSetup20<'_> {
     }
 }
 
-fn valid_stem(stem: &str) -> bool {
+/// Whether the stem can name the matching ISO, SBR and SBL on Agie Control.
+pub fn valid_stem(stem: &str) -> bool {
     let bytes = stem.as_bytes();
     (1..=8).contains(&bytes.len())
         && bytes[0].is_ascii_uppercase()
@@ -123,9 +129,11 @@ fn mm(value_um: i64) -> String {
 }
 
 fn attribute(lines: &mut Vec<String>, object: &str, context: &str, key: &str, value: &str) {
-    lines.push(format!(
-        "  ok=JE_AttribObject({object},SETATTR,je_piece,{context},{key},{value},je_dim)"
-    ));
+    lines.push(attribute_call(object, context, key, value));
+}
+
+fn attribute_call(object: &str, context: &str, key: &str, value: &str) -> String {
+    format!("  ok=JE_AttribObject({object},SETATTR,je_piece,{context},{key},{value},je_dim)")
 }
 
 fn checked(lines: &mut Vec<String>, command: String) {
