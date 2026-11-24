@@ -33,7 +33,7 @@ fn the_two_model_owners_have_distinct_programs_holes_and_captures() {
     assert_eq!(fs::read_dir(&dir).unwrap().count(), 4);
     let sbl = fs::read_to_string(dir.join("PAIR20.SBL")).unwrap();
     let map = fs::read_to_string(dir.join("PAIR20.SBR")).unwrap();
-    // The CLI job is the setup golden of camcraft-post (agie_group_setup).
+    // The CLI job is the setup golden of camcraft-post (agie_safe_setup::group).
     assert_eq!(
         sbl.as_bytes(),
         include_bytes!("../../../post/tests/golden/agie-setup/PAIR20.SBL")

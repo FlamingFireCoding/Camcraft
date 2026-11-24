@@ -1,5 +1,4 @@
 //! Setup-only punch group records from CamCraft's offline controller-checked synthetic punch pair (#2961).
-//! Gate map: covers camcraft_post::agie_setup::PunchGroup20.
 use camcraft_post::agie_setup::{GroupPunch, PunchGroup20, PunchSetup20, SetupError};
 
 const PUNCHES: [GroupPunch<'static>; 2] = [
@@ -28,11 +27,11 @@ fn group_files_match_the_zero_step_punch_pair() {
     let files = pair(&PUNCHES).encode().unwrap();
     assert_eq!(
         files.sbl.as_bytes(),
-        include_bytes!("golden/agie-setup/PAIR20.SBL")
+        include_bytes!("../golden/agie-setup/PAIR20.SBL")
     );
     assert_eq!(
         files.sbr.as_bytes(),
-        include_bytes!("golden/agie-setup/PAIR20.SBR")
+        include_bytes!("../golden/agie-setup/PAIR20.SBR")
     );
     let cuts: Vec<_> = files
         .sbl
