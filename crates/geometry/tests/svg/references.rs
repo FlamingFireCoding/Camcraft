@@ -57,6 +57,20 @@ fn svg_entity_names_outside_ascii_are_refused_at_each_place() {
 }
 
 #[test]
+fn svg_entity_names_with_an_ogham_space_are_refused_at_each_place() {
+    // U+1680 is a name character in XML, not XML whitespace (2.3, `S` and `NameStartChar`).
+    // A browser expands `&a\u{1680}b;`: the rectangle is hidden, or drawn at 40 x 40.
+    let doctype = "<!DOCTYPE svg [ <!ENTITY a\u{1680}b \"none\"> <!ENTITY s\u{1680}b \"transform:scale(2)\"> \
+                   <!ENTITY r\u{1680}b '<rect x=\"50\" width=\"20\" height=\"20\"/>'> ]>";
+    let file = |body: &str| format!("{doctype}{ROOT}>{body}</svg>");
+    let named = "entity reference &a\u{1680}b;";
+    refuses(&file(&format!("<rect width=\"20\" height=\"20\" display=\"&a\u{1680}b;\"/>{FAR}")), named);
+    refuses(&file(&format!("<rect width=\"20\" height=\"20\" style=\"&s\u{1680}b;\"/>{FAR}")), "entity reference &s\u{1680}b;");
+    refuses(&file(&format!("<style>.s{{&s\u{1680}b;}}</style>{RECT}")), "entity reference &s\u{1680}b;");
+    refuses(&file(&format!("&r\u{1680}b;{FAR}")), "entity reference &r\u{1680}b; in the content");
+}
+
+#[test]
 fn svg_a_run_that_is_not_an_xml_name_is_refused_when_it_ends_at_a_semicolon() {
     // Such a file is not well-formed: a browser does not draw it.
     for run in ["a=b", "a/b", "a(b)", "1a", "a,b", "#", "#x", "#xG", "#1a", "#+65", "#-65", "#X41"] {

@@ -60,8 +60,10 @@ pub(super) fn expand(raw: &str, place: impl Fn() -> String) -> Result<Cow<'_, st
     while let Some(amp) = rest.find('&') {
         out.push_str(rest.get(..amp).unwrap_or(""));
         let after = rest.get(amp + 1..).unwrap_or("");
+        // XML whitespace only (2.3, `S`): a name can hold other spaces, such as U+1680, and
+        // such a run is a reference that must decode or be refused.
         let len = after
-            .find(|c: char| c.is_whitespace() || matches!(c, ';' | '&' | '<' | '"' | '\''))
+            .find([' ', '\t', '\r', '\n', ';', '&', '<', '"', '\''])
             .unwrap_or(after.len());
         let (name, tail) = after.split_at(len);
         match tail.strip_prefix(';') {
