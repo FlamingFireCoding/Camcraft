@@ -753,7 +753,20 @@ fn tabs_hold_the_part_until_the_floor() {
     let t = contour(&rect(0.0, 0.0, 20.0, 20.0), &p).expect("valid");
     // Levels -3 and -4 (the tab top, #2579) run a full ring, -6 runs
     // four subpaths between tabs (#2004: no air level at Top Z 0).
-    assert_eq!(plunge_xy(&t).len(), 6);
+    // An entry ends with a plunge followed by the in-plane cut. An
+    // intermediate peck instead retracts by rapid before the next peck.
+    let entries = t.moves.windows(2).filter(|pair| {
+        pair[0].kind == MoveKind::Plunge && pair[1].kind == MoveKind::Feed && pair[1].from.z == pair[1].to.z
+    }).count();
+    assert_eq!(entries, 6);
+    assert_eq!(t.moves.iter().filter(|m| m.kind == MoveKind::Plunge && m.to.z == -6.0).count(), 4);
+    // The four window starts are inside corner arcs. Unknown full-disc
+    // coverage conservatively adds one peck at -3 before each -6 entry.
+    let pecks: Vec<_> = t.moves.windows(2).filter(|pair| {
+        pair[0].kind == MoveKind::Plunge && pair[1].kind == MoveKind::Rapid
+    }).collect();
+    assert_eq!(pecks.len(), 4);
+    assert!(pecks.iter().all(|pair| pair[0].to.z == -3.0));
     // Hop motion only at the tabbed level: three retract feeds + rapids.
     let up = t
         .moves
