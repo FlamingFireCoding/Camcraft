@@ -8,6 +8,7 @@ use camcraft_app::ai::wire::{ChatMessage, ChatRequest};
 use camcraft_app::ai::{ApiKey, Endpoint, KeySource, by_id, keychain, secret};
 
 use super::settings::{SettingsAction, SettingsBackend, SettingsRequest};
+use super::settings_text::{NO_KEY, ollama_status, test_failure};
 
 pub(crate) struct NativeSettings;
 
@@ -31,17 +32,16 @@ impl SettingsBackend for NativeSettings {
             },
         };
         let Some(name) = endpoint.key else {
-            return match probe_ollama(&client, &ep, &request.model) {
-                Ok(_) => Ok(format!("Ready (local model {})", request.model)),
-                Err(e) if e.contains("HTTP 404") || e.contains("not found") => Err(format!(
-                    "model {} not installed - install it with Ollama",
-                    request.model
-                )),
-                Err(_) => Err(format!(
-                    "Ollama not running at {} - start Ollama and check the model",
-                    endpoint.base_url
-                )),
+            // An empty Model still tells if the server answers: a probe of an
+            // unknown name gives HTTP 404 from a running server.
+            let probe_name = if request.model.is_empty() {
+                "camcraft-readiness-check"
+            } else {
+                request.model.as_str()
             };
+            let probe = probe_ollama(&client, &ep, probe_name).map(|_| ());
+            let test = matches!(action, SettingsAction::Test);
+            return ollama_status(probe, &request.model, test);
         };
         match action {
             SettingsAction::Save(ref key) => keychain::store(name, key)
@@ -54,15 +54,24 @@ impl SettingsBackend for NativeSettings {
         let found = secret::lookup(name, |v| std::env::var(v).ok(), keychain::load)
             .map_err(|_| "The key could not be read. Check the environment variable or unlock the OS keychain.")?;
         let Some((key, source)) = found else {
-            return Ok("No key - Set API key...".into());
+            return Ok(NO_KEY.into());
         };
         let source = match source {
             KeySource::Environment => "environment; overrides the keychain",
             KeySource::Keychain => "keychain",
         };
         if matches!(action, SettingsAction::Test) {
-            test_key(&client, &ep, endpoint.provider, &request.model, &key)?;
-            return Ok(format!("Ready (key from {source}) - Test passed"));
+            if request.model.is_empty() {
+                return Err(
+                    "Model is empty and this provider has no default. Type a model name.".into(),
+                );
+            }
+            test_key(&client, &ep, endpoint.provider, &request.model, &key)
+                .map_err(|error| test_failure(&error, &request.model, &ep.host))?;
+            return Ok(format!(
+                "Ready (key from {source}) - Test passed (model {})",
+                request.model
+            ));
         }
         Ok(format!("Ready (key from {source})"))
     }
@@ -89,11 +98,6 @@ fn test_key(
         tools: &[],
         max_tokens: 16,
     };
-    // Do not forward remote error text to the UI: it can contain credentials.
-    send_chat(client, ep, &request, Some(key), &AtomicBool::new(false))
-        .map(|_| ())
-        .map_err(|_| {
-            "Test failed. Check the key, model, billing credits, and network, then try again."
-                .into()
-        })
+    // `http.rs` removes the key from the error text before it returns.
+    send_chat(client, ep, &request, Some(key), &AtomicBool::new(false)).map(|_| ())
 }

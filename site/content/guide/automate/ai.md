@@ -31,8 +31,15 @@ shows the stored key. To replace it, use **Set API key...** again.
 The status appears when you choose a provider. **Ready (key from keychain)**
 or **Ready (key from environment)** means that CamCraft found a key.
 It does not prove that the key works or that the account has credits.
-**No key - Set API key...** means that you must add a key.
+**No key - Set API key...** means that you must add a key. **Test** stays
+disabled until CamCraft finds a key.
 Select **Test** to check access with a small request to the selected model.
+CamCraft removes spaces around the **Model** text. An empty **Model** uses the
+provider's default model. The result names the model that was tested.
+A failed test shows the cause (for example a rejected key, an unknown model,
+billing, a rate limit or the network), the model and host, what to try, and
+the provider's error text. The key is never shown. The app log gets the same
+text, so you can add it to a bug report.
 The provider can bill this request. Clear **Offline only** before a cloud test.
 **Remove** deletes the keychain entry only. It does not revoke the key at
 the provider or remove an environment variable.
@@ -41,6 +48,7 @@ the provider or remove an environment variable.
 
 1. Sign in to the [Anthropic console](https://platform.claude.com/settings/keys), then open **Settings > API keys**.
 2. Select **Create key**. Name it, for example, **CamCraft on my Mac**. This helps you revoke only this key later.
+   If the console asks **Where does your code run?**, choose **Somewhere else - Use an API key**. The other choices do not give a key.
 3. Copy the key at once. It starts with `sk-ant-`, and the console shows it only once.
 4. Paste it into **Set API key...** in CamCraft and save it.
 5. Keep it secret. Delete it on the same API keys page to revoke it.
@@ -122,11 +130,14 @@ Choose a model that fits your computer's memory.
 
 Ollama runs on http://localhost:11434. The panel uses its OpenAI-compatible endpoint
 at http://localhost:11434/v1.
+CamCraft does not start Ollama. Start the Ollama app or run `ollama serve`
+first. If the Ollama app is in your menu bar, the server is already running.
 If the app is not running, start the server with `ollama serve`.
 Check it with `curl http://localhost:11434/api/version` or `ollama list`.
 On Linux, `systemctl status ollama` checks the installed service.
 The status names an unavailable server or an uninstalled model before you
-send a prompt. Start Ollama if the server is unavailable. Install the exact
+send a prompt. While the server is unavailable, CamCraft checks it again
+every 5 seconds. **Test** shows **Testing...** and then a passed or failed result. Start Ollama if the server is unavailable. Install the exact
 model named in **Model** if it is missing, then select **Test** again.
 
 1. Choose **Offline local (Ollama)**.

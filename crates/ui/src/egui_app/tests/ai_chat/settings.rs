@@ -191,6 +191,13 @@ fn cloud_key_editor_clears_secret_on_cancel_and_provider_change() {
 fn cloud_key_status_names_environment_source_and_still_frames_do_not_recheck() {
     let (mut h, backend) = setup_harness();
     backend.source_environment.store(true, Ordering::Relaxed);
+    // Test waits for a key: a check finds the environment key first.
+    h.state_mut()
+        .state
+        .ai_chat
+        .settings
+        .start(SettingsAction::Check);
+    settle(&mut h);
     h.get_by_role_and_label(Role::Button, "Test").click();
     settle(&mut h);
     assert!(

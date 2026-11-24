@@ -30,14 +30,30 @@ fn provider_help_explains_ollama_options_and_gemini_subscription() {
         "Anyone on that network can use it",
         "OLLAMA_CONTEXT_LENGTH=32768",
         "OLLAMA_KEEP_ALIVE=30m",
+        "the server is already running",
     ] {
         assert!(
             h.query_by_label_contains(instruction).is_some(),
             "missing Ollama setup instruction: {instruction}"
         );
     }
-    select_provider(&mut h, "Gemini (Cloud)");
+    assert!(
+        h.query_by_label_contains(
+            "CamCraft does not start Ollama. It connects to Ollama at http://localhost:11434"
+        )
+        .is_some(),
+        "the panel must say who starts the Ollama server"
+    );
+    select_provider(&mut h, "Anthropic (Cloud)");
     h.get_by_label_contains("API key help").click();
+    h.run_steps(3);
+    assert!(
+        h.query_by_label_contains("choose Somewhere else - Use an API key")
+            .is_some(),
+        "the help must name the console choice that gives a key"
+    );
+    // The "API key help" section stays open across cloud providers.
+    select_provider(&mut h, "Gemini (Cloud)");
     h.run_steps(3);
     assert!(
         h.query_by_label_contains("A Gemini app subscription does not include an API key")

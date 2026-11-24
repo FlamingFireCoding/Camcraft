@@ -7,6 +7,8 @@ use camcraft_app::ai::ApiKey;
 // The clock seam (#31): the std clock panics on wasm32.
 use camcraft_app::clock::Instant;
 
+use super::settings_text::NO_KEY;
+
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct SettingsRequest {
     pub preset_id: String,
@@ -15,6 +17,8 @@ pub(crate) struct SettingsRequest {
 }
 
 const MODEL_CHANGED: &str = "Model changed. Click Test to test this model.";
+/// A local check that failed runs again after this delay, so the status follows the server.
+pub(crate) const LOCAL_RECHECK: Duration = Duration::from_secs(5);
 
 pub(crate) enum SettingsAction {
     Check,
@@ -39,6 +43,10 @@ pub(crate) struct Settings {
     tested_model: Option<String>,
     /// The status shows the result of a Test of `request.model`.
     shows_test_result: bool,
+    /// The last check found no key. Test stays disabled until a key is found.
+    pub no_key: bool,
+    /// The queued check repeats a failed local check: keep the status while it runs.
+    rechecking: bool,
 }
 
 impl Default for Settings {
@@ -54,6 +62,8 @@ impl Default for Settings {
             check_after: None,
             tested_model: None,
             shows_test_result: false,
+            no_key: false,
+            rechecking: false,
         }
     }
 }
@@ -69,8 +79,23 @@ impl Settings {
         self.pending.is_some()
     }
 
+    #[cfg(test)]
     pub fn has_work(&self) -> bool {
         self.busy() || self.needs_check
+    }
+
+    /// The delay to the next frame that has settings work, or `None` when idle.
+    pub fn next_wake(&self, now: Instant) -> Option<Duration> {
+        if self.busy() {
+            return Some(Duration::from_millis(50));
+        }
+        self.needs_check.then(|| {
+            self.check_after
+                .map_or(Duration::ZERO, |deadline| {
+                    deadline.saturating_duration_since(now)
+                })
+                .max(Duration::from_millis(50))
+        })
     }
 
     /// Keep one job in flight. Cloud readiness depends on credentials, not the model.
@@ -87,6 +112,10 @@ impl Settings {
             let cloud = camcraft_app::ai::by_id(&request.preset_id)
                 .is_some_and(|preset| preset.key.is_some());
             self.close_editor();
+            if !same_provider {
+                self.no_key = false;
+            }
+            self.rechecking = false;
             self.request = Some(request);
             if !same_provider || !cloud {
                 self.status = "Checking provider...".into();
@@ -109,6 +138,21 @@ impl Settings {
                 Err(mpsc::TryRecvError::Empty) => None,
             };
             if let Some(result) = result {
+                let local = self.request.as_ref().is_some_and(|request| {
+                    camcraft_app::ai::by_id(&request.preset_id).is_none_or(|p| p.key.is_none())
+                });
+                if local && result.is_err() && !self.needs_check {
+                    // The user can start Ollama at any time: check again soon.
+                    self.needs_check = true;
+                    self.check_after = Some(now + LOCAL_RECHECK);
+                    self.rechecking = true;
+                    self.status = result.unwrap_or_else(|message| message);
+                    self.shows_test_result = self.tested_model.is_some();
+                    self.tested_model = None;
+                    self.pending = None;
+                    return;
+                }
+                self.no_key = !local && matches!(&result, Ok(status) if status == NO_KEY);
                 if !self.needs_check {
                     let current_model = self.request.as_ref().map(|request| &request.model);
                     if self
@@ -161,6 +205,10 @@ impl Settings {
                 "Offline only blocks the cloud test. Clear Offline only to test this key.".into();
             return;
         }
+        if matches!(action, SettingsAction::Test) && self.no_key {
+            self.status = "Set an API key first. Test needs a key.".into();
+            return;
+        }
         let tested_model = matches!(&action, SettingsAction::Test).then(|| request.model.clone());
         let backend = Arc::clone(&self.backend);
         let (tx, rx) = mpsc::channel();
@@ -172,7 +220,12 @@ impl Settings {
                 let _ = tx.send(result);
             }) {
             Ok(_) => {
-                self.status = "Checking provider...".into();
+                if tested_model.is_some() {
+                    self.status = "Testing...".into();
+                } else if !self.rechecking {
+                    self.status = "Checking provider...".into();
+                }
+                self.rechecking = false;
                 self.pending = Some(rx);
                 self.tested_model = tested_model;
                 self.shows_test_result = false;
@@ -205,7 +258,7 @@ impl SettingsBackend for UnavailableSettings {
     fn run(&self, _: &SettingsRequest, _: SettingsAction) -> Result<String, String> {
         #[cfg(test)]
         {
-            Ok("No key - Set API key...".into())
+            Ok(NO_KEY.into())
         }
         #[cfg(not(test))]
         {

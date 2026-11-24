@@ -9,6 +9,7 @@ pub(crate) mod settings;
 #[cfg_attr(test, allow(dead_code))]
 mod settings_native;
 mod settings_panel;
+pub(crate) mod settings_text;
 mod state;
 mod transport;
 #[cfg(not(target_arch = "wasm32"))]

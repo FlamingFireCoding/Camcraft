@@ -1,11 +1,10 @@
 //! Provenance: issue #3781 setup workflow and public provider account pages.
 
-use std::time::Duration;
-
 use camcraft_app::ai::{KeyName, by_id};
 use egui::Ui;
 
 use super::settings::{Settings, SettingsAction, SettingsRequest};
+use super::settings_text::OLLAMA_SERVER;
 
 pub(crate) fn draw(ui: &mut Ui, settings: &mut Settings, preset: &str, model: &str, offline: bool) {
     let _span = crate::frame_cost::span("ui/ai_chat.settings");
@@ -14,8 +13,8 @@ pub(crate) fn draw(ui: &mut Ui, settings: &mut Settings, preset: &str, model: &s
         model: model.into(),
         offline_only: offline,
     });
-    if settings.has_work() {
-        ui.ctx().request_repaint_after(Duration::from_millis(50));
+    if let Some(wake) = settings.next_wake(camcraft_app::clock::Instant::now()) {
+        ui.ctx().request_repaint_after(wake);
     }
     ui.label(&settings.status);
     let name = by_id(preset).and_then(|p| p.key);
@@ -24,10 +23,17 @@ pub(crate) fn draw(ui: &mut Ui, settings: &mut Settings, preset: &str, model: &s
             settings.close_editor();
             settings.editing = true;
         }
-        if ui
-            .add_enabled(!settings.busy(), egui::Button::new("Test"))
-            .clicked()
-        {
+        let test = ui
+            .add_enabled(
+                !settings.busy() && !settings.no_key,
+                egui::Button::new("Test"),
+            )
+            .on_disabled_hover_text(if settings.no_key {
+                "Set an API key first. Test needs a key."
+            } else {
+                "A check is in progress."
+            });
+        if test.clicked() {
             settings.start(SettingsAction::Test);
         }
         if name.is_some()
@@ -52,10 +58,15 @@ pub(crate) fn draw(ui: &mut Ui, settings: &mut Settings, preset: &str, model: &s
         });
         draw_editor(ui, settings, name);
     } else {
+        ui.label(format!(
+            "CamCraft does not start Ollama. It connects to Ollama at {OLLAMA_SERVER}. \
+             Start the Ollama app or run ollama serve first."
+        ));
         egui::CollapsingHeader::new("Ollama setup").show(ui, |ui| {
             ui.hyperlink_to("Download Ollama", "https://ollama.com/download");
             ui.label("Install and start Ollama. In Terminal, run ollama pull followed by the Model name above. Then click Test.");
             ui.label("If the app is not running, start the server with ollama serve. It listens at http://localhost:11434.");
+            ui.label("If the Ollama app is in your menu bar, the server is already running. Do not start a second one.");
             ui.label("Check the server with curl http://localhost:11434/api/version or ollama list. Model must match an installed name exactly.");
             ui.label("Set these environment variables before ollama serve:");
             ui.label("OLLAMA_HOST=127.0.0.1:11500 changes the port. This panel uses http://localhost:11434/v1 and has no endpoint field yet.");
@@ -129,6 +140,7 @@ fn provider_help(ui: &mut Ui, name: KeyName) {
         KeyName::Anthropic => {
             ui.label("1. Sign in to the Anthropic console. Open Settings > API keys.");
             ui.label("2. Click Create key. Name it, for example CamCraft on my Mac.");
+            ui.label("If the console asks \"Where does your code run?\", choose Somewhere else - Use an API key. The other choices do not give a key.");
             ui.label("3. Copy the key now. It starts with sk-ant- and appears only once.");
         }
         KeyName::OpenAi => {

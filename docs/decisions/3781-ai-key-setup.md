@@ -27,3 +27,11 @@ Explain API keys, provider setup, billing, environment precedence, and OS permis
 **Considered and dropped:** Per-character validation repeats credential reads and server requests. Checking only when the field loses focus delays feedback while the user stays in the field. A short pause gives feedback without requiring a focus change.
 
 **Cost to change later:** The delay can change without a storage migration. Backend-call-count tests pin cloud reuse and one Ollama check after the edit pause.
+
+**Reporter hand-test fixes (2026-11-24):** Test and the status check read the Model field as Send does: trim the spaces, and use the preset default when the field is empty. Disable Test while no key is found. A failed cloud Test names a cause from the HTTP status, the model and host that were tried, one "what to try" hint, and the provider's error text; the app log gets the same text. Test shows "Testing..." and a passed or failed result for Ollama too. A failed Ollama check runs again every 5 s, and an empty Ollama Model still tells if the server answers. The panel says that CamCraft does not start Ollama. The Anthropic help names the console choice "Somewhere else - Use an API key".
+
+**Why:** The reporter could not make an empty cloud Model work, a leading space failed Test, and a failed Test gave no cause. A status from before `ollama serve` stayed on the screen. The provider's error text is safe to show because `http.rs` removes the key value from it before it returns, for each provider's auth header.
+
+**Considered and dropped:** Keep the generic "Test failed" text: it gave the user nothing to act on. Re-check Ollama on each frame: it sends a request per frame. Start Ollama from CamCraft: it is a separate feature. Show the default model as the Model hint here: PR #3799 changes the same line, so this PR only resolves the default and names it in the Test result.
+
+**Cost to change later:** The cause table is one function (`settings_text::test_failure`) with a unit test for each class.
