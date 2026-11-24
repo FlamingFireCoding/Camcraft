@@ -29,9 +29,16 @@ Questions and coordination happen on the
      (Codex and the like) work too - they read the same `AGENTS.md`;
    - free disk: about 30 GB to start, more per extra worktree (see below).
 3. **Fork, clone, build:** fork `NeoTech/Camcraft` on GitHub, clone your fork,
-   add the original as `upstream`, and run `cargo xtask gate quick` once to
-   warm the build (the first build takes a while). The `/fork-sync` skill
-   keeps your fork's `main` and process files in step with the project.
+   add the original as `upstream`, then see it run:
+
+   ```sh
+   cargo run --release -p camcraft-ui -- examples/first-part.camproj  # the app, with a sample part
+   cargo xtask gate quick                                            # the tests your change touches
+   ```
+
+   The first build takes a while; later ones are fast. The `/fork-sync`
+   skill keeps your fork's `main` and process files in step with the
+   project.
 4. **Find a first issue:** open, unclaimed bugs with a small effort label -
    [P3/P7 bugs, effort low or medium](https://github.com/NeoTech/Camcraft/issues?q=is%3Aopen+label%3Abug+-label%3Aclaimed+-label%3Ain-review+label%3Aeffort%3Alow%2Ceffort%3Amedium).
    Read the issue and its comments, then claim it with a comment.
@@ -58,15 +65,20 @@ A good first task is a `P3` or `P7` issue with `effort:low` or
 
 ## From issue to `main`
 
-1. **Pick and claim.** Open issues are the work list, ordered by priority
+1. **Look at what is open first.** Before you start, search the open PRs and
+   issues for the same change: another number for the same bug, or a PR that
+   changes the same files (`gh pr list --state open --json
+   number,title,files`). If someone has it, comment there instead of
+   starting a second copy - two PRs for one change cannot both land.
+2. **Pick and claim.** Open issues are the work list, ordered by priority
    (`P1` first; `P?` is paused, leave it alone). Claim an issue by
    commenting `claimed: <who> · <plan>` - a comment is a claim. Read the
    comments first: someone else's live claim means the issue is taken.
-2. **Branch from the latest `main`**, one issue per branch, ideally one git
+3. **Branch from the latest `main`**, one issue per branch, ideally one git
    worktree per issue.
-3. **Fix with a pinning test** - a test that fails before the fix and passes
+4. **Fix with a pinning test** - a test that fails before the fix and passes
    after. Run the quick gate: `cargo xtask gate quick --base main`.
-4. **Open a draft PR.** The body is checked by reviewers, so include it all
+5. **Open a draft PR.** The body is checked by reviewers, so include it all
    the first time:
    - what changed, the readings (numbers, before and after), the pinning
      test names, and what was *not* exercised;
@@ -78,16 +90,22 @@ A good first task is a `P3` or `P7` issue with `effort:low` or
      an images-only branch of your fork (never in the PR branch itself);
    - a reason for any new top-level test binary (or add the test to an
      existing suite).
-5. **Mark it ready** when the gate is green and the body is complete.
-6. **Review.** A collaborator's agent reviews it: a trial merge with `main`,
+6. **Mark it ready** when the gate is green and the body is complete.
+7. **Review.** A collaborator's agent reviews it: a trial merge with `main`,
    the touched suites, clippy and the project laws. Changes that can affect
    posted G-code, collisions, simulation or geometry get the safety tier
    (stronger model, mutation checks). Findings come back as a PR comment;
    fix them on the same branch with a plain push (never force-push).
-7. **Merge.** A clean review sets `merge-ready`, and the PR is merged by a
+8. **Merge.** A clean review sets `merge-ready`, and the PR is merged by a
    maintainer or the merge bot. If `main` moved and your PR conflicts, merge
    `main` into your branch when asked - the project refreshes at merge time
    rather than continuously, so you do not have to chase every merge.
+
+**A series starts with its shape.** If a feature needs several stacked PRs,
+open the first one first and say it starts a series. When it sets a shape
+others build on (a type, a file format, an API, a project-file field), it
+gets a design review before the later parts go in - cheaper than reworking
+five PRs.
 
 Missing paperwork (screenshots, `Process change:`, `Changelog:`) is the most
 common reason for a second review round. Ten seconds on the body saves an
@@ -144,9 +162,57 @@ Agents scale well across machines if each one runs its own small job pool:
 - Keep subagent briefs specific: the issue or PR number, what to check, and
   what not to touch.
 
+## FAQ
+
+**I don't know Rust. Can I still help?**
+Yes. The agent writes the Rust; you steer it, read what it says it did,
+and check the result does what the issue asks. Plenty of help needs no
+code at all: testing a build on your real machine and controller, sending a
+model and the G-code that went wrong, checking a post against your
+controller's manual, trying a release and saying what confused you, or
+improving the guide.
+
+**AGENTS.md is long. Do I have to read it?**
+No - your agent reads it. Start with "Your first hour" above. When a review
+asks for something, the comment says what and why.
+
+**I'm worried I will break something.**
+You can't break `main`: every change goes through a PR, a review and the
+tests, and nothing reaches a machine without that. A draft PR that goes
+nowhere costs nothing; close it and try another issue.
+
+**My agent went off in the wrong direction.**
+Stop it, look at what it changed (`git diff`), and either guide it back or
+start over on a fresh branch. Keep issues small: one bug, one PR.
+
+**How much does it cost, and how much time?**
+A small fix is usually one agent session and an hour or two of your
+attention spread over a day (the review happens while you do other things).
+Pick `effort:low` or `effort:medium` issues at first; they use the least of
+your AI plan.
+
+**My computer is small or slow.**
+Work one issue at a time in one worktree, install sccache, and remove
+worktrees after their PRs merge. Testing and reporting help just as much
+as code.
+
+**I have a CNC machine but no development setup.**
+Machine owners are some of the most useful helpers: real controllers catch
+what tests cannot. Say what you have on Discord; we send small programs to
+check (always air-cut or dry-run first).
+
+**I'm overwhelmed. Where do I even start?**
+Say hello on Discord and tell us what you have and what you enjoy. Someone
+will point you at one small thing. Every contributor here started with one
+small issue.
+
 ## Where to talk
 
 - [CamCraft Discord](https://discord.gg/bBWjkAgX5) - questions, test
   machines, coordination.
 - Process changes are announced on the pinned issue
   [#681](https://github.com/NeoTech/Camcraft/issues/681).
+
+Thanks to SolidCraft's contributor guide, whose "look at what is open
+first", "running in minutes" and "first PR of a series" ideas we adapted
+here (Apache-2.0).
