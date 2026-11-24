@@ -16,8 +16,9 @@ use crate::geo2d::{Point2, Region};
 
 use super::face::GenError;
 use super::level_flanks::{Material, full_width_at};
-use super::pass_start::{PassStart, StartSide};
+use super::pass_start::StartSide;
 use super::pocket_hsm::components;
+use super::ring_links::{RingLinks, edge_route};
 use super::ring::dist;
 use super::slots::chord_clears;
 use super::waterscan::chord_crosses_path;
@@ -45,10 +46,6 @@ pub(super) struct Piece {
 pub(super) struct LevelPlan {
     pub(super) passes: Vec<Vec<Point2>>,
     pub(super) notes: Vec<String>,
-    /// #3567: the starts of the Outside passes after ring 0 that no
-    /// lead-in reaches (a dead end on a wall): each enters by a ramp
-    /// along its own pass (`level_ramp_entry`).
-    pub(super) ramp_starts: Vec<Point2>,
 }
 
 /// A walk already cut and its bounding box.
@@ -100,12 +97,18 @@ pub(super) fn order(pieces: Vec<Piece>, center: &Region, tool_r: f64, side: &Sta
     let step = 0.25 * tool_r;
     // #3788: the full-width law is the flanks law of the meter.
     let material = Material::new(center, side.stock.as_ref(), tool_r)?;
+    // #3747: round a part a join may run through air too, and along the
+    // edge of the area where that edge is in air.
+    let air = match side.around_part {
+        true => Some(RingLinks::new(side.stock.as_ref(), tool_r, None)?),
+        false => None,
+    };
+    let air = air.as_ref();
     let mut done: Vec<Cut> = Vec::new();
     let mut passes: Vec<Vec<Point2>> = Vec::new();
     let mut cur: Vec<Point2> = Vec::new();
     let mut wall_first = false;
     let mut narrow: Option<(usize, Point2)> = None;
-    let mut ramp_starts: Vec<Point2> = Vec::new();
     for p in &seq {
         if p.core {
         } else if p.level == 0 {
@@ -114,15 +117,25 @@ pub(super) fn order(pieces: Vec<Piece>, center: &Region, tool_r: f64, side: &Sta
             narrow = Some(narrow.map_or((1, at), |(n, first)| (n + 1, first)));
         }
         let join = match (cur.last(), p.pts.first()) {
-            (Some(&e), Some(&s)) => linkable(e, s, center, &planned, &done, reach, step).then_some((e, s)),
+            (Some(&e), Some(&s)) if linkable(e, s, center, &planned, &done, reach, step, air) => Some((e, s, Vec::new())),
+            (Some(&e), Some(&s)) => air.and_then(|_| {
+                let walks: Vec<&[Point2]> = planned.iter().copied().chain(done.iter().map(|c| c.pts.as_slice())).collect();
+                let mut via = edge_route(e, s, center, reach, &walks, |a, b| linkable(a, b, center, &planned, &done, reach, step, air))?;
+                via.pop();
+                Some((e, s, via))
+            }),
             _ => None,
         };
         match join {
-            Some((e, s)) => {
+            Some((e, s, via)) => {
                 if e == s {
                     cur.extend(p.pts.iter().skip(1).copied());
                 } else {
-                    done.push(Cut::new(vec![e, s]));
+                    let mut leg = vec![e];
+                    leg.extend(via.iter().copied());
+                    leg.push(s);
+                    done.push(Cut::new(leg));
+                    cur.extend(via);
                     cur.extend(p.pts.iter().copied());
                 }
             }
@@ -131,7 +144,7 @@ pub(super) fn order(pieces: Vec<Piece>, center: &Region, tool_r: f64, side: &Sta
                     passes.push(std::mem::take(&mut cur));
                 }
                 let lead = match p.pts.first() {
-                    Some(&s) if p.level > 0 => lead_in(s, center, &planned, &done, reach, step),
+                    Some(&s) if p.level > 0 => lead_in(s, center, &planned, &done, reach, step, air),
                     _ => None,
                 };
                 if let (Some(q), Some(&s)) = (lead, p.pts.first()) {
@@ -139,13 +152,9 @@ pub(super) fn order(pieces: Vec<Piece>, center: &Region, tool_r: f64, side: &Sta
                     cur = vec![q];
                     cur.extend(p.pts.iter().copied());
                 } else {
-                    // #3744: round a part, Outside walks Inside's ring set,
-                    // whose pieces end on no part wall: it enters as Inside
-                    // does, with no dead-end ramp (#3748 retires the rest).
-                    let dead_end = side.start == PassStart::Outside && !side.around_part;
-                    if let Some(&s) = p.pts.first().filter(|_| p.level > 0 && !p.core && dead_end) {
-                        ramp_starts.push(s);
-                    }
+                    // #3748: a later pass that no lead-in reaches takes the
+                    // pass link's own entry - the user's - and no automatic
+                    // ramp (the #3567 dead-end ramp is retired).
                     cur = p.pts.clone();
                 }
             }
@@ -165,7 +174,7 @@ pub(super) fn order(pieces: Vec<Piece>, center: &Region, tool_r: f64, side: &Sta
     if let Some((n, at)) = narrow {
         notes.push(side.narrow_note(n, at.x, at.y));
     }
-    Ok(LevelPlan { passes, notes, ramp_starts })
+    Ok(LevelPlan { passes, notes })
 }
 
 /// The component of `center` a piece belongs to: the one that holds (or
@@ -240,22 +249,24 @@ fn entry_of(p: &Piece, at: Point2) -> (f64, usize) {
 
 /// The keep-down join law of the start-side plan: inside the area,
 /// crossing no planned cut and no cut join, and through cut material at
-/// every sample (the centre within `reach` of a walk already cut).
-fn linkable(e: Point2, s: Point2, center: &Region, planned: &[&[Point2]], done: &[Cut], reach: f64, step: f64) -> bool {
+/// every sample (the centre within `reach` of a walk already cut) - or,
+/// round a part (#3747), through air.
+#[allow(clippy::too_many_arguments)]
+fn linkable(e: Point2, s: Point2, center: &Region, planned: &[&[Point2]], done: &[Cut], reach: f64, step: f64, air: Option<&RingLinks>) -> bool {
     if e == s {
         return true;
     }
     chord_clears(center, e, s)
         && !planned.iter().any(|w| chord_crosses_path(e, s, w, false))
         && !done.iter().any(|c| chord_crosses_path(e, s, &c.pts, false))
-        && samples(&[e, s], step).iter().all(|&q| done.iter().rev().any(|c| c.near(q, reach)))
+        && samples(&[e, s], step).iter().all(|&q| air.is_some_and(|a| a.in_air(q)) || done.iter().rev().any(|c| c.near(q, reach)))
 }
 
 /// The vertex of a cut already walked nearest the piece start `s` (a
 /// vertex, so the chord meets that cut at a shared point), when a chord
 /// from it to `s` obeys the join law: the pass then starts on cut floor,
 /// its column cleared.
-fn lead_in(s: Point2, center: &Region, planned: &[&[Point2]], done: &[Cut], reach: f64, step: f64) -> Option<Point2> {
+fn lead_in(s: Point2, center: &Region, planned: &[&[Point2]], done: &[Cut], reach: f64, step: f64, air: Option<&RingLinks>) -> Option<Point2> {
     let mut near: Vec<(f64, Point2)> = done
         .iter()
         .filter(|c| c.near(s, reach))
@@ -263,7 +274,7 @@ fn lead_in(s: Point2, center: &Region, planned: &[&[Point2]], done: &[Cut], reac
         .filter(|(d, _)| *d <= reach && *d > 0.0)
         .collect();
     near.sort_by(|a, b| a.0.total_cmp(&b.0));
-    near.into_iter().take(8).map(|(_, q)| q).find(|&q| linkable(q, s, center, planned, done, reach, step))
+    near.into_iter().take(8).map(|(_, q)| q).find(|&q| linkable(q, s, center, planned, done, reach, step, air))
 }
 
 /// A start ring stands on a wall when its disc lies wholly in the stock

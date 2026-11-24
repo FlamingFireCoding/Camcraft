@@ -1,6 +1,8 @@
 //! Setup-only native Classic Cut 2S records, from Quintin Smits's MIT Agie Processor and our offline control checks.
 //!
-//! This encoder references an existing ISO geometry file for one closed punch.
+//! This encoder references an existing ISO geometry file for one closed punch
+//! ([`PunchSetup20::encode`]) or one convex die opening on a 20 mm plate
+//! ([`PunchSetup20::encode_die`]). The two differ only in the work side.
 //! The caller must verify the nominal contour, its lead from the threading hole,
 //! and the compensated cuts against the stock, installed travel and fixtures.
 //! The piece uses stock top Z0, steel 0001, Berco Cut 0.25 and a 1 mm separation.
@@ -53,7 +55,7 @@ pub fn qn2_offsets_um(height_um: i32) -> Option<[u16; 4]> {
         .map(|(_, offsets)| *offsets)
 }
 
-/// Setup coordinates for a closed punch with a predrilled 2 mm start hole.
+/// Setup coordinates for a closed punch or die opening with a predrilled 2 mm start hole.
 /// XY coordinates are integer micrometres in the same work frame as the ISO.
 #[derive(Debug)]
 pub struct PunchSetup20<'a> {
@@ -96,6 +98,20 @@ pub enum SetupError {
         "Use a stock thickness of 15, 20, 40 or 80 mm. Other thicknesses have no measured QN2 offsets."
     )]
     UnqualifiedHeight,
+    #[error(
+        "Use a 20 mm plate for a die opening. The control checked the die cycle at 20 mm only."
+    )]
+    UnqualifiedDieHeight,
+}
+
+/// The stock thickness of the control-checked die cycle (#2957).
+pub const DIE_HEIGHT_UM: i32 = 20_000;
+
+/// The native work side. The control applies the offset toward the waste.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorkSide {
+    Punch,
+    Die,
 }
 
 impl PunchSetup20<'_> {
@@ -105,6 +121,23 @@ impl PunchSetup20<'_> {
     /// Refuses invalid file stems, stock bounds, threading-hole positions and
     /// stock thicknesses without measured offsets.
     pub fn encode(&self) -> Result<SetupFiles, SetupError> {
+        self.encode_side(WorkSide::Punch)
+    }
+
+    /// Encode one native die opening (`ID_PUNCH,c_die`) with zero erosion
+    /// steps on import. The control offsets a die toward the inside of the
+    /// opening. The die cycle is qualified for a 20 mm plate only.
+    ///
+    /// # Errors
+    /// The errors of [`Self::encode`], and any thickness other than 20 mm.
+    pub fn encode_die(&self) -> Result<SetupFiles, SetupError> {
+        if self.height_um != DIE_HEIGHT_UM {
+            return Err(SetupError::UnqualifiedDieHeight);
+        }
+        self.encode_side(WorkSide::Die)
+    }
+
+    fn encode_side(&self, side: WorkSide) -> Result<SetupFiles, SetupError> {
         if !valid_stem(self.stem) {
             return Err(SetupError::InvalidStem);
         }
@@ -121,8 +154,16 @@ impl PunchSetup20<'_> {
                 return Err(SetupError::HoleOutsideStock);
             }
         }
+        // The punch text is unchanged. A die adds the side and the slug check.
+        let die_check = match side {
+            WorkSide::Punch => "",
+            WorkSide::Die => concat!(
+                " Confirm the c_die side and that each offset is inside the opening.",
+                " Support the slug before the control releases the separation section.",
+            ),
+        };
         Ok(SetupFiles {
-            sbl: piece(self),
+            sbl: piece(self, side),
             sbr: format!("AGIE.USING_{0}.ISO IMPORT {0}.ISO;\r\n", self.stem),
             controller_review: format!(
                 concat!(
@@ -132,13 +173,14 @@ impl PunchSetup20<'_> {
                     "Verify steel 0001, Berco Cut 0.25 and {height} mm. CCB030 requests Ra 0.30, Te 1.50, ",
                     "Tkm 1.00 and three disabled options. Check the effective values and both visible options ",
                     "on this work. Assign the matching TECCUT row. Check offsets of {rough}, {trim1}, {trim2} and ",
-                    "{trim3} µm in order before GRAFICHECK and FORMALCHECK.",
+                    "{trim3} µm in order before GRAFICHECK and FORMALCHECK.{die_check}",
                 ),
                 height = self.height_um / 1000,
                 rough = rough,
                 trim1 = trim1,
                 trim2 = trim2,
                 trim3 = trim3,
+                die_check = die_check,
             ),
         })
     }
@@ -182,7 +224,7 @@ fn checked(lines: &mut Vec<String>, command: String) {
     ]);
 }
 
-fn piece(setup: &PunchSetup20<'_>) -> String {
+fn piece(setup: &PunchSetup20<'_>, side: WorkSide) -> String {
     let [xmin, ymin] = setup.stock_min_um.map(i64::from);
     let [xmax, ymax] = setup.stock_max_um.map(i64::from);
     let stem = setup.stem;
@@ -240,7 +282,11 @@ fn piece(setup: &PunchSetup20<'_>) -> String {
         "ID_GEOMETRY",
         &format!("\"AGIE.USING_{stem}.ISO\""),
     );
-    attribute(&mut lines, "WORK", &work_context, "ID_PUNCH", "c_punch");
+    let work_side = match side {
+        WorkSide::Punch => "c_punch",
+        WorkSide::Die => "c_die",
+    };
+    attribute(&mut lines, "WORK", &work_context, "ID_PUNCH", work_side);
     attribute(&mut lines, "WORK", &work_context, "ID_WORKCOND", "\"2\"");
     checked(
         &mut lines,

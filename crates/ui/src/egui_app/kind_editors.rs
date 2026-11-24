@@ -95,7 +95,10 @@ pub(super) fn roughing2d_pane(
             adaptive_troch_passes(ui, u, t);
         }
     } else if tab == SEC_LEADS {
-        lead_page::leads_tab_with_retract(ui, u, tag, Some((entry, helix_radius)), links, retract_z.is_some());
+        // #3748: the entry advice of the ring twin (2D Offset); the
+        // Adaptive twin (an optimal load) has no Arc entry from the air.
+        let start = pass_start.as_deref().copied().filter(|_| optimal_load.is_none()).unwrap_or_default();
+        lead_page::leads_tab_with_retract(ui, u, tag, Some((entry, helix_radius)), links, retract_z.is_some(), start);
         // #3745: an Inside or Outside pass enters outside the stock edge.
         if let Some(s) = pass_start.as_deref() {
             super::approach_page::approach_distance_group(ui, u, *s, &mut links.approach);

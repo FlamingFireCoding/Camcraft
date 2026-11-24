@@ -44,6 +44,25 @@ pub fn strategy_fallback(path: &Toolpath) -> Option<Warning> {
     Some(Warning::StrategyFallback { at, areas, cause })
 }
 
+/// #3748: the start-side pass whose user selected a Helix, Ramp or Plunge
+/// lead-in where the Arc entry from the air applies - one advisory
+/// warning that names the selected type, the recommended Arc and the
+/// reason. The ladder writes the advice note only where that air room
+/// exists (`machining2d::entry_advice`); the entry runs as selected.
+#[must_use]
+pub fn entry_not_recommended(path: &Toolpath) -> Option<Warning> {
+    use crate::machining2d::{PassStart, advised, entry_advice};
+    use crate::machining3d::Entry3D;
+    let starts = [PassStart::Inside, PassStart::Outside];
+    let kinds = [Entry3D::Helix, Entry3D::Ramp, Entry3D::Plunge];
+    let (entry, inside) = starts.iter().flat_map(|&s| kinds.iter().map(move |&k| (s, k))).find_map(|(s, k)| {
+        let note = entry_advice(s, k)?;
+        path.notes.iter().any(|n| n.contains(note)).then(|| advised(s, k)).flatten()
+    })?;
+    let at = path.moves.iter().position(|m| m.kind != crate::cl::MoveKind::Rapid).unwrap_or(0);
+    Some(Warning::EntryNotRecommended { at, entry, inside })
+}
+
 /// [`run_job`]'s body: every arm, unchanged.
 fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     let GenJob {
@@ -65,6 +84,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         mut picked_region,
         mut contour_sel,
         mut sketch_contour,
+        mut sketch_mark,
         mut drive_chains,
         mut slot_bound,
         mut rotary_picks,
@@ -232,6 +252,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 &mut picked_region,
                 &mut contour_sel,
                 &mut sketch_contour,
+                &mut sketch_mark,
                 &mut drive_chains,
                 &mut slot_bound,
                 &mut prior,
@@ -2460,60 +2481,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             let path = machining2d::trochoidal_slot(&[*a, *b], &tp)?;
             (region, path)
         }
-        OpParams::Trace {
-            stepdown,
-            feed,
-            plunge_feed,
-            climb,
-            ..
-        } => {
-            let region = region_for_job(
-                    &mut picked_region,
-                    &mut section_z,
-                    &src,
-                    &params,
-                m_gen,
-                frame.as_ref(),
-            )?;
-            let path = machining2d::trace(
-                &region,
-                &TraceParams {
-                    clearance_z: hl.clearance,
-                    retract_z: hl.retract,
-                    top_z: req_z(hl.top, "Top of Part Z")?,
-                    bottom_z: req_z(hl.bottom, "Bottom of Part Z")?,
-                    stepdown: *stepdown,
-                    feed: *feed,
-                    plunge_feed: *plunge_feed,
-                    climb: *climb,
-                    stock_top: lk.approach.stock_top,
-                },
-            )?;
-            (region, path)
-        }
-        // The engrave twin (M2.4 B): the trace's own machinery,
-        // verbatim - same zero-width-kerf ride, same no-entry-knob
-        // theorem, the difference being only the registry's name for
-        // the pick (text on a face, not a boundary line). A V-bit
-        // would cut it wider than the kerf's claim; that tooling
-        // question is M10.1's, and until then the disc law says so
-        // with the sim, honestly.
-        OpParams::Engrave {
-            stepdown,
-            feed,
-            plunge_feed,
-            climb,
-            ..
-        } => {
-            let region = region_for_job(
-                &mut picked_region,
-                &mut section_z,
-                &src,
-                &params,
-                m_gen,
-                frame.as_ref(),
-            )?;
-            let tp = TraceParams {
+        // The engrave twin (M2.4 B) shares the trace's machinery: the
+        // same zero-width-kerf ride and the same no-entry-knob theorem.
+        // Only the registry's name for the pick differs (text on a face,
+        // not a boundary line). A V-bit cuts wider than the kerf's claim;
+        // that tooling question is M10.1's.
+        // #1869: a sketch pick rides its own analytic strokes.
+        OpParams::Trace { stepdown, feed, plunge_feed, climb, .. }
+        | OpParams::Engrave { stepdown, feed, plunge_feed, climb, .. } => {
+            let trace = TraceParams {
                 clearance_z: hl.clearance,
                 retract_z: hl.retract,
                 top_z: req_z(hl.top, "Top of Part Z")?,
@@ -2524,11 +2500,21 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 climb: *climb,
                 stock_top: lk.approach.stock_top,
             };
-            let path = match &avoid_spec {
-                Some(spec) => machining2d::trace_avoid(&region, &tp, spec)?,
-                None => machining2d::trace(&region, &tp)?,
-            };
-            (region, path)
+            if let Some(strokes) = &sketch_mark {
+                // #1869 with #3349: the strokes are not loops, so no
+                // keep-out is planned into them. A "Do not touch" spec
+                // judges them after fixture routing (`protect_path`).
+                (Region::empty(), strokes.trace(&trace, lk)?)
+            } else {
+                let region = region_for_job(&mut picked_region, &mut section_z, &src, &params, m_gen, frame.as_ref())?;
+                // #3349: Engrave plans each level clear of "Do not touch".
+                // Trace keeps its line; `protect_path` judges it below.
+                let path = match (&avoid_spec, &params) {
+                    (Some(spec), OpParams::Engrave { .. }) => machining2d::trace_avoid(&region, &trace, spec)?,
+                    _ => machining2d::trace(&region, &trace)?,
+                };
+                (region, path)
+            }
         }
         // V-carve (#1443): the picked closed region, carved by the
         // cone to the depth its width allows. The tool doors stand in
@@ -3689,7 +3675,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     };
     // Judge the final Trace or Finish3D after fixture routing, in the same frame as
     // the protected geometry. All following laws see any elevated links.
-    if let Some(spec) = avoid_spec.take_if(|_| matches!(params, OpParams::Trace { .. } | OpParams::Finish3D { .. })) {
+    // #1869: a sketch Engrave has no keep-out plan (strokes are not loops),
+    // so it is judged and refused by name here, as a Trace is.
+    let judged_here = matches!(params, OpParams::Trace { .. } | OpParams::Finish3D { .. })
+        || (matches!(params, OpParams::Engrave { .. }) && sketch_mark.is_some());
+    if let Some(spec) = avoid_spec.take_if(|_| judged_here) {
         super::avoid::protect_path(&mut path, &spec, frame.is_none(), z_ceiling, params.kind())?;
     }
     let stl = stock_to_leave_of(&params);
@@ -4053,6 +4043,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 Some(part) => super::mark_law::mark_into(&mut warns, &path, part, &cutter, mark_budget, material.excess, material.file_tolerance),
                 None => super::mark_law::Marked::default(),
             };
+            // A sketch lies on stock, which has its own physical surface, underside,
+            // and shank clearance even when there are no part solids in the setup.
+            if sketch_mark.is_some() {
+                let stock = stock_facets.as_deref().ok_or_else(|| GenError::Invalid("no stock geometry for the sketch mark".into()))?;
+                let on_stock = super::mark_law::mark_surface_into(&mut warns, &path, stock, &cutter, mark_budget, material.excess, material.file_tolerance, false);
+                path.notes.extend(super::mark_law::stock_notes(params.kind().info().label, on_stock, mark_budget, unit));
+            }
             // #1621: the setup's other parts, beside a part source - the
             // plain solid law, no budget (a mark is on its own part).
             if !neighbour_parts.is_empty() {
@@ -4090,6 +4087,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #3035: Adaptive areas cut by Offset rings - a warning, not
             // only a note; advisory (the rings are verified above).
             warns.extend(strategy_fallback(&path));
+            // #3748: a selected entry that is not the recommended Arc on a
+            // start-side pass - one advisory warning, the entry kept.
+            warns.extend(entry_not_recommended(&path));
             // The rotary kinds' bands and rapids (M13): `Mode::Rotary`
             // stood the vertical-column laws down; the radial field
             // reads rest material in the frame the work turns in.

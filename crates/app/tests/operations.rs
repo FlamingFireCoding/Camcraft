@@ -649,12 +649,13 @@ fn a_model_update_marks_entity_sourced_operations_stale() {
 }
 
 #[test]
-fn an_entry_edit_marks_the_contour_stale_and_the_wall_regen_moves_nothing() {
+fn an_entry_edit_marks_the_contour_stale_and_the_wall_regen_ramps() {
     // The M8.2 A digest law in one run: `entry` and the radius feed the
     // contour stamp, so the family edit reads Stale once and clears with
-    // a regen - and on the wall side the regen cuts the SAME path,
-    // because the Plunge default IS that law. Staleness is derived, so
-    // walking the edit back re-derives it without asking the generator.
+    // a regen - and on the wall side a stated helix stands down to the
+    // ramp along the ring (the Plunge default is the graze every earlier
+    // file cut). Staleness is derived, so walking the edit back
+    // re-derives it without asking the generator.
     let world = new_world();
     let mut history = History::default();
     add_tool(&world, &mut history, "EM-0600-4FL");
@@ -706,12 +707,11 @@ fn an_entry_edit_marks_the_contour_stale_and_the_wall_regen_moves_nothing() {
     );
     assert_eq!(status(&world, "Contour1"), OpStatus::Ok);
     let after = cache(&world, "Contour1").expect("cached").path;
-    assert_eq!(
+    assert_ne!(
         before.moves, after.moves,
-        "the wall-side graze is unchanged by the stated arm"
+        "the wall side ramps along the ring under the stated helix"
     );
-    // The only delta is what the refusal law obliges: the stated arm is
-    // said on the notes channel, once, and the dive stands in unchanged.
+    // The stand-down is said on the notes channel, once.
     assert!(
         before.notes.iter().all(|n| !n.starts_with("entry:")),
         "the dive names nothing: {:?}",
@@ -724,7 +724,7 @@ fn an_entry_edit_marks_the_contour_stale_and_the_wall_regen_moves_nothing() {
             .filter(|n| n.starts_with("entry:") && n.contains("needs bounded air"))
             .count(),
         1,
-        "the refused helix is said exactly once: {:?}",
+        "the helix standing down to the ramp is said exactly once: {:?}",
         after.notes
     );
 

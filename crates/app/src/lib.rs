@@ -6,6 +6,7 @@
 
 pub use camcraft_cl::cl;
 pub mod cli;
+pub mod cli_ui;
 pub mod clock;
 pub mod commands;
 // #3073: saved cut recipes - an operation's settings under a name.
