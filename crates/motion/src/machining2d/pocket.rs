@@ -339,7 +339,11 @@ pub(super) fn pocket_over_with_relief(
     let air = super::air_entry::AirRoom::for_side(side, strategy, center, p.tool_diameter * 0.5, p.links.approach.approach_distance);
     // #3748: the user's Inside or Outside with a lead-in other than Arc,
     // where the Arc entry from the air applies: used as selected, named.
-    if air.is_some() && let Some(n) = super::pass_start::entry_advice_note(asked, p.entry) {
+    // Not for an Adaptive op on its ring fallback: its page has no advice.
+    if air.is_some()
+        && p.strategy != PocketStrategy::Adaptive
+        && let Some(n) = super::pass_start::entry_advice_note(asked, p.entry)
+    {
         b.note_once(&n);
     }
     emit_pocket_passes(
