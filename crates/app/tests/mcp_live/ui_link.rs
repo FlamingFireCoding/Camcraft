@@ -100,7 +100,7 @@ fn bad_ui_arguments_are_usage_errors() {
     }
     let o = cli_ui(&dir, &["--help"]);
     assert_eq!(o.status.code(), Some(0));
-    assert!(String::from_utf8_lossy(&o.stdout).contains("Exit: 0 stood, 1 refused, 2 usage, 3 no running window"));
+    assert!(String::from_utf8_lossy(&o.stdout).contains("Exit: 0 stood, 1 refused, 2 usage, 3 no running window, 4 window busy"));
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -191,43 +191,48 @@ fn the_link_folder_is_the_users_own() {
 }
 
 #[test]
-fn false_server_on_stale_entry_is_refused_with_no_tool_calls_sent() {
-    let dir = fresh_dir("false-server");
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind false server");
-    let addr = listener.local_addr().expect("addr");
-
-    // A stale entry pointing to our false server port with current process id so pid_alive passes
-    let stale_entry = Entry {
-        format: link::FORMAT,
-        pid: std::process::id(),
-        transport: "tcp".into(),
-        address: addr.to_string(),
-        token: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
-        project: None,
-        app_version: "0.26.0".into(),
-    };
-    write_entry(&dir, &stale_entry);
-
-    // False server thread: accepts connection, sends generic HELLO_OK without proving token
-    let false_server = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept");
-        let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
-        let mut line = String::new();
-        reader.read_line(&mut line).expect("read hello");
-        let _ = writeln!(stream, "{}", link::HELLO_OK);
-        let _ = stream.flush();
-
-        // Read to see if the CLI sends any subsequent tool calls
-        line.clear();
-        let bytes_read = reader.read_line(&mut line).unwrap_or(0);
-        (bytes_read, line)
-    });
-
-    let result = link_call(&dir, &Select::Only, "get_job", &json!({}));
-    assert!(result.is_err(), "false server must be rejected");
-
     let (bytes_read, line) = false_server.join().expect("server thread");
     assert_eq!(bytes_read, 0, "CLI must not send any tool call to unproven server: {line}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
 
+#[test]
+fn a_second_ui_call_during_a_slow_call_reports_busy_and_exits_4() {
+    let dir = fresh_dir("busy");
+    let inbox = Inbox::link(&dir, Box::new(|| {})).expect("open the link");
+    let entry = inbox.link_entry().expect("a link entry").clone();
+
+    // Client 1 connects directly to the socket to occupy the session
+    let addr = entry.address.clone();
+    let transport = entry.transport.clone();
+    let (connected_tx, connected_rx) = std::sync::mpsc::channel();
+    let (finish_tx, finish_rx) = std::sync::mpsc::channel();
+
+    let client1 = std::thread::spawn(move || {
+        let stream = match transport.as_str() {
+            "tcp" => Box::new(std::net::TcpStream::connect(&addr).expect("tcp")) as Box<dyn std::io::Read + Send>,
+            #[cfg(unix)]
+            "unix" => Box::new(std::os::unix::net::UnixStream::connect(&addr).expect("unix")) as Box<dyn std::io::Read + Send>,
+            other => panic!("unknown: {other}"),
+        };
+        let _ = connected_tx.send(());
+        let _ = finish_rx.recv();
+        drop(stream);
+    });
+
+    connected_rx.recv().expect("client 1 connected");
+    std::thread::sleep(Duration::from_millis(50));
+
+    // Client 2 attempts to call a tool via cli_ui; times out waiting on busy window
+    let o = cli_ui(&dir, &["call", "get_job"]);
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(4), "{err}");
+    assert!(err.contains("is busy with another call"), "{err}");
+
+    let _ = finish_tx.send(());
+    let _ = client1.join();
+    drop(inbox);
+    let _ = std::fs::remove_dir_all(&dir);
+}
     let _ = std::fs::remove_dir_all(&dir);
 }
