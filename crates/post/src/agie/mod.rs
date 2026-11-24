@@ -6,8 +6,17 @@ mod contour;
 mod spacing;
 pub use crate::agie_setup::valid_stem as valid_name;
 
+/// The retained side of a closed contour. The control applies the wire offset
+/// toward the waste: outside a punch, inside a die opening.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgieSide {
+    Punch,
+    Die,
+}
+
 /// Nominal geometry in setup coordinates (millimetres, stock top at zero).
 pub struct AgieJob {
+    pub side: AgieSide,
     pub contour: Vec<[f64; 2]>,
     pub start: [f64; 2],
     pub stock_min: [f64; 3],
@@ -34,7 +43,7 @@ pub fn export(
     export_with_review(job, destination, program, separation_length_mm).map(|result| result.files)
 }
 
-/// Publish a setup-only punch and return the required operator checks.
+/// Publish a setup-only punch or die opening and return the required operator checks.
 ///
 /// # Errors
 /// Returns the same validation and publication errors as [`export`].
@@ -45,13 +54,17 @@ pub fn export_with_review(
     separation_length_mm: f64,
 ) -> Result<ExportedJob, String> {
     if separation_length_mm != 1.0 {
-        return Err("Set the separation cut length (separationLengthMm) to 1.0 mm for this closed punch. A zero or unspecified separation cannot pass the control formal check".into());
+        return Err("Set the separation cut length (separationLengthMm) to 1.0 mm for this closed contour. A zero or unspecified separation cannot pass the control formal check".into());
     }
     if !valid_name(program) {
         return Err("The job program name must be a non-reserved 1–8 character DOS name starting with a letter and using uppercase letters or digits".into());
     }
     let (points, setup) = contour::prepare(job, program)?;
-    let setup = setup.encode().map_err(|error| error.to_string())?;
+    let setup = match job.side {
+        AgieSide::Punch => setup.encode(),
+        AgieSide::Die => setup.encode_die(),
+    }
+    .map_err(|error| error.to_string())?;
     let iso_name = format!("{program}.ISO");
     let mut iso = format!("( {iso_name} )\r\n");
     for (i, point) in points.iter().chain(points.first()).enumerate() {
@@ -176,6 +189,8 @@ fn publish(_: &Path, _: &[(String, String)]) -> Result<Vec<PathBuf>, String> {
     Err("Job bundle output requires a local filesystem".into())
 }
 
+#[cfg(test)]
+mod die_tests;
 #[cfg(test)]
 mod reentrant_tests;
 #[cfg(test)]

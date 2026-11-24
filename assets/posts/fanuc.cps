@@ -154,7 +154,9 @@ function minusU(expr, v) {
 }
 function ff(v) {  // a feed: whole mm/min, or in/min at two decimals
   if (!(has(v) && v > 0)) return "0";
-  return inch ? trimNum((v / 25.4).toFixed(2)) : String(Math.round(v));
+  // #3690: a whole inch F without a point can use 0.01 in/min units.
+  // FANUC B-64604EN-2/01, section 5.2.1, Unit of F command.
+  return pt(inch ? trimNum((v / 25.4).toFixed(2)) : String(Math.round(v)));
 }
 function ni(v) { return has(v) ? String(Math.round(v)) : "0"; } // integer word (rpm)
 function eps() { return inch ? "0.0001" : "0.001"; } // one output step, the probe checks' band
@@ -1018,7 +1020,7 @@ function feedWord(p, arc) {
   if (!r.capped) return fw(p.FeedRate);
   var word = rotaryFeedWord(r.feed, inch);  // the post's own unit, as ff() writes F
   if (!word) { rotRefuse("a feed that turns a rotary over too short a move - the stated rotary rate leaves under 0.1 mm/min"); return null; }
-  return word;
+  return pt(word);  // #3690: capped feeds need the same explicit unit point
 }
 var rotRefused = {};  // #885: each rate refusal counted once per program, not per line
 function rotRefuse(s) { if (!rotRefused[s]) { rotRefused[s] = true; msg(s); } }

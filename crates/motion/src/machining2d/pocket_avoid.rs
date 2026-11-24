@@ -183,7 +183,7 @@ pub(super) fn pocket_avoid_over(
             blocked_levels.push(z);
             continue;
         }
-        let Some((passes, actual, room, joins, links_center, ramp_starts)) =
+        let Some((passes, actual, room, joins, links_center)) =
             plan_avoid_level(&src, &level_center, p, strategy, z, &mut notes)?
         else {
             blocked_levels.push(z);
@@ -240,6 +240,25 @@ pub(super) fn pocket_avoid_over(
             })
         };
         let hr = room.as_ref().map_or(p.helix_radius, |rm| p.helix_radius.min(rm.helix_r));
+        // #3810: the start side's air room, less this level's fixtures and
+        // clamps over the whole descent.
+        let air = match &src {
+            AvoidSource::Plain { side, .. } => {
+                let resolved = super::ring_side::resolve(&level_center, actual, p.tool_diameter * 0.5, side)?;
+                let room = super::air_entry::AirRoom::for_side(&resolved, actual, &level_center, p.tool_diameter * 0.5, p.links.approach.approach_distance);
+                let room = room.and_then(|r| r.without(&ko.union(&ko_entry).ok()?));
+                // #3748: the user's Inside or Outside with a lead-in other
+                // than Arc, where the Arc entry from the air applies.
+                if room.is_some()
+                    && p.strategy != PocketStrategy::Adaptive
+                    && let Some(n) = super::pass_start::entry_advice_note(side.start, p.entry)
+                {
+                    b.note_once(&n);
+                }
+                room
+            }
+            AvoidSource::Rest(_) => None,
+        };
         let level_motion = Motion::new(p.clearance_z, p.retract_z, p.feed, p.plunge_feed)
             .with_entry(p.entry, hr)
             .with_arc_radius(p.tool_diameter)
@@ -250,13 +269,13 @@ pub(super) fn pocket_avoid_over(
             .with_holes(holes)
             .with_solid_restart()
             .with_cleared_links(cleared_links)
-            .with_ramp_starts(ramp_starts)
             .with_ring_links(match &src {
                 AvoidSource::Plain { side, .. } if cleared_links => {
-                    super::ring_links::for_side(side, p.tool_diameter * 0.5, Some(ko.union(&ko_entry)?))?
+                    super::ring_links::for_side(side, actual, p.tool_diameter * 0.5, Some(ko.union(&ko_entry)?))?
                 }
                 _ => None,
-            });
+            })
+            .with_air(air);
         let cert_entry = room.as_ref().map(|rm| Cert::Region(&rm.tess));
         let cert_center = Cert::Region(&level_center);
         let cert_links = Cert::Region(&links_center);

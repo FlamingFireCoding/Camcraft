@@ -328,6 +328,7 @@ pub(super) fn finding(op: &str, w: &Warning) -> Value {
         Warning::UndercutLift { at } => ("undercut_lift", *at),
         Warning::StrategyFallback { at, .. } => ("strategy_fallback", *at),
         Warning::FluteShort { at, .. } => ("flute_short", *at),
+        Warning::EntryNotRecommended { at, .. } => ("entry_not_recommended", *at),
     };
     json!({
         "op": op,
@@ -352,6 +353,13 @@ pub(super) fn verify(env: &mut Env, a: &Map<String, Value>) -> Result<Value, Str
         let label = model::operation_label(&env.world, key, &e);
         if let Some(t) = model::toolpath_of(&env.world, &e) {
             findings.extend(t.warnings.iter().map(|w| finding(&label, w)));
+        }
+    }
+    // #3456: a program law's warning (a plasma tip-up, a kerf crossing)
+    // names its op but no move; the law decides it holds nothing.
+    if let Some(warnings) = report["gate"]["warnings"].as_array() {
+        for w in warnings {
+            findings.push(json!({ "op": w["op"], "move": null, "kind": w["kind"], "message": w["message"], "blocks_post": false }));
         }
     }
     // The program gate's problems speak of the whole program, not one

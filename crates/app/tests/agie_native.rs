@@ -16,6 +16,8 @@ use camcraft_app::stock::StockShape;
 use flecs_ecs::prelude::World;
 use std::{collections::BTreeMap, fs};
 
+#[path = "agie_native/die.rs"]
+mod die;
 #[path = "agie_native/reentrant.rs"]
 mod reentrant;
 

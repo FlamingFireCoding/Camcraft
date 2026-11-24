@@ -413,7 +413,7 @@ fn doosan_dnm_index_names_only_a_stated_rotary() {
     // end returns A to zero, unclamped and clamped again.
     assert_eq!(
         moves,
-        vec!["G00 Z10.", "M11", "G00 X0. Y0. Z10. A90.", "M10", "G01 X50. Y0. Z-1. F400", "M11", "G00 A0.", "M10"],
+        vec!["G00 Z10.", "M11", "G00 X0. Y0. Z10. A90.", "M10", "G01 X50. Y0. Z-1. F400.", "M11", "G00 A0.", "M10"],
         "{}",
         out.program
     );
