@@ -310,6 +310,9 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             // #3525: a cut deeper than the flute length - the cause of
             // the shank findings after it, its own line (advisory).
             Warning::FluteShort { .. } => (226, false),
+            // #3679: a feed plunge deeper than one stepdown below the
+            // uncut floor - a tool-load note, its own line (advisory).
+            Warning::PlungeTooDeep { .. } => (227, false),
             // #3748: a selected entry that is not the recommended Arc on
             // a start-side pass - advisory, its own line.
             Warning::EntryNotRecommended { .. } => (227, false),
@@ -346,6 +349,7 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             | Warning::DrillUndersize { at, .. }
             | Warning::StrategyFallback { at, .. }
             | Warning::FluteShort { at, .. }
+            | Warning::PlungeTooDeep { at, .. }
             | Warning::EntryNotRecommended { at, .. }
             | Warning::EntryStandIn { at, .. }
             | Warning::PlungeIntoStock { at } => *at,

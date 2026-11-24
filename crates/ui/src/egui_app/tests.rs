@@ -129,6 +129,8 @@ mod page_layout_windows;
 mod page_layout_tool_library;
 // #3893: the tool editor in the tool library window.
 mod tool_library_editor;
+// #3894: the 3D and side preview of the tool library window's editor.
+mod tool_library_preview;
 mod anchors;
 mod stock_fit;
 mod stock_source_default;

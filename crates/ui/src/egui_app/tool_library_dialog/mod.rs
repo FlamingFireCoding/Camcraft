@@ -8,13 +8,19 @@
 //! Apply lands the draft through `ChangeTool` (and the tool number through
 //! `SetToolNumber`, as in Properties). The window's draft is its own
 //! (`ToolLibraryView::editor`), so Properties' draft never mixes with it.
+//! #3894 (U3): the editor shows the tool above its tabs - an orbitable 3D
+//! model (the default) or a to-scale side view with dimension lines
+//! (`preview`). Display only.
 //! Provenance: our own window, after the tool shape window pattern
 //! (`pages::tool_shape_editor_window`) and the egui `Window` docs; no
 //! HSMWorks material involved.
 
 mod details_tab;
 mod list;
+pub(crate) mod model;
+pub(crate) mod preview;
 mod rail;
+mod side_view;
 mod tool_tab;
 
 use egui::{Id, Ui, Window};
@@ -87,16 +93,18 @@ enum After {
     Shape(String),
 }
 
-/// The heading, the Tool and Details tabs, and the Apply row. The draft
+/// The heading, the preview, the Tool and Details tabs, and the Apply row. The draft
 /// is swapped into `tool_ui` only while it is drawn (`with_library_draft`).
 fn editor(ui: &mut Ui, state: &mut State) {
     let after = state
-        .with_library_draft(|state, tab| {
+        .with_library_draft(|state, face| {
             if !state.tool_ui.exists {
                 return After::Gone;
             }
             let name = state.tool_ui.name.clone();
             ui.heading(format!("Tool: {name}"));
+            preview::draw(ui, state, face);
+            let tab = &mut face.tab;
             let mut shape = false;
             ui.horizontal(|ui| {
                 ui.selectable_value(tab, ToolEditorTab::Tool, "Tool")

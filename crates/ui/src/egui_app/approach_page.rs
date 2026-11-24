@@ -226,7 +226,7 @@ pub(super) fn contour_leads_editor(ui: &mut Ui, u: Unit, a: &mut Approach) {
             consequence(ui, "set the D register to the wear delta only - a full radius there cuts the part a radius undersize");
         }
         if a.compensation.in_control() {
-            consequence(ui, "needs straight Linear or Perpendicular leads at least a tool radius long; tabs, corner blends, overlap, keep-down links and non-Fanuc posts are refused by name");
+            consequence(ui, "needs a Perpendicular lead at least a tool radius long; a Linear lead, tabs, corner blends, overlap, keep-down links and non-Fanuc posts are refused by name");
         }
     });
 }

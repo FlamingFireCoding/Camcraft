@@ -329,6 +329,7 @@ pub(super) fn finding(op: &str, w: &Warning) -> Value {
         Warning::UndercutLift { at } => ("undercut_lift", *at),
         Warning::StrategyFallback { at, .. } => ("strategy_fallback", *at),
         Warning::FluteShort { at, .. } => ("flute_short", *at),
+        Warning::PlungeTooDeep { at, .. } => ("plunge_too_deep", *at),
         Warning::EntryNotRecommended { at, .. } => ("entry_not_recommended", *at),
         Warning::EntryStandIn { at, .. } => ("entry_stand_in", *at),
         Warning::PlungeIntoStock { at } => ("plunge_into_stock", *at),

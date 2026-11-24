@@ -11,24 +11,24 @@ use egui::accesskit::Role;
 use egui_kittest::Node;
 use egui_kittest::kittest::NodeT;
 
-type H = Harness<'static, ShellUi>;
+pub(super) type H = Harness<'static, ShellUi>;
 
 /// The window's AccessKit node; every query of these tests stays inside
 /// it, so a twin row in Properties never matches.
-fn library_window(h: &H) -> Node<'_> {
+pub(super) fn library_window(h: &H) -> Node<'_> {
     h.query_all_by_role(Role::Window)
         .find(|n| n.accesskit_node().label().as_deref() == Some("Tool library"))
         .unwrap_or_else(|| panic!("the Tool library window is not open"))
 }
 
-fn tool(h: &H, name: &str) -> Tool {
+pub(super) fn tool(h: &H, name: &str) -> Tool {
     model::find_by_name(&h.state().state.world, name)
         .and_then(|e| model::tool_of(&h.state().state.world, &e))
         .unwrap_or_else(|| panic!("tool {name} is in the document"))
 }
 
 /// The window's draft (the editor must be open).
-fn draft(h: &mut H) -> &mut crate::state::ToolUi {
+pub(super) fn draft(h: &mut H) -> &mut crate::state::ToolUi {
     match h.state_mut().state.tool_library.as_mut().and_then(|v| v.editor.as_mut()) {
         Some(e) => &mut e.draft,
         None => panic!("no tool is open in the tool library window"),
@@ -37,7 +37,7 @@ fn draft(h: &mut H) -> &mut crate::state::ToolUi {
 
 /// Two different tools: the seeded document's tool, and a second one from
 /// the catalog (the `AddTool` command) when the document has only one.
-fn two_tools(h: &mut H) -> (String, String) {
+pub(super) fn two_tools(h: &mut H) -> (String, String) {
     if h.state().state.tool_names().len() < 2 {
         let st = &h.state().state;
         let Some((name, tool)) = camcraft_app::tools::catalog().into_iter().find(|(n, t)| {
@@ -55,14 +55,14 @@ fn two_tools(h: &mut H) -> (String, String) {
 }
 
 /// Open the window (the ribbon's Tools cell) and `name` in its editor.
-fn open_in_window(h: &mut H, name: &str) {
+pub(super) fn open_in_window(h: &mut H, name: &str) {
     h.get_by_role_and_label(Role::Button, "Tools").click();
     h.run_steps(2);
     h.state_mut().state.open_tool_in_library(name);
     h.run_steps(3);
 }
 
-fn click_window_button(h: &mut H, label: &str) {
+pub(super) fn click_window_button(h: &mut H, label: &str) {
     library_window(h).get_by_role_and_label(Role::Button, label).click();
     h.run_steps(3);
 }
