@@ -12,7 +12,7 @@
 //! recommended Arc enters from the air with no helix or ramp.
 //!
 //! Gate map: covers camcraft_motion::machining2d (pass_start,
-//! level_rings, level_order, air_entry, descent). Provenance: our
+//! level_rings, level_order, air_entry, descent, entry_warn). Provenance: our
 //! own regression of the review of PR #3353; the radial-engagement
 //! measure of the public milling handbooks; no vendor material consulted.
 
@@ -22,8 +22,10 @@ use camcraft_motion::geo2d::{Loop, Point2, Region};
 use camcraft_motion::links::{DEFAULT_RAMP_ANGLE, Links};
 use camcraft_motion::load::DEFAULT_OPTIMAL_LOAD;
 use camcraft_motion::machining2d::{
-    CornerRelief, PassStart, PocketParams, PocketStrategy, StartSide, entry_advice, pocket_started, pocket_started_on, rings_fallbacks,
+    CornerRelief, PassStart, PocketParams, PocketStrategy, StartSide, entry_advice, entry_stand_ins, entry_warnings, pocket_started,
+    pocket_started_on, rings_fallbacks,
 };
+use camcraft_motion::verify::Warning;
 
 #[path = "pass_start_engagement/grid.rs"]
 mod grid;
@@ -289,4 +291,53 @@ fn a_short_dead_end_no_longer_falls_back_to_auto() {
     };
     assert_eq!(rings_fallbacks(&outside.notes), 0, "{:?}", outside.notes);
     assert!(!outside.notes.iter().any(|n| n.contains("dead end") || n.contains("too short for a ramp")), "{:?}", outside.notes);
+}
+
+/// The pocket form of the band (no stock known, so no air room) with
+/// "Pass starts at: Outside" and the lead-in `entry`.
+fn band_pocket(entry: Entry3D) -> (Toolpath, PocketParams) {
+    let (region, _) = band();
+    let mut p = params(true);
+    p.entry = entry;
+    match pocket_started(&region, &p, &[], &CornerRelief::default(), PassStart::Outside) {
+        Ok(t) => (t, p),
+        Err(e) => panic!("{e:?}"),
+    }
+}
+
+/// The start-side entry warnings of `path`, with the advice of `entry`
+/// counted as the op counts it.
+fn warnings_of(path: &Toolpath, entry: Entry3D) -> Vec<Warning> {
+    let advised = entry_advice(PassStart::Outside, entry).is_some_and(|a| path.notes.iter().any(|n| n.contains(a)));
+    entry_warnings(path, advised)
+}
+
+/// #3884 pin 1: the plain Outside pocket with no stock and the Arc entry
+/// takes no automatic ramp along the pass, or names each one in a warning.
+#[test]
+fn outside_pocket_arc_ramp_is_a_warning() {
+    let (path, p) = band_pocket(Entry3D::Arc);
+    let paths = floor_chords(&path, p.bottom_z);
+    let ramps =
+        path.moves.iter().filter(|m| m.kind == MoveKind::Feed && descends_below(m, p.top_z) && is_ramp(m, &paths)).count();
+    let stand_ins = entry_stand_ins(&path.notes);
+    let warned: Vec<Warning> =
+        warnings_of(&path, Entry3D::Arc).into_iter().filter(|w| matches!(w, Warning::EntryStandIn { .. })).collect();
+    // The pin cannot pass empty: later pass starts of the band are in
+    // material, and the Arc has no air room to start in.
+    assert!(stand_ins > 0, "no stand-in entry, so the pin proves nothing: {:?}", path.notes);
+    assert_eq!(warned.len(), 1, "{ramps} ramp move(s), {stand_ins} stand-in(s), no warning: {:?}", path.notes);
+    assert!(matches!(warned[0], Warning::EntryStandIn { entries, .. } if entries == stand_ins), "{warned:?}");
+}
+
+/// #3884 pin 2: the same pocket with the Plunge entry plunges into uncut
+/// stock at later pass starts, and says so in exactly one warning.
+#[test]
+fn outside_pocket_plunge_into_stock_is_one_warning() {
+    let (path, p) = band_pocket(Entry3D::Plunge);
+    let plunges = path.moves.iter().filter(|m| m.kind == MoveKind::Plunge && descends_below(m, p.top_z)).count();
+    assert!(plunges > 1, "only {plunges} plunge(s), so the pin proves nothing: {:?}", path.notes);
+    let warned = warnings_of(&path, Entry3D::Plunge);
+    let named = warned.iter().filter(|w| matches!(w, Warning::PlungeIntoStock { .. } | Warning::EntryNotRecommended { .. })).count();
+    assert_eq!(named, 1, "{warned:?}: {:?}", path.notes);
 }

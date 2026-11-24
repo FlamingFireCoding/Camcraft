@@ -438,6 +438,15 @@ pub enum Warning {
     /// is used as selected, from the first cut at `at`. Advisory: the
     /// path is verified like any other, so the post is not held.
     EntryNotRecommended { at: usize, entry: super::AdvisedEntry, inside: bool },
+    /// #3884: a start-side pass where the selected entry did not fit at
+    /// `entries` pass starts, from the first cut at `at`: a named stand-in
+    /// entry (a ramp, a helix, an axial dive or a plunge) was used there.
+    /// Advisory: the path is verified, so the post is not held.
+    EntryStandIn { at: usize, entries: usize },
+    /// #3884: a start-side pass whose selected Plunge plunges into uncut
+    /// stock at a pass start that no earlier cut cleared, from the first
+    /// cut at `at`. Advisory: the entry is the user's and is verified.
+    PlungeIntoStock { at: usize },
 }
 
 impl Warning {
@@ -451,7 +460,9 @@ impl Warning {
                 | Warning::DrillUndersize { .. }
                 | Warning::StrategyFallback { .. }
                 | Warning::FluteShort { .. }
-                | Warning::EntryNotRecommended { .. })
+                | Warning::EntryNotRecommended { .. }
+                | Warning::EntryStandIn { .. }
+                | Warning::PlungeIntoStock { .. })
     }
 
     /// The envelope report's unjudged hidden half, as the warning that
@@ -610,6 +621,19 @@ impl core::fmt::Display for Warning {
                 f,
                 "{}, from move {at} (the post is not held: the cut is verified)",
                 super::entry_advice(*entry, *inside)
+            ),
+            Warning::EntryStandIn { at, entries } => write!(
+                f,
+                "Pass starts at: the selected entry did not fit at {entries} pass start{} in material, from move {at}: \
+                 a stand-in entry is used there, and the notes name each one - set the stock so that an Arc entry can \
+                 start in the air outside it, or use a smaller stepover (the post is not held: the cut is verified)",
+                if *entries == 1 { "" } else { "s" }
+            ),
+            Warning::PlungeIntoStock { at } => write!(
+                f,
+                "Pass starts at: the selected Plunge entry plunges into uncut stock where a pass starts in material, \
+                 from move {at}: Arc is recommended, because it enters from the air outside the stock where it fits \
+                 (the post is not held: the cut is verified)"
             ),
         }
     }

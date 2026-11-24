@@ -44,9 +44,12 @@ pub fn moves_named(w: &Warning) -> [Option<usize>; 2] {
         // #3525: the first cutting move below the flute's reach.
         | Warning::FluteShort { at, .. }
         // #3748: the first cut of the selected entry.
-        | Warning::EntryNotRecommended { at, .. } => [Some(*at), None],
-        // #3035: the fallback names areas in the notes, not one move.
-        Warning::RestUnjudged { .. } | Warning::StrategyFallback { .. } => [None, None],
+        | Warning::EntryNotRecommended { at, .. }
+        // #3884: the plunge is the user's entry; its first cut.
+        | Warning::PlungeIntoStock { at } => [Some(*at), None],
+        // #3035: the fallback names areas in the notes, not one move;
+        // #3884: so do the stand-in entries.
+        Warning::RestUnjudged { .. } | Warning::StrategyFallback { .. } | Warning::EntryStandIn { .. } => [None, None],
     }
 }
 
