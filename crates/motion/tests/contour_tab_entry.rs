@@ -1,12 +1,12 @@
 //! 2D Contour tab entry (#3453): the first tabbed level of an Outside
 //! contour on a sheet enters at the start the untabbed levels entered at,
 //! one stepdown at most below the floor that they left under the FULL tool
-//! disc - not only the tool centre. The later tab windows are pinned as
-//! they are (#3678 owns their dives). The oracle is the posted path alone:
-//! the floor at a point is the lowest level pass (a feed at one height)
-//! whose swept disc holds it, else the top of the stock.
+//! disc - not only the tool centre. #3678: every dive is one stepdown at
+//! most below that floor, a deeper one pecks. The oracle is the posted path
+//! alone: the floor at a point is the lowest cut (a feed at one height, or
+//! a straight plunge column) whose swept disc holds it, else the stock top.
 //!
-//! Gate map (M4.4): covers camcraft_motion::machining2d (contour, contour_start, contour_step, contour_link).
+//! Gate map (M4.4): covers camcraft_motion::machining2d (contour, contour_start, contour_step, contour_link, contour_peck).
 
 use camcraft_motion::cl::{MoveKind, Toolpath};
 use camcraft_motion::entry::Entry3D;
@@ -122,6 +122,13 @@ fn descents(t: &Toolpath) -> Vec<Descent> {
         if flat && m.kind == MoveKind::Feed {
             cuts.push((m.to.z, m.chords(0.001)));
         }
+        // #3678: a straight plunge cuts the column under its disc to its
+        // depth (a peck stands on the one before it).
+        let vertical = m.from.x == m.to.x && m.from.y == m.to.y && m.to.z < m.from.z;
+        if vertical {
+            let c = Point2::new(m.to.x, m.to.y);
+            cuts.push((m.to.z, vec![(c, c)]));
+        }
     }
     out
 }
@@ -198,20 +205,53 @@ fn the_first_tabbed_window_enters_where_the_levels_above_cut_its_lead_in() {
     assert!(same_xy(ds[0].at, first), "{name}: window 0 enters at {:?}, not at the untabbed start {first:?}", ds[0].at);
     assert!((ds[0].from_z - 2.0).abs() < 1e-9, "{name}: the dive starts at the plunge height");
     // Windows 1 to 3: their lead-in starts stand 3 mm outside the ring,
-    // with a 2.5 mm crescent of the disc in stock that no level above cut:
-    // an 18 mm plunge (#3678 owns it; these readings change with its fix).
-    assert_readings(name, &readings(&ds), &[(2.7, 0.0), (18.0, 2.501), (18.0, 2.501), (18.0, 2.501)]);
+    // with a 2.5 mm crescent of the disc in stock that no level above cut.
+    // On origin/main that was an 18 mm plunge; #3678 pecks it one stepdown
+    // at a time, so the last peck is 4.5 mm below the one before it.
+    assert_readings(name, &readings(&ds), &[(2.7, 0.0), (4.5, 2.501), (4.5, 2.501), (4.5, 2.501)]);
     assert!(ds[0].to_z >= ds[0].floor_disc - STEP - 1e-6, "{name}: window 0 is one stepdown at most below the disc floor");
 }
 
 #[test]
 fn the_first_tabbed_window_of_the_stay_down_ramp_enters_at_the_untabbed_start() {
     // The stay-down levels cut the lead-in only on the first level: the
-    // disc floor at the start is -4.5 (#3678 owns the 13.5 mm plunge).
+    // disc floor at the start is -4.5. On origin/main window 0 plunged
+    // 13.5 mm below it; #3678 pecks it (and windows 1 to 3) one stepdown
+    // at a time.
     let name = "keep-down ramp, arc lead";
     let (first, ds) = tabbed_entries(name, keep_down_ramp(), Lead::Arc { radius: 3.0 });
     assert!(same_xy(ds[0].at, first), "{name}: window 0 enters at {:?}, not at the untabbed start {first:?}", ds[0].at);
-    assert_readings(name, &readings(&ds), &[(13.5, 2.501), (18.0, 2.501), (18.0, 2.501), (18.0, 2.501)]);
+    assert_readings(name, &readings(&ds), &[(4.5, 2.501), (4.5, 2.501), (4.5, 2.501), (4.5, 2.501)]);
+}
+
+#[test]
+fn no_contour_descent_goes_more_than_one_stepdown_below_the_disc_floor() {
+    // #3678: every feed down of the three presets (and Lead None) stands
+    // at most one stepdown below the floor that the cuts before it left
+    // under the full tool disc. A deeper dive pecks, and says so once.
+    let presets = [
+        ("plunge, arc lead", Links::PLANAR, Lead::Arc { radius: 3.0 }),
+        ("keep-down ramp, arc lead", keep_down_ramp(), Lead::Arc { radius: 3.0 }),
+        ("plunge, no lead", Links::PLANAR, Lead::None),
+        ("keep-down ramp, no lead", keep_down_ramp(), Lead::None),
+    ];
+    for (name, links, lead) in presets {
+        let t = contour(&l_shape(), &params(lead, links)).unwrap();
+        for d in report(name, &t) {
+            assert!(
+                d.to_z >= d.floor_disc - STEP - 1e-6,
+                "{name}: the descent at ({:.3}, {:.3}) Z {:.3} -> {:.3} is {:.3} mm below the disc floor {:.3}",
+                d.at.x,
+                d.at.y,
+                d.from_z,
+                d.to_z,
+                d.floor_disc - d.to_z,
+                d.floor_disc
+            );
+        }
+        let pecked = t.notes.iter().filter(|n| n.contains("pecked")).count();
+        assert!(pecked <= 1, "{name}: the peck is said once, not {pecked} times");
+    }
 }
 
 #[test]
