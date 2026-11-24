@@ -12,7 +12,6 @@
 use camcraft_app::cutter_fit::{self, Neck};
 use camcraft_app::units;
 use egui::accesskit::Role;
-use egui_kittest::kittest::NodeT;
 
 use super::tool_body::{TOOL, prism_stl, shank_top, temp_stl};
 use super::tool_library_editor::{H, click_window_button, draft, library_window, tool, two_tools};
