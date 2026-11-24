@@ -281,7 +281,14 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
             // answer.
             (params, SrcRef::Selection(items))
                 if selection_drives_region(params)
-                    && !matches!(params, OpParams::Contour { .. } | OpParams::PlasmaProfile(_) | OpParams::WaterjetProfile(_) | OpParams::WireContour(_)) =>
+                    && !matches!(
+                        params,
+                        OpParams::Contour { .. }
+                            | OpParams::PlasmaProfile(_)
+                            | OpParams::WaterjetProfile(_)
+                            | OpParams::WireContour(_)
+                            | OpParams::Chamfer2D { .. }
+                    ) =>
             {
                 Some(selection_region(world, setup, items, params, &op.area))
             }
@@ -302,9 +309,17 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     let sketch_contour = super::contour_sketch::is_sketch_contour(world, &op.src, &op.params)
         .then(|| super::contour_sketch::resolve_plan(world, &op.src, &op.params));
     let contour_sel = match (&op.params, &op.src) {
-        // The plasma cut reads its picks the contour's way (#670):
-        // closed rings AND open runs, each cut as picked.
-        (OpParams::Contour { .. } | OpParams::PlasmaProfile(_) | OpParams::WaterjetProfile(_) | OpParams::WireContour(_), SrcRef::Selection(items))
+        // The plasma cut and 2D Chamfer read their picks the contour's
+        // way (#670, #2988): closed rings AND open runs, each cut as
+        // picked.
+        (
+            OpParams::Contour { .. }
+                | OpParams::PlasmaProfile(_)
+                | OpParams::WaterjetProfile(_)
+                | OpParams::WireContour(_)
+                | OpParams::Chamfer2D { .. },
+            SrcRef::Selection(items),
+        )
             if wire_ruled.is_none() && sketch_contour.is_none() && wire_sketch.is_none() =>
         {
             Some(selection_geometry_impl(world, setup, items, &op.params, None))
