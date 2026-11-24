@@ -2802,9 +2802,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             entry: bore_entry,
             ..
         } => {
-            // The circular ramp (Arc) has no meaning on a ring ladder.
-            if *bore_entry == Entry3D::Arc {
-                return Err(GenError::Invalid("a Bore enters with plunge, ramp or helix; arc is not offered".into()));
+            // The command doors refuse it first (`named_refusal`); this is
+            // the second check, for a project file or a caller that skipped them.
+            if let Some(why) = OpParams::bore_entry_refusal(*bore_entry) {
+                return Err(GenError::Invalid(why));
             }
             // #1557: the stated break-through, the drill's own by default.
             let run = break_through.unwrap_or(drilling::THROUGH_CLEAR);

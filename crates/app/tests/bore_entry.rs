@@ -237,6 +237,32 @@ fn a_bore_refuses_the_arc_entry_by_name() {
     assert!(err.contains("plunge, ramp or helix"), "{err}");
 }
 
+/// The command doors refuse the arc entry at creation and at edit (validate
+/// early), by the same name as the generator; a refused edit leaves the
+/// stored entry as it was.
+#[test]
+fn the_command_doors_refuse_a_bore_arc_entry_by_name() {
+    use camcraft_app::commands::{CreateOperation, EditOperationParams};
+    use camcraft_app::machining3d::Entry3D;
+    use camcraft_app::model;
+    let world = world();
+    let said = |r: Result<_, camcraft_app::commands::CommandError>| match r {
+        Ok(_) => String::new(),
+        Err(e) => e.to_string(),
+    };
+    let created = said(CreateOperation::new(&world, "B", "CC", SrcRef::Stock, bore_entering(8.0, Entry3D::Arc, 4.0)).map(|_| ()));
+    assert!(created.contains("plunge, ramp or helix"), "create: {created}");
+    assert!(model::find_by_name(&world, "B").is_none(), "a refused create adds nothing");
+
+    let mut h = History::default();
+    h.execute(&world, CreateOperation::new(&world, "B", "CC", SrcRef::Stock, bore_entering(8.0, Entry3D::Helix, 4.0)).expect("helix is offered"));
+    h.execute(&world, CreateOperation::new(&world, "R", "CC", SrcRef::Stock, bore_entering(8.0, Entry3D::Ramp, 4.0)).expect("ramp is offered"));
+    let edited = said(EditOperationParams::new(&world, "B", bore_entering(8.0, Entry3D::Arc, 4.0)).map(|_| ()));
+    assert!(edited.contains("plunge, ramp or helix"), "edit: {edited}");
+    let op = model::find_by_name(&world, "B").and_then(|e| model::operation_of(&world, &e)).expect("op");
+    assert!(matches!(op.params, OpParams::Bore { entry: Entry3D::Helix, .. }), "the stored entry is unchanged: {:?}", op.params);
+}
+
 /// The entry is file data: a Helix bore saves and loads as a Helix bore, and
 /// a Plunge bore writes no `entry` word, so every earlier file reads as before.
 #[test]
