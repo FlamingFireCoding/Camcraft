@@ -302,7 +302,7 @@ mod tests {
     fn cutoff_setup_statements_round_trip_and_old_files_have_neither() {
         let mut original = op(None, false);
         original.side = WireSide::Right;
-        original.start = None;
+        original.picks.start.clear();
         let old = serde_json::to_string(&WireContourDto::from_op(&original)).unwrap();
         assert!(!old.contains("both_pieces_restrained"));
         assert!(!old.contains("stock_centered_in_xy_travel"));

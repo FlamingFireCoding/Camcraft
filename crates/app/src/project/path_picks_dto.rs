@@ -1,3 +1,5 @@
+//! Provenance: our own file format; no vendor material.
+//!
 //! The operation-level file mirror of [`crate::path_picks::PathPicks`]
 //! (#3339): `picks: { start: [[x, y, z?], ...], exit: [...] }`, written
 //! only when a role list is not empty so files without picks stay unchanged.
@@ -73,16 +75,92 @@ impl PathPicksDto {
     #[must_use]
     pub fn with_legacy(&self, start: Option<[f64; 2]>, exit: Option<[f64; 2]>) -> PathPicks {
         let mut out = self.to_picks();
-        if out.start.is_empty() {
-            if let Some([x, y]) = start {
-                out.start.push(PathPick::xy(Point2::new(x, y)));
-            }
+        if out.start.is_empty() && let Some([x, y]) = start {
+            out.start.push(PathPick::xy(Point2::new(x, y)));
         }
-        if out.exit.is_empty() {
-            if let Some([x, y]) = exit {
-                out.exit.push(PathPick::xy(Point2::new(x, y)));
-            }
+        if out.exit.is_empty() && let Some([x, y]) = exit {
+            out.exit.push(PathPick::xy(Point2::new(x, y)));
         }
         out
+    }
+}
+
+/// Migrate pre-#3339 legacy keys (`start` on wire_contour, `start_point` /
+/// `exit_point` under `links.approach`) into `picks` in an MCP or script
+/// patch map so existing callers continue to work (#3339).
+pub fn migrate_legacy_patch(key: &str, patch: &mut serde_json::Map<String, serde_json::Value>) {
+    let mut legacy_start = None;
+    let mut legacy_exit = None;
+    if key == "wire_contour" && patch.contains_key("start") {
+        legacy_start = patch.remove("start");
+    }
+    let mut empty_links = false;
+    if let Some(links) = patch.get_mut("links").and_then(serde_json::Value::as_object_mut) {
+        if let Some(approach) = links.get_mut("approach").and_then(serde_json::Value::as_object_mut) {
+            if approach.contains_key("start_point") {
+                legacy_start = approach.remove("start_point");
+            }
+            if approach.contains_key("exit_point") {
+                legacy_exit = approach.remove("exit_point");
+            }
+        }
+        if links.get("approach").is_some_and(|a| a.as_object().is_some_and(|m| m.is_empty())) {
+            links.remove("approach");
+        }
+        if links.is_empty() {
+            empty_links = true;
+        }
+    }
+    if empty_links {
+        patch.remove("links");
+    }
+    let mut empty_approach = false;
+    if let Some(approach) = patch.get_mut("approach").and_then(serde_json::Value::as_object_mut) {
+        if approach.contains_key("start_point") {
+            legacy_start = approach.remove("start_point");
+        }
+        if approach.contains_key("exit_point") {
+            legacy_exit = approach.remove("exit_point");
+        }
+        if approach.is_empty() {
+            empty_approach = true;
+        }
+    }
+    if empty_approach {
+        patch.remove("approach");
+    }
+    if let Some(val) = legacy_start {
+        if val.is_null() {
+            let picks = patch.entry(String::from("picks")).or_insert_with(|| serde_json::json!({})).as_object_mut();
+            if let Some(picks) = picks {
+                picks.insert("start".into(), serde_json::json!([]));
+            }
+        } else if let Some(arr) = val.as_array() {
+            let picks = patch.entry(String::from("picks")).or_insert_with(|| serde_json::json!({})).as_object_mut();
+            if let Some(picks) = picks
+                && !picks.contains_key("start")
+            {
+                picks.insert("start".into(), serde_json::json!([arr]));
+            }
+        } else {
+            patch.insert(if key == "wire_contour" { "start".into() } else { "start_point".into() }, val);
+        }
+    }
+    if let Some(val) = legacy_exit {
+        if val.is_null() {
+            let picks = patch.entry(String::from("picks")).or_insert_with(|| serde_json::json!({})).as_object_mut();
+            if let Some(picks) = picks {
+                picks.insert("exit".into(), serde_json::json!([]));
+            }
+        } else if let Some(arr) = val.as_array() {
+            let picks = patch.entry(String::from("picks")).or_insert_with(|| serde_json::json!({})).as_object_mut();
+            if let Some(picks) = picks
+                && !picks.contains_key("exit")
+            {
+                picks.insert("exit".into(), serde_json::json!([arr]));
+            }
+        } else {
+            patch.insert("exit_point".into(), val);
+        }
     }
 }

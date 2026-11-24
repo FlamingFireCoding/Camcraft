@@ -79,7 +79,11 @@ fn pick_list_group(ui: &mut Ui, u: Unit, rows: &PointRows, list: &mut Vec<PathPi
     point_group(ui, u, rows, &mut pt);
     match pt {
         Some(xy) if list.is_empty() => list.push(PathPick::xy(xy)),
-        Some(xy) => list[0].xy = xy,
+        Some(xy) => {
+            if let Some(first) = list.first_mut() {
+                first.xy = xy;
+            }
+        }
         None => list.clear(),
     }
 }

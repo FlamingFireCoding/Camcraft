@@ -62,6 +62,9 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
     let Some((key, Value::Object(mut fields))) = tagged.into_iter().next() else {
         return Err("the operation's parameters could not be read".into());
     };
+    let mut patch_owned = patch.clone();
+    project::migrate_legacy_patch(&key, &mut patch_owned);
+    let patch = &patch_owned;
     if patch.contains_key("pass_start") {
         let reason = match base {
             OpParams::Face { .. } => Some("Face has no pass order: its rows run edge to edge across the face, so there is no inside or outside to start from"),

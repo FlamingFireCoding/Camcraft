@@ -118,10 +118,10 @@ pub fn take(state: &mut State, found: &FeaturePick) {
         StartExitRole::Start => &mut picks.start,
         StartExitRole::Exit => &mut picks.exit,
     };
-    if list.is_empty() {
-        list.push(pick);
+    if let Some(first) = list.first_mut() {
+        *first = pick;
     } else {
-        list[0] = pick;
+        list.push(pick);
     }
     let u = state.units();
     state.status = format!(

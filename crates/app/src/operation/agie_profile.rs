@@ -146,10 +146,10 @@ fn checked(world: &World, op: &Operation, name: &str, source: Option<&str>) -> R
         if !wire.both_pieces_restrained || !wire.stock_centered_in_xy_travel {
             return Err("The open cutoff requires both pieces clamped through all passes and the stock centered in the installed XY travel".into());
         }
-        if wire.start.is_some() || !(0.0..=3.6).contains(&wire.clearance) {
+        if wire.picks.first(crate::path_picks::PickRole::Start).is_some() || !(0.0..=3.6).contains(&wire.clearance) {
             return Err("The open cutoff requires air threading and at most 3.6 mm run-out clearance for its 4 mm tails".into());
         }
-    } else if !wire.capture || wire.start.is_none() {
+    } else if !wire.capture || wire.picks.first(crate::path_picks::PickRole::Start).is_none() {
         return Err("The native wire EDM job requires a captured closed contour and a predrilled 2 mm start hole on the waste side".into());
     }
     let on_source = match (&op.src, source) {
@@ -166,10 +166,6 @@ fn checked(world: &World, op: &Operation, name: &str, source: Option<&str>) -> R
     if !on_source {
         return Err("The native wire EDM job requires the complete punch, or the edge chains of one through-opening in the retained die plate".into());
     }
-    let start = wire
-        .picks
-        .first(crate::path_picks::PickRole::Start)
-        .map(|p| [p.xy.x, p.xy.y]);
     let setup = op.setup.as_deref();
     let condition = super::wire_op::condition_of(world, setup, &op.tool, wire)?;
     if agie::quality_of(&condition.id).is_none()
