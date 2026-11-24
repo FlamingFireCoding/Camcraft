@@ -139,7 +139,8 @@ mod tool_catalog_rows;
 mod tool_settings;
 // #2014: the tool Properties' label-left property grid and its groups.
 mod tool_settings_grid;
-mod tool_library;
+// #3892: the tool library window (U1 of #3663).
+mod tool_library_dialog;
 mod tool_preview;
 // #890: the tool editor's per-material cutting data.
 mod tool_cutting_rows;
