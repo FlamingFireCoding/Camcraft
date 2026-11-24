@@ -11,7 +11,7 @@
 //! camcraft_gpu::cut_buf, camcraft_gpu::cut_run. Our own tests.
 
 use camcraft_gpu::{
-    cut_cpu, cut_cpu_onto, cut_onto_or_cpu, cut_onto_or_cpu_on, gpu_required, shared_device, spot_check_onto, CutGrid,
+    cut_cpu, cut_cpu_onto, cut_onto_or_cpu, cut_onto_or_cpu_on, gpu_required, shared_device, spot_check_onto, spot_probes, CutGrid,
     CutInput, CutItem, CutKernel, CutPath, COMPUTE_ENV, SPOT_MARGIN_FRACTION,
 };
 
@@ -99,6 +99,26 @@ fn a_bad_base_layer_is_refused_by_name() {
         let err = cut_onto_or_cpu_on(Err("no device".into()), &later, &base).expect_err(name);
         assert!(err.contains("is not finite"), "{name}: the fallback rule refuses too: {err}");
     }
+}
+
+#[test]
+fn a_tie_with_the_keyframe_does_not_refuse_a_good_gpu_layer() {
+    // A later batch that repeats a chord of the keyframe (a spring pass)
+    // ties with the base layer. A GPU value a little deeper than the CPU
+    // base (as a hardware adapter can give) is inside the item's bound;
+    // the review of PR #3878 found that the check refused it at 1 ULP.
+    let (earlier, _) = fixture();
+    let key = cut_cpu(&earlier).expect("the keyframe cut");
+    let again = earlier.clone();
+    let cpu = cut_cpu_onto(&again, &key).expect("the spring pass");
+    assert!(same_bits(&cpu, &key), "a repeated chord cuts nothing new");
+    let at = *spot_probes(&again).expect("the probes").first().expect("an item probe");
+    let mut gpu = cpu.clone();
+    gpu[at] = cpu[at] + 0.25 * MARGIN;
+    spot_check_onto(&again, &key, &gpu).unwrap_or_else(|e| panic!("a tie inside the bound was refused: {e}"));
+    gpu[at] = cpu[at] + 2.0 * MARGIN;
+    let err = spot_check_onto(&again, &key, &gpu).expect_err("a value past the bound");
+    assert!(err.contains(&format!("texel {at}")), "{err}");
 }
 
 #[test]
@@ -230,7 +250,8 @@ fn a_lost_device_takes_the_cpu_law_and_never_crashes() {
     });
     let direct = kernel.run_onto(&gpu.device, &gpu.queue, compute, &later, &key);
     assert!(direct.is_err(), "a lost device must not give a layer");
-    let _ = kernel.cut_into(&gpu.device, &gpu.queue, compute, &later, &target);
+    let into = kernel.cut_into(&gpu.device, &gpu.queue, compute, &later, &target);
+    assert!(into.is_err(), "cut_into on a lost device must be an Err, never a silent submission");
 
     // The fallback rule on that device and kernel: the CPU law.
     let out = cut_onto_or_cpu_on(Ok((gpu, &kernel)), &later, &key).expect("the CPU law answers");
