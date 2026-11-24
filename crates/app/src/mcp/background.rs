@@ -17,7 +17,7 @@
 
 use std::collections::VecDeque;
 use std::io::{BufRead, Read, Write};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 
 use flecs_ecs::prelude::Entity;
@@ -45,7 +45,7 @@ pub(super) type Gate = Arc<Mutex<Receiver<()>>>;
 
 /// The serve loop's state for background generation.
 pub(super) struct Background {
-    events: Sender<Event>,
+    events: SyncSender<Event>,
     running: Option<Running>,
     next_ticket: u64,
 }
@@ -58,11 +58,12 @@ struct Running {
     queue: VecDeque<(String, Entity)>,
     unnamed: bool,
     done: Vec<Value>,
+    cancelled: bool,
 }
 
 impl Server {
     fn generating(&self) -> bool {
-        self.bg.as_ref().is_some_and(|b| b.running.is_some())
+        self.bg.as_ref().is_some_and(|b| b.running.as_ref().is_some_and(|r| !r.cancelled))
     }
 
     fn on_event(&mut self, ev: Event) -> Option<String> {
@@ -89,7 +90,7 @@ impl Server {
         if let Some(id) = tool_call_id(&msg, "open_project")
             && let Some(name) = self.running_name()
         {
-            let why = format!("open_project: refused while generate runs ({name}) - wait for its answer, or cancel it");
+            let why = format!("open_project: refused while generate runs ({name}) - wait for its worker to finish");
             return Some(answer(&id, tool_err(&why)).to_string());
         }
         self.handle_line(line)
@@ -99,19 +100,20 @@ impl Server {
         self.bg.as_ref().and_then(|b| b.running.as_ref()).map(|r| r.current.0.clone())
     }
 
-    /// `notifications/cancelled` for the running generate: forget it.
+    /// Keep a cancelled worker in the single-worker budget until it finishes.
     /// MCP: no answer goes out for a cancelled request.
     fn cancel(&mut self, id: &Value) {
         let Some(bg) = self.bg.as_mut() else { return };
-        if bg.running.as_ref().is_some_and(|r| r.id == *id) {
-            let name = bg.running.take().map(|r| r.current.0).unwrap_or_default();
-            tracing::info!(op = %name, "mcp: generate cancelled by the client; its result will be dropped");
+        if let Some(run) = bg.running.as_mut().filter(|r| r.id == *id) {
+            run.cancelled = true;
+            run.queue.clear();
+            tracing::info!(op = %run.current.0, "mcp: generate cancelled by the client; its result will be dropped");
         }
     }
 
     fn start(&mut self, id: Value, names: Vec<Value>) -> Option<Value> {
         if let Some(name) = self.running_name() {
-            let why = format!("generate: another generate is running ({name}) - wait for its answer, or cancel it");
+            let why = format!("generate: another generate is running ({name}) - wait for its worker to finish");
             return Some(answer(&id, tool_err(&why)));
         }
         let queue = match api::generate_targets(&self.env, &names) {
@@ -120,7 +122,7 @@ impl Server {
         };
         let unnamed = names.is_empty();
         let placeholder = (String::new(), Entity::null());
-        self.advance(Running { id, ticket: 0, current: placeholder, queue, unnamed, done: Vec::new() })
+        self.advance(Running { id, ticket: 0, current: placeholder, queue, unnamed, done: Vec::new(), cancelled: false })
     }
 
     /// Stage the next operation and hand it to a worker; `None` while a
@@ -170,6 +172,9 @@ impl Server {
             return None;
         }
         let mut run = bg.running.take()?;
+        if run.cancelled {
+            return None;
+        }
         match self.land(&mut run, result, true) {
             Ok(()) => self.advance(run),
             Err(reply) => Some(reply),
@@ -201,7 +206,7 @@ fn answer(id: &Value, result: Value) -> Value {
 }
 
 /// Run `staged` on a worker thread; hand the job back if no thread starts.
-fn spawn(staged: StagedGeneration, ticket: u64, events: Sender<Event>, gate: Option<Gate>) -> Result<(), Option<Box<StagedGeneration>>> {
+fn spawn(staged: StagedGeneration, ticket: u64, events: SyncSender<Event>, gate: Option<Gate>) -> Result<(), Option<Box<StagedGeneration>>> {
     let slot = Arc::new(Mutex::new(Some(staged)));
     let worker_slot = Arc::clone(&slot);
     let started = std::thread::Builder::new().name("mcp-generate".into()).spawn(move || {
@@ -238,6 +243,7 @@ fn generate_call(msg: &Value) -> Option<(Value, Vec<Value>)> {
         None | Some(Value::Null) => Vec::new(),
         Some(Value::Object(a)) if a.is_empty() => Vec::new(),
         Some(Value::Object(a)) if a.len() == 1 => match a.get("name") {
+            Some(Value::Null) => Vec::new(),
             Some(Value::String(n)) if !n.is_empty() => vec![json!(n)],
             _ => return None,
         },
@@ -249,7 +255,8 @@ fn generate_call(msg: &Value) -> Option<(Value, Vec<Value>)> {
 /// The id of a well-formed `tools/call` request of tool `name`.
 fn tool_call_id(msg: &Value, name: &str) -> Option<Value> {
     let id = msg.get("id")?;
-    let id_ok = id.is_string() || id.is_number();
+    // Match the synchronous handler: every non-null id gets an answer.
+    let id_ok = !id.is_null();
     let call = msg.get("jsonrpc") == Some(&json!("2.0"))
         && msg.get("method").and_then(Value::as_str) == Some("tools/call")
         && msg.get("params").and_then(|p| p.get("name")).and_then(Value::as_str) == Some(name);
@@ -265,37 +272,40 @@ fn cancelled_request(msg: &Value) -> Option<Value> {
 /// The stdio loop with the background lane: a reader thread moves lines
 /// in, workers move results in, and this thread owns the world and the
 /// output. At the end of input a running generate still gets its answer.
-pub(super) fn serve_with<R: BufRead + Send>(mut server: Server, input: R, mut output: impl Write) -> std::io::Result<()> {
-    let (tx, rx) = mpsc::channel();
+pub(super) fn serve_with<R: BufRead + Send + 'static>(mut server: Server, input: R, mut output: impl Write) -> std::io::Result<()> {
+    // One queued event plus the reader's current line bounds input memory.
+    // Worker completion shares the queue and cannot grow it.
+    let (tx, rx) = mpsc::sync_channel(1);
     server.bg = Some(Background { events: tx.clone(), running: None, next_ticket: 0 });
-    std::thread::scope(|s| {
-        std::thread::Builder::new().name("mcp-stdin".into()).spawn_scoped(s, move || read_lines(input, &tx))?;
-        let mut ended = false;
-        loop {
-            if ended && !server.generating() {
-                return Ok(());
-            }
-            // The session holds a sender itself, so the channel never closes here.
-            let Ok(ev) = rx.recv() else { return Ok(()) };
-            let reply = match ev {
-                Event::Eof => {
-                    ended = true;
-                    None
-                }
-                Event::Failed(e) => return Err(e),
-                other => server.on_event(other),
-            };
-            if let Some(reply) = reply {
-                writeln!(output, "{reply}")?;
-                output.flush()?;
-            }
+    // A generic blocking reader cannot be interrupted. Give it owned input so
+    // an output error can return immediately. It exits on its next read/send
+    // after the session drops the receiver, without retaining the session.
+    std::thread::Builder::new().name("mcp-stdin".into()).spawn(move || read_lines(input, &tx))?;
+    let mut ended = false;
+    loop {
+        if ended && !server.generating() {
+            return Ok(());
         }
-    })
+        // The session holds a sender itself, so the channel never closes here.
+        let Ok(ev) = rx.recv() else { return Ok(()) };
+        let reply = match ev {
+            Event::Eof => {
+                ended = true;
+                None
+            }
+            Event::Failed(e) => return Err(e),
+            other => server.on_event(other),
+        };
+        if let Some(reply) = reply {
+            writeln!(output, "{reply}")?;
+            output.flush()?;
+        }
+    }
 }
 
 /// One line at a time, capped at [`MAX_LINE_BYTES`]; a longer line or one
 /// that is not UTF-8 goes over as its parse-error text.
-fn read_lines(mut input: impl BufRead, tx: &Sender<Event>) {
+fn read_lines(mut input: impl BufRead, tx: &SyncSender<Event>) {
     let mut buf = Vec::new();
     let cap = u64::try_from(MAX_LINE_BYTES).unwrap_or(u64::MAX).saturating_add(1);
     loop {

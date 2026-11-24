@@ -48,3 +48,36 @@ still blocks other calls.
 **Cost to change later.** Small. The lane is one module,
 `crates/app/src/mcp/background.rs`. A generator cancel flag can be passed
 through the staged job later without a change to the protocol.
+
+
+## PR #3860 review fixes
+
+**What was decided.** A cancelled generate keeps the single worker slot
+until its completion reaches the session. The session drops its result,
+clears its remaining operation queue, and sends no answer. A retry gets
+the busy refusal while that worker runs. The optional `name: null` value
+uses the same background path as an omitted name. Dispatch accepts the
+same non-null request IDs as the synchronous handler, so no accepted ID
+form bypasses the busy check.
+
+The input and completion events share a channel with capacity one. If an
+output response blocks, one input line can wait in the channel and one
+can wait in the reader. This bounds the input memory at the existing line
+size limit. A worker completion cannot make the channel grow.
+
+The reader owns its input with a `Send + 'static` bound. The session does
+not join it after an output error. The output error can therefore return
+while the client keeps input open. A generic blocking reader cannot be
+interrupted. Its thread can remain blocked until another input byte or
+EOF; it retains no session or world and exits when its next send fails.
+
+**Why.** Repeated cancel and retry must not accumulate staged jobs. Input
+must stop reading ahead when the session cannot write. Every accepted
+generate form must obey the worker budget. An output error must not wait
+for an unrelated input event.
+
+**Dropped.** Starting a replacement worker immediately after cancellation
+would leave the old worker outside the budget. An unbounded input queue
+would retain arbitrarily many permitted lines. Joining the input reader
+on an output error would wait for the client to close input. Generator
+cancellation points remain outside this fix.

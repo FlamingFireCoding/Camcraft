@@ -299,13 +299,13 @@ pub const MAX_LINE_BYTES: usize = 16 * 1024 * 1024;
 /// other calls meanwhile, and its answer goes out when it lands (so
 /// answers can come out of request order, as JSON-RPC permits). A
 /// `notifications/cancelled` for it drops it with no answer.
-pub fn serve(input: impl BufRead + Send, output: impl Write) -> std::io::Result<()> {
+pub fn serve(input: impl BufRead + Send + 'static, output: impl Write) -> std::io::Result<()> {
     serve_with(Server::new(), input, output)
 }
 
 /// [`serve`] over a given session (tests set [`Server::hold_generations`]).
 #[doc(hidden)]
-pub fn serve_with(server: Server, input: impl BufRead + Send, output: impl Write) -> std::io::Result<()> {
+pub fn serve_with(server: Server, input: impl BufRead + Send + 'static, output: impl Write) -> std::io::Result<()> {
     background::serve_with(server, input, output)
 }
 

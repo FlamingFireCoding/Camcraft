@@ -171,9 +171,19 @@ fn a_cancelled_generate_gets_no_answer_and_lands_nothing() {
     s.send(&json!({ "jsonrpc": "2.0", "method": "notifications/cancelled", "params": { "requestId": 10, "reason": "timeout" } }));
     assert_eq!(status_of_first(&s, 11), "never");
     s.release();
-    // A new generate is free to start once the old one is cancelled.
+    // The cancelled worker keeps its slot until its completion is drained.
     s.release();
-    let again = s.ok(12, "generate", json!({ "name": "First" }));
+    let deadline = std::time::Instant::now() + Duration::from_secs(120);
+    let again = loop {
+        s.call(12, "generate", json!({ "name": "First" }));
+        let reply = s.next();
+        assert_eq!(reply["id"], json!(12), "{reply}");
+        if reply["result"]["isError"] == json!(false) {
+            break reply["result"]["structuredContent"].clone();
+        }
+        assert!(std::time::Instant::now() < deadline, "cancelled worker did not release its slot");
+        std::thread::yield_now();
+    };
     assert_eq!(again["generated"][0]["key"], json!("First"));
     let rest = s.finish();
     assert!(rest.iter().all(|r| r["id"] != json!(10)), "a cancelled request gets no answer: {rest:?}");
@@ -193,5 +203,71 @@ fn a_generate_whose_operation_changed_meanwhile_is_discarded() {
     let text = done["result"]["content"][0]["text"].as_str().expect("text");
     assert!(text.contains("First") && text.contains("changed while it generated"), "{text}");
     assert_eq!(status_of_first(&s, 12), "never", "the discarded path did not land");
+    s.finish();
+}
+
+/// Repeated cancellation cannot detach an unlimited number of held workers.
+#[test]
+fn cancelled_workers_keep_the_worker_budget_until_they_finish() {
+    let s = one_face();
+    s.call(10, "generate", json!({ "name": "First" }));
+    s.send(&json!({ "jsonrpc": "2.0", "method": "notifications/cancelled", "params": { "requestId": 10 } }));
+    for id in 20..28 {
+        s.call(id, "generate", json!({ "name": "First" }));
+        // This read answers even if a mutation incorrectly starts another
+        // held worker, so the test fails immediately instead of hanging.
+        s.call(100 + id, "get_job", json!({}));
+        let busy = s.next();
+        assert_eq!(
+            busy["id"],
+            json!(id),
+            "retry started another held worker: {busy}"
+        );
+        assert_eq!(busy["result"]["isError"], json!(true), "{busy}");
+        assert!(busy["result"]["content"][0]["text"]
+            .as_str()
+            .expect("text")
+            .contains("another generate is running (First)"));
+        assert_eq!(s.next()["id"], json!(100 + id));
+        s.send(&json!({ "jsonrpc": "2.0", "method": "notifications/cancelled", "params": { "requestId": id } }));
+    }
+    assert_eq!(status_of_first(&s, 99), "never");
+    let rest = s.finish();
+    assert!(rest.iter().all(|r| r["id"] != json!(10)), "{rest:?}");
+}
+
+/// A null optional name has the same background and busy rules as no name.
+#[test]
+fn a_null_name_uses_the_background_lane_and_busy_guard() {
+    let s = one_face();
+    s.call(10, "generate", json!({ "name": null }));
+    assert_eq!(
+        status_of_first(&s, 11),
+        "never",
+        "null-name generation must stay held in the background"
+    );
+    s.call(12, "generate", json!({ "name": null }));
+    s.call(13, "get_job", json!({}));
+    let busy = s.next();
+    assert_eq!(busy["id"], json!(12), "{busy}");
+    assert_eq!(busy["result"]["isError"], json!(true), "{busy}");
+    assert_eq!(s.next()["id"], json!(13));
+    // The synchronous handler accepts every non-null id. Each accepted form
+    // must therefore use the background busy guard too.
+    for id in [json!(true), json!({ "key": 1 }), json!([1, 2])] {
+        s.send(&json!({ "jsonrpc": "2.0", "id": id, "method": "tools/call", "params": {
+            "name": "generate", "arguments": { "name": null }
+        } }));
+        s.call(13, "get_job", json!({}));
+        let busy = s.next();
+        assert_eq!(busy["id"], id, "{busy}");
+        assert_eq!(busy["result"]["isError"], json!(true), "accepted id bypassed the busy guard: {busy}");
+        assert_eq!(s.next()["id"], json!(13));
+    }
+    s.release();
+    let done = s.next();
+    assert_eq!(done["id"], json!(10), "{done}");
+    assert_eq!(done["result"]["isError"], json!(false), "{done}");
+    assert_eq!(status_of_first(&s, 14), "ok");
     s.finish();
 }
