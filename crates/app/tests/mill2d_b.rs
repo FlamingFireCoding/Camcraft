@@ -316,6 +316,8 @@ fn taper(diameter: f64, tip_angle: f64, flute_len: f64) -> Tool {
         cutting: Vec::new(),
         outline: Vec::new(),
         turning: None,
+        tip_form: Default::default(),
+        tip_diameter: 0.0,
     }
 }
 

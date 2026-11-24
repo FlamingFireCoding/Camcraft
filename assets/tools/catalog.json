@@ -810,6 +810,77 @@
       }
     },
     {
+      "name": "CM-0600-90-F10",
+      "definition": {
+        "kind": "taper",
+        "diameter": 6.0,
+        "corner_r": 0.0,
+        "tip_angle": 90.0,
+        "tip_form": "flat",
+        "tip_diameter": 1.0,
+        "pitch": 0.0,
+        "nose_radius": 0.0,
+        "width": 0.0,
+        "flute_len": 6.0,
+        "shank_d": 6.0,
+        "shank_len": 40.0,
+        "holder_d": 44.0,
+        "holder_len": 35.0,
+        "material_group": "aluminum",
+        "rpm": 10000.0,
+        "feed": 1500.0,
+        "tool_material": "carbide",
+        "flutes": 2
+      }
+    },
+    {
+      "name": "TE-0250-03-F10",
+      "definition": {
+        "kind": "taper",
+        "diameter": 2.5,
+        "corner_r": 0.0,
+        "tip_angle": 6.0,
+        "tip_form": "flat",
+        "tip_diameter": 1.0,
+        "pitch": 0.0,
+        "nose_radius": 0.0,
+        "width": 0.0,
+        "flute_len": 15.0,
+        "shank_d": 4.0,
+        "shank_len": 35.0,
+        "holder_d": 44.0,
+        "holder_len": 35.0,
+        "material_group": "aluminum",
+        "rpm": 18000.0,
+        "feed": 600.0,
+        "tool_material": "carbide",
+        "flutes": 2
+      }
+    },
+    {
+      "name": "TB-0160-01-R05",
+      "definition": {
+        "kind": "taper",
+        "diameter": 1.6,
+        "corner_r": 0.5,
+        "tip_angle": 2.0,
+        "tip_form": "ball",
+        "pitch": 0.0,
+        "nose_radius": 0.0,
+        "width": 0.0,
+        "flute_len": 20.0,
+        "shank_d": 4.0,
+        "shank_len": 30.0,
+        "holder_d": 44.0,
+        "holder_len": 35.0,
+        "material_group": "aluminum",
+        "rpm": 20000.0,
+        "feed": 500.0,
+        "tool_material": "carbide",
+        "flutes": 2
+      }
+    },
+    {
       "name": "TAP-M4",
       "definition": {
         "kind": "tap",

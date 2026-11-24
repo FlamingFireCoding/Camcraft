@@ -97,7 +97,7 @@ fn a_library_holder_is_the_reference_in_the_document_and_the_file() {
     const { assert!(project::PROJECT_VERSION >= 70, "v69 and earlier readers must refuse the holder reference"); }
     assert_eq!(file["version"], json!(project::PROJECT_VERSION));
     let mut future = file.clone();
-    future["version"] = json!(project::PROJECT_VERSION + 1);
+    future["version"] = json!(project::NEWEST_PROJECT_VERSION + 1);
     assert!(matches!(project::open(&new_world(), &future.to_string()), Err(ProjectError::UnsupportedVersion(_))));
     let tool = file["entities"].as_array().expect("entities").iter().find(|e| e["name"] == TOOL).expect("the tool")["tool"].clone();
     assert_eq!(tool["holder"], json!({ "entry": "BT30 ER20", "gauge_len": 60.0, "projection": 52.0 }));

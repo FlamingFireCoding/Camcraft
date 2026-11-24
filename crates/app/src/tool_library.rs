@@ -48,6 +48,11 @@ pub const CUTTING_STEPS_VERSION: u64 = 3;
 /// #2016: older readers (including v0.22.0 at version 2 and version-3
 /// builds) must refuse libraries whose tools name a library holder (`holder`).
 pub const HOLDER_REF_VERSION: u64 = 4;
+/// #3368: older readers must refuse a library with a flat or ball taper
+/// tip: they would read the tip as sharp, a smaller tool than the real
+/// one. A library without one keeps its older number. Version 5 is kept
+/// for the drawn cutter (`CUTTER_VERSION`, PR #3906).
+pub const TIP_FORM_VERSION: u64 = 6;
 /// The extension the file dialogs offer.
 pub const EXTENSION: &str = "camtools";
 
@@ -104,6 +109,9 @@ pub fn export_tool_library(world: &World) -> Result<String, String> {
         if needs_steps_version(&t) {
             version = version.max(CUTTING_STEPS_VERSION);
         }
+        if !t.tip_form.is_sharp() {
+            version = version.max(TIP_FORM_VERSION);
+        }
         let mut def = project::tool_to_json(&t);
         if let Some(b) = tool_body::body_of(world, &e) {
             // #2016: a library holder is written as its reference.
@@ -145,8 +153,12 @@ pub fn parse_tool_library(text: &str) -> Result<Vec<LibraryTool>, String> {
                 None => return Err(format!("not a tool library: no \"format\": \"{FORMAT}\"")),
             }
             match o.get("version").and_then(Value::as_u64) {
-                Some(VERSION | LEFT_HAND_VERSION | CUTTING_STEPS_VERSION | HOLDER_REF_VERSION) => {}
-                Some(v) => return Err(format!("tool library version {v} is not supported (this build reads {VERSION} to {HOLDER_REF_VERSION})")),
+                Some(VERSION | LEFT_HAND_VERSION | CUTTING_STEPS_VERSION | HOLDER_REF_VERSION | TIP_FORM_VERSION) => {}
+                Some(v) => {
+                    return Err(format!(
+                        "tool library version {v} is not supported (this build reads {VERSION} to {HOLDER_REF_VERSION} and {TIP_FORM_VERSION})"
+                    ));
+                }
                 None => return Err("not a tool library: no \"version\"".into()),
             }
             if let Some(u) = o.get("units").and_then(Value::as_str)
