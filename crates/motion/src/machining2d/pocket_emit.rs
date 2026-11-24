@@ -40,8 +40,6 @@ pub(super) struct PocketWalks<'a> {
     /// #3316: the start-side plan - its keep-down pass links must run
     /// through cut material, and no pre-drilled hole re-seats its order.
     pub(super) cleared_links: bool,
-    /// #3567: the plan's dead-end starts, entered by a ramp along the pass.
-    pub(super) ramp_starts: Vec<Point2>,
     /// #3747: the ring law of an area round a part.
     pub(super) ring_links: Option<super::ring_links::RingLinks>,
     /// #3746: the start side's air round the stock box (the Arc entry's
@@ -66,7 +64,6 @@ pub(super) fn emit_pocket_passes(
         holes,
         corner_reliefs,
         cleared_links,
-        ramp_starts,
         ring_links,
         air,
     } = walks;
@@ -111,7 +108,6 @@ pub(super) fn emit_pocket_passes(
         .with_holes(holes)
         .with_solid_restart()
         .with_cleared_links(cleared_links)
-        .with_ramp_starts(ramp_starts)
         .with_ring_links(ring_links)
         .with_air(air);
     let fitted: Option<Vec<Vec<Seg>>> = fit.map(|tol| passes.iter().map(|p| fit_pass(p, tol)).collect());
@@ -277,7 +273,6 @@ mod tests {
                 holes: &[],
                 corner_reliefs: &[],
                 cleared_links: false,
-                ramp_starts: Vec::new(),
                 ring_links: None,
                 air: None,
             },
