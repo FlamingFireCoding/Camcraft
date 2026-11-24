@@ -1,5 +1,5 @@
-//! Native job export of two captured punches on one plate, from the Agie Processor work format
-//! and CamCraft's offline control checks of #2961.
+//! Native job export of two captured punches or two die openings on one plate, from the Agie
+//! Processor work format and CamCraft's offline control checks of #2961 and #2977.
 
 use std::path::Path;
 
@@ -24,7 +24,8 @@ struct Work {
 }
 
 /// Publish one work as [`export_with_review`] does, or a group of two
-/// independently captured punches on one 20 mm plate.
+/// independently captured punches or two through-openings of one retained
+/// die plate, on one 20 mm plate (#2977).
 ///
 /// A group writes one ISO for each work (`<program>1.ISO`, `<program>2.ISO`),
 /// one SBR with a resource line for each ISO, and one SBL with the works
@@ -51,26 +52,26 @@ pub fn export_group_with_review(
         return Err("The job program name must be a non-reserved 1–8 character DOS name starting with a letter and using uppercase letters or digits".into());
     }
     let height = f64::from(GROUP_HEIGHT_UM) / 1000.0;
+    // Both works cut the same side. A mixed group would need checks of each
+    // punch against the whole retained die plate, which no control run covers.
     if jobs.len() != 2
+        || !matches!(first.side, AgieSide::Punch | AgieSide::Die)
         || jobs.iter().any(|job| {
-            job.side != AgieSide::Punch
+            job.side != first.side
                 || job.stock_min != first.stock_min
                 || job.stock_max != first.stock_max
                 || job.stock_max[2] != 0.0
                 || job.stock_min[2] != -height
         })
     {
-        return Err(
-            "The punch group requires two independent closed punches on the same 20 mm stock"
-                .into(),
-        );
+        return Err("The work group requires two independent closed punches, or two die openings of one plate, on the same 20 mm stock".into());
     }
     if program.len() > 7 {
-        return Err("Choose a punch group name of up to seven characters, so that each work has a distinct geometry file name".into());
+        return Err("Choose a work group name of up to seven characters, so that each work has a distinct geometry file name".into());
     }
     let names: Vec<String> = (1..=jobs.len()).map(|n| format!("{program}{n}")).collect();
     if !names.iter().all(|name| valid_name(name)) {
-        return Err("Choose a punch group name that gives non-reserved geometry file names".into());
+        return Err("Choose a work group name that gives non-reserved geometry file names".into());
     }
     let mut works = Vec::with_capacity(jobs.len());
     let mut stock = None;
@@ -82,9 +83,10 @@ pub fn export_group_with_review(
         let entry = job
             .start
             .ok_or("The closed contour requires a predrilled 2 mm start hole")?;
-        // The box holds the retained punch, its hole and lead, the longest
-        // rough miter (at least the rough offset of this thickness) and the
-        // wire radius. Every pass of the work stays inside it.
+        // The box holds the retained punch or the die opening, its hole and
+        // lead, the longest rough miter (at least the rough offset of this
+        // thickness) and the wire radius. Every pass of the work stays inside
+        // it. A die offsets inward, so the box of its opening is conservative.
         let margin = reach + LEAD_MM + WIRE_RADIUS_MM;
         let min = std::array::from_fn(|axis| {
             points.iter().fold(entry[axis], |v, p| v.min(p[axis])) - margin
@@ -104,7 +106,7 @@ pub fn export_group_with_review(
     for (i, a) in works.iter().enumerate() {
         for b in &works[i + 1..] {
             if !(0..2).any(|axis| a.max[axis] < b.min[axis] || b.max[axis] < a.min[axis]) {
-                return Err("The punch group requires a clear band along X or Y between the complete cutting areas of the punches: each solid, threading hole, lead, rough corner and wire".into());
+                return Err("The work group requires a clear band along X or Y between the complete cutting areas of the works: each punch or opening, threading hole, lead, rough corner and wire".into());
             }
         }
     }
@@ -117,14 +119,17 @@ pub fn export_group_with_review(
             start_hole_um: work.start_um,
         })
         .collect();
-    let setup = PunchGroup20 {
+    let group = PunchGroup20 {
         stem: program,
         stock_min_um,
         stock_max_um,
         height_um,
         punches: &punches,
+    };
+    let setup = match first.side {
+        AgieSide::Die => group.encode_die(),
+        _ => group.encode(),
     }
-    .encode()
     .map_err(|error| error.to_string())?;
     let mut files: Vec<(String, String)> = works
         .iter()

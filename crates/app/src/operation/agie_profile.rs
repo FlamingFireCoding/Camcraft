@@ -3,7 +3,7 @@
 //! Provenance: CAMCraft's Wire Contour geometry and named controller recipe.
 
 use super::{FeatureSel, OpParams, SrcRef, WireSide, job};
-use crate::geo2d::{Loop, Point2, Region};
+use crate::geo2d::{Point2, Region};
 use crate::geometry::Point3;
 use camcraft_geometry::wire_round_profile::RoundProfile;
 use crate::{model, posting::agie, schema::Operation, setup};
@@ -14,11 +14,14 @@ type Checked = (agie::AgieSide, job::GenJob, Point3, Point3, [f64; 3]);
 
 /// The nominal job of `op`, which must cut the modeled workpiece `source`.
 /// The caller chooses the source and checks that no other model is present.
+/// A die plate must have exactly `openings` through-openings: one for a single
+/// die, two for a die group (#2977).
 pub(crate) fn agie_job(
     world: &World,
     op: &Operation,
     name: &str,
     source: &str,
+    openings: usize,
 ) -> Result<agie::AgieJob, String> {
     let (side, job, lo, hi, [ox, oy, oz]) = checked(world, op, name, Some(source))?;
     let OpParams::WireContour(wire) = &op.params else {
@@ -38,7 +41,10 @@ pub(crate) fn agie_job(
             };
             ring.points()
         }
-        agie::AgieSide::Die => die_opening(&region, &job, [lo.x, lo.y], [hi.x, hi.y])?.points(),
+        agie::AgieSide::Die => {
+            super::agie_die::die_opening(&region, &job, [lo.x, lo.y], [hi.x, hi.y], openings)?
+                .points()
+        }
         agie::AgieSide::Left | agie::AgieSide::Right => {
             cutoff_edge(&region, &job, side, [lo.x, lo.y], [hi.x, hi.y])?
         }
@@ -230,53 +236,6 @@ fn checked(world: &World, op: &Operation, name: &str, source: Option<&str>) -> R
         return Err("The wire work extends outside the stated wire guide heights".into());
     }
     Ok((side, job, lo, hi, [ox, oy, oz]))
-}
-
-/// The one through-opening of the retained die plate, matched to the selected
-/// rim. Reading only the picked loop could post a cut through a blind floor or
-/// on an unrelated face, so compare it with the full-height hole of the prism.
-fn die_opening<'r>(
-    region: &'r Region,
-    job: &job::GenJob,
-    lo: [f64; 2],
-    hi: [f64; 2],
-) -> Result<&'r Loop, String> {
-    let loops = region.loops();
-    if loops.len() != 2 || loops.iter().filter(|r| r.area() > 0.0).count() != 1 {
-        return Err("The native wire EDM job requires one retained die plate with exactly one through-opening".into());
-    }
-    if loops
-        .iter()
-        .flat_map(|r| r.points())
-        .any(|p| p.x < lo[0] || p.x > hi[0] || p.y < lo[1] || p.y > hi[1])
-    {
-        return Err("The retained die plate must fit inside the stock".into());
-    }
-    let hole = loops
-        .iter()
-        .find(|r| r.area() < 0.0)
-        .ok_or("The native wire EDM job requires a through-opening in the retained plate")?;
-    let (picked, open, _) = job
-        .contour_sel
-        .as_ref()
-        .ok_or("Select the complete rim of the die opening")?
-        .as_ref()
-        .map_err(ToString::to_string)?;
-    let [picked] = picked.as_slice() else {
-        return Err("Select the edge chains of exactly one closed die opening rim".into());
-    };
-    let footprint = |r: &Loop| Region::new(vec![r.clone()]).map_err(|e| e.to_string());
-    let (a, b) = (footprint(hole)?, footprint(picked)?);
-    if !open.is_empty()
-        || !a.difference(&b).is_ok_and(|r| r.is_empty())
-        || !b.difference(&a).is_ok_and(|r| r.is_empty())
-    {
-        return Err(
-            "The selected chains must match the full through-opening of the retained die plate"
-                .into(),
-        );
-    }
-    Ok(hole)
 }
 
 /// The one selected straight wall of the retained prism for an open cutoff.

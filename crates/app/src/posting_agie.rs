@@ -92,7 +92,7 @@ pub(super) fn post(
         .ok_or("Choose a new native wire EDM job directory named with 1 to 8 uppercase letters or digits, starting with a letter")?;
     let ops = super::program_ops(world)?;
     if !(1..=2).contains(&ops.len()) {
-        return Err("A native wire EDM job requires exactly one active Wire Contour operation, or two for a group of captured punches".into());
+        return Err("A native wire EDM job requires exactly one active Wire Contour operation, or two for a group of captured punches or die openings".into());
     }
     let operations = ops
         .iter()
@@ -110,7 +110,7 @@ pub(super) fn post(
         .iter()
         .any(|(_, other)| other.setup != op.setup || other.tool != op.tool)
     {
-        return Err("The punches of a group must use the same setup and wire tool".into());
+        return Err("The works of a group must use the same setup and wire tool".into());
     }
     if crate::setup_post_options::of(world, setup) != PostOptions::default() {
         return Err("Native wire EDM jobs require default post options and One program output".into());
@@ -143,7 +143,7 @@ pub(super) fn post(
         ));
     }
     // One selected DXF circle or racetrack posts native arcs (#2022). A
-    // group reads modeled punches only.
+    // group reads modeled punches or the openings of one modeled die plate.
     let round = match operations.as_slice() {
         [(op_name, op)] if crate::operation::wire_sketch::selected(&op.src, &op.params) => {
             Some(crate::operation::agie_sketch_job(world, op, op_name)?)
