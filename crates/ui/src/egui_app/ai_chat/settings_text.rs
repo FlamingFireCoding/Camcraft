@@ -25,9 +25,11 @@ fn http_status(error: &str) -> Option<u16> {
 }
 
 /// One cause and one "what to try" hint for a failed cloud Test.
-/// `error` is the transport error; `http.rs` removed the key from it before.
+/// `error` is the transport error; `http.rs` removed the key from it before and
+/// kept the provider's message, type, code and request endpoint in it.
+/// `endpoint` is the provider base URL (scheme, host and path).
 #[must_use]
-pub(crate) fn test_failure(error: &str, model: &str, host: &str) -> String {
+pub(crate) fn test_failure(error: &str, model: &str, endpoint: &str) -> String {
     let lower = error.to_ascii_lowercase();
     let billing = lower.contains("credit") || lower.contains("billing");
     let status = http_status(error);
@@ -79,7 +81,7 @@ pub(crate) fn test_failure(error: &str, model: &str, host: &str) -> String {
     };
     let code = status.map_or_else(String::new, |code| format!(" (HTTP {code})"));
     let text = format!(
-        "Test failed: {cause}{code}.\nModel tried: {model} at {host}.\nTry: {hint}\nDetails: {error}"
+        "Test failed: {cause}{code}.\nModel tried: {model} at {endpoint}.\nTry: {hint}\nDetails: {error}"
     );
     tracing::warn!(target: "camcraft::ai_settings", "{text}");
     text

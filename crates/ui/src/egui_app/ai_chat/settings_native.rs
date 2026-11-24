@@ -66,8 +66,7 @@ impl SettingsBackend for NativeSettings {
                     "Model is empty and this provider has no default. Type a model name.".into(),
                 );
             }
-            test_key(&client, &ep, endpoint.provider, &request.model, &key)
-                .map_err(|error| test_failure(&error, &request.model, &ep.host))?;
+            cloud_test(&client, &ep, endpoint.provider, &request.model, &key)?;
             return Ok(format!(
                 "Ready (key from {source}) - Test passed (model {})",
                 request.model
@@ -75,6 +74,19 @@ impl SettingsBackend for NativeSettings {
         }
         Ok(format!("Ready (key from {source})"))
     }
+}
+
+/// One cloud Test request. A failure gives the panel text: the cause, the model,
+/// the endpoint and the provider details (message, type, code, request path).
+pub(crate) fn cloud_test(
+    client: &Client,
+    ep: &Endpoint,
+    provider: camcraft_app::mcp::provider::Provider,
+    model: &str,
+    key: &ApiKey,
+) -> Result<(), String> {
+    test_key(client, ep, provider, model, key)
+        .map_err(|error| test_failure(&error, model, &ep.url("")))
 }
 
 fn test_key(
