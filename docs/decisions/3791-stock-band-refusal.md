@@ -8,6 +8,15 @@ only to the diagnostic. Name the stock band only when the whole controlled
 region erodes to nothing and the existing `unreached_pieces` band check
 agrees.
 
+Name the band only when the area surrounds kept material (PR #3805
+review). A piece of the stock-minus-part region is a band when its outer
+loop is a loop of the stock outline and material stands inside that loop.
+A closed pocket in a part whose outline equals the stock outline, and a
+pocket around an island, are bounded by part walls. They keep the
+generator's pocket refusal. A strip of stock beside a part that is flush
+with the other stock sides also keeps it: that strip is not around the
+part.
+
 Report the minimum side margin only for a rectangular outer boundary and
 rectangular inner boundary, each checked against its bounding-box area.
 Measure the controlled ring rather than the original stock. Curved or

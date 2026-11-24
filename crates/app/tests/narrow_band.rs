@@ -148,6 +148,45 @@ fn a_part_source_narrow_pocket_keeps_its_own_refusal() {
     assert!(!message.contains("stock band"), "{message}");
 }
 
+/// PR #3805 review: the stock and the part have the same outline, so the
+/// stock-source area is only the closed 2 x 20 mm pocket in the part.
+fn flush_pocket(half_x: f64) -> (World, Operation) {
+    let (_, mut operation) = plate_band();
+    let w = new_world();
+    let mut h = History::default();
+    let ring = rounded_rect(half_x, 10.0, 0.0, 1);
+    h.execute(&w, ImportModel::from_mesh("part", block_with_pocket(12.7, 12.7, &ring, 0.1, 1.27)));
+    h.execute(&w, SetStock::new(&w, StockShape::Box { dx: 25.4, dy: 25.4, dz: 1.27 }, Location::default()).expect("stock"));
+    let tool = catalog().into_iter().find(|(n, _)| *n == operation.tool).map(|(_, t)| t).expect("catalog");
+    h.execute(&w, AddTool::new(&w, &operation.tool, tool).expect("tool"));
+    if let OpParams::Adaptive2D { top_z, bottom_z, .. } = &mut operation.params {
+        *top_z = Height::fixed(1.27);
+        *bottom_z = Height::fixed(0.1);
+    }
+    (w, operation)
+}
+
+#[test]
+fn a_stock_source_closed_pocket_keeps_its_own_refusal() {
+    let (w, operation) = flush_pocket(1.0);
+    assert!(matches!(operation.src, SrcRef::Stock));
+    let message = run(&w, &operation).expect_err("the closed narrow pocket cannot fit the cutter");
+    assert!(message.contains("pocket is narrower than the tool"), "{message}");
+    assert!(!message.contains("stock band") && !message.contains("2D Contour"), "{message}");
+}
+
+/// A boss in the pocket puts kept material inside the area, but part
+/// walls bound the area: it is a pocket around an island, not a stock band.
+#[test]
+fn a_stock_source_pocket_around_an_island_keeps_its_own_refusal() {
+    let (w, operation) = flush_pocket(3.0);
+    let mut h = History::default();
+    h.execute(&w, ImportModel::from_mesh("boss", cube(Point3::new(-1.5, -8.5, 0.0), Point3::new(1.5, 8.5, 1.27))));
+    let message = run(&w, &operation).expect_err("the 1.5 mm ring around the boss cannot fit the cutter");
+    assert!(message.contains("pocket is narrower than the tool"), "{message}");
+    assert!(!message.contains("stock band") && !message.contains("2D Contour"), "{message}");
+}
+
 #[test]
 fn a_stock_band_refusal_uses_document_inches() {
     let (w, operation) = plate_band();

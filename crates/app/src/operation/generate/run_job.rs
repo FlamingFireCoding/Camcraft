@@ -70,6 +70,9 @@ pub fn run_job(mut job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
 struct StockBandRefusal {
     region: Region,
     area: Option<AreaCtx>,
+    /// The stock's facets, in the frame of `region`: its outline tells a
+    /// band around the parts from a closed pocket in a part.
+    stock: Vec<Triangle>,
     diameter: f64,
     leave: f64,
     unit: crate::units::Unit,
@@ -89,6 +92,7 @@ impl StockBandRefusal {
         Some(Self {
             region: job.picked_region.as_ref()?.as_ref().ok()?.clone(),
             area: job.area.as_ref().and_then(|a| a.as_ref().ok()).cloned(),
+            stock: job.frame.as_ref().map_or_else(|| job.material.facets.clone(), |f| f.local_facets(&job.material.facets)),
             diameter: job.tool.diameter,
             leave,
             unit: job.unit,
@@ -98,6 +102,10 @@ impl StockBandRefusal {
     fn name(self, e: GenError) -> GenError {
         e.map_msg(|m| {
             if m != "pocket is narrower than the tool" {
+                return m;
+            }
+            // A closed pocket in a part keeps the generator's own words.
+            if !surrounds_kept_material(&self.region, &self.stock) {
                 return m;
             }
             let Ok(region) = apply_area_controls(self.region, self.area.as_ref()) else {
@@ -124,6 +132,26 @@ impl StockBandRefusal {
             )
         })
     }
+}
+
+/// True when a piece of `region` (the stock outline less the standing
+/// parts, before the area controls) is a band of stock around kept
+/// material: its outer loop is a loop of the stock outline, and material
+/// stands inside that loop. A closed pocket fails the first test, since
+/// part walls bound it. A strip beside a flush part fails the second.
+fn surrounds_kept_material(region: &Region, stock: &[Triangle]) -> bool {
+    /// Below this (mm^2) a difference is tessellation noise (`area.rs`).
+    const NOISE: f64 = 1e-4;
+    let Ok(outline) = slice::project(stock, FOOTPRINT_SAMPLES) else {
+        return false;
+    };
+    let fill = |l: &crate::geo2d::Loop| Region::from_slices(vec![l.clone()]).ok();
+    let outline: Vec<Region> = outline.loops().iter().filter(|l| l.is_ccw()).filter_map(fill).collect();
+    let small = |a: &Region, b: &Region| a.difference(b).is_ok_and(|d| d.area().abs() < NOISE);
+    region.loops().iter().filter(|l| l.is_ccw()).filter_map(fill).any(|outer| {
+        outline.iter().any(|o| small(&outer, o) && small(o, &outer))
+            && outer.difference(region).is_ok_and(|kept| kept.area().abs() >= NOISE)
+    })
 }
 
 /// Only quote a side margin for a rectangular stock/part ring. Bounds
