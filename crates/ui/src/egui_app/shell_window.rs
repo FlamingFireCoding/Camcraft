@@ -83,6 +83,27 @@ pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: O
             }
         }
     }
+    // #3751: the UI link for `camcraft-cli --ui`, on by default. A window
+    // without it still runs; the status line says why.
+    let link_env = std::env::var(camcraft_app::mcp::link::OFF_ENV).ok();
+    if camcraft_app::mcp::link::enabled(link_env.as_deref()) {
+        match camcraft_app::mcp::link::dir() {
+            Some(dir) => {
+                let proxy = event_loop.create_proxy();
+                let wake: camcraft_app::mcp::Wake = Box::new(move || {
+                    let _ = proxy.send_event(());
+                });
+                match camcraft_app::mcp::Inbox::link(&dir, wake) {
+                    Ok(inbox) => shell.state.ui_link = Some(inbox),
+                    Err(err) => {
+                        diag_warn!("ui link: cannot open in {}: {err}", dir.display());
+                        shell.state.status = format!("CLI link not started: {err}");
+                    }
+                }
+            }
+            None => diag_warn!("ui link: no user folder for the link file; camcraft-cli --ui cannot reach this window"),
+        }
+    }
     let code = match event_loop.run_app(&mut shell) {
         Ok(()) => shell.exit_code,
         Err(err) => {
