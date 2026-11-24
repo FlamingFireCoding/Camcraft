@@ -32,6 +32,10 @@
 //! # Ok::<(), camcraft_post::agie_setup::SetupError>(())
 //! ```
 
+mod inspection;
+mod publish;
+pub use inspection::{INSPECTION_RECEIPT, InspectionProfile, InspectionSegment};
+
 /// Wire-centre offsets in µm of the rough pass and the three trims on a
 /// straight outside face, for each measured stock thickness in mm. Offline
 /// Agie Control plots of steel 0001, Berco Cut 0.25 and quality CCB030 (#2954).
@@ -204,9 +208,11 @@ fn mm(value_um: i64) -> String {
 }
 
 fn attribute(lines: &mut Vec<String>, object: &str, context: &str, key: &str, value: &str) {
-    lines.push(format!(
-        "  ok=JE_AttribObject({object},SETATTR,je_piece,{context},{key},{value},je_dim)"
-    ));
+    lines.push(attribute_call(object, context, key, value));
+}
+
+fn attribute_call(object: &str, context: &str, key: &str, value: &str) -> String {
+    format!("  ok=JE_AttribObject({object},SETATTR,je_piece,{context},{key},{value},je_dim)")
 }
 
 fn checked(lines: &mut Vec<String>, command: String) {

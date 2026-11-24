@@ -47,8 +47,9 @@ impl DoNotTouch {
     }
 }
 
-/// Operations that honor "Do not touch" across all generators; 2D Adaptive
-/// with both methods (#3346) and 3D Finish (#3347).
+/// Operations that honor "Do not touch" across generation and
+/// verification; 2D Adaptive with both methods (#3346), 3D Finish (#3347),
+/// and Engrave (#3349).
 #[must_use]
 pub fn do_not_touch_applies(kind: OpType) -> bool {
     matches!(
@@ -59,6 +60,7 @@ pub fn do_not_touch_applies(kind: OpType) -> bool {
             | OpType::Trace
             | OpType::Finish3D
             | OpType::Face
+            | OpType::Engrave
     )
 }
 
@@ -69,7 +71,7 @@ pub fn do_not_touch_unsupported(kind: OpType) -> Option<String> {
         None
     } else {
         Some(format!(
-            "'Do not touch' is supported on Trace, 2D Offset, 2D Adaptive, 3D Pocket, Face and 3D Finish operations - clear it on {kind}"
+            "'Do not touch' is supported on Trace, 2D Offset, 2D Adaptive, 3D Pocket, Face, 3D Finish and Engrave operations - clear it on {kind}"
         ))
     }
 }
