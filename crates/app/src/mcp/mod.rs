@@ -42,10 +42,15 @@ mod holders;
 mod holder_dxf_tools;
 mod job;
 mod listen;
+pub mod link;
+mod link_client;
+mod port_flag;
+mod wire;
 mod live;
 mod model_tools;
 // #1862: DXF profiles placed on a setup's stock.
 mod sketch_tools;
+mod svg_tools;
 // #3072: typed text in an outline font as a profile of closed shapes.
 mod outline_text_tools;
 // #45: an operation's display name and its place in its setup.
@@ -96,7 +101,9 @@ mod recipe_tools;
 // #183: the same tool table served live from inside the GUI, over a
 // loopback socket, against the app's own document and History.
 pub use bridge::bridge;
-pub use listen::{port_from, Inbox, Request, Wake, IDLE_TIMEOUT};
+pub use link_client::{bridge as link_bridge, call as link_call, connect as link_connect, LinkError, Select};
+pub use listen::{Inbox, Request, Wake, IDLE_TIMEOUT};
+pub use port_flag::port_from;
 pub use live::{
     answer_live, answer_live_with, requires_approval, ApprovedCall, GateKind, LiveAnswer,
     LiveGate, LiveOptions,

@@ -110,6 +110,8 @@ impl EditOperationParams {
         }
         // #2599: new angles on a legacy tilt take the current frame basis.
         let params = params.with_stepped_tilt_basis(&prev.params);
+        // #3843: a 2D Offset moved off Auto with the seed Helix takes Arc.
+        let params = params.with_start_side_entry(&prev.params);
         infeed_plan_gate(world, &params, &prev.tool)?;
         if let Some(why) = params.named_refusal() {
             return Err(CommandError::Invalid(why));
