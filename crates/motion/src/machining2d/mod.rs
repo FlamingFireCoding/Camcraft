@@ -118,6 +118,7 @@ mod ring;
 mod tab_bridge;
 mod tab_clear;
 mod tab_kerf;
+mod sketch_trace;
 mod slots;
 mod slot_band;
 mod trace_avoid;
@@ -199,6 +200,7 @@ pub use rest_prior::{
 };
 pub use rest_prior_adaptive::{rest_adaptive_previous, REST_ADAPTIVE_ENTERED, REST_ADAPTIVE_NO_STOCK};
 pub use ring::{on_boundary, ring_is_circular};
+pub use sketch_trace::TraceStrokes;
 pub use slot_band::slot_centre_band;
 pub use slots::{chord_clears, slot, trace, SlotParams, TraceParams};
 pub use trace_avoid::trace_avoid;
