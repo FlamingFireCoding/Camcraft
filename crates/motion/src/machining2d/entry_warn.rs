@@ -11,7 +11,9 @@ use crate::entry::Entry3D;
 use crate::geo2d::Point2;
 use crate::verify::Warning;
 
+use super::GenError;
 use super::levels::Motion;
+use super::pass_start::PassStart;
 
 /// The ladder's marker note: a start-side pass took at least one stand-in
 /// entry. The notes before it name each one ([`is_entry_stand_in`]).
@@ -22,6 +24,23 @@ pub const ENTRY_STAND_IN_NOTE: &str =
 /// pass start that no earlier cut cleared: it plunges into uncut stock.
 pub const PLUNGE_INTO_STOCK_NOTE: &str =
     "entry: Pass starts at - the selected Plunge entry plunges into uncut stock at a pass start that no earlier cut cleared";
+
+/// #3884 (the maintainer's rule on #3741: an Outside pass goes down in air
+/// outside the stock, never by a helix or a ramp): the refusal of a
+/// selected Arc on an Outside ring pass with no air room.
+pub const OUTSIDE_AIR_REFUSAL: &str =
+    "entry refused: no air room for an Outside entry: set a stock, or choose an Inside start or a Helix, Ramp or Plunge entry";
+
+/// Refuse the selected Arc on an Outside ring pass (`rings`: the resolved
+/// strategy walks rings) that has no air room - no stock known, not round
+/// a part, or the fixtures fill it. A selected Helix, Ramp or Plunge runs,
+/// with its one warning.
+pub(super) fn refuse_outside_arc(start: PassStart, entry: Entry3D, rings: bool, air: bool) -> Result<(), GenError> {
+    if start == PassStart::Outside && entry == Entry3D::Arc && rings && !air {
+        return Err(GenError::Invalid(OUTSIDE_AIR_REFUSAL.to_owned()));
+    }
+    Ok(())
+}
 
 /// The tails of the notes that name a stand-in entry: the entry that the
 /// ladder used where the selected one did not fit.

@@ -47,8 +47,9 @@ pub fn strategy_fallback(path: &Toolpath) -> Option<Warning> {
 /// #3748: the start-side pass whose user selected a Helix, Ramp or Plunge
 /// lead-in where the Arc entry from the air applies - one advisory
 /// warning that names the selected type, the recommended Arc and the
-/// reason. The ladder writes the advice note only where that air room
-/// exists (`machining2d::entry_advice`); the entry runs as selected.
+/// reason. The ladder writes the advice note on each Inside or Outside
+/// ring pass (`machining2d::entry_advice`, #3884: not gated on the air
+/// room); the entry runs as selected.
 #[must_use]
 pub fn entry_not_recommended(path: &Toolpath) -> Option<Warning> {
     use crate::machining2d::{PassStart, advised, entry_advice};
