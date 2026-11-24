@@ -1,5 +1,4 @@
 //! Setup-only Classic Cut 2S open cut from CamCraft's offline controller-checked synthetic cutoff (#2962).
-//! Gate map: covers camcraft_post::agie_setup::CutoffSetup20.
 use camcraft_post::agie_setup::{CutoffSetup20, CutoffSide, PunchSetup20, SetupError};
 
 /// The job of `examples/agie/cutoff-lower.camscript`: 80 × 60 × 20 mm stock, line Y−6.
@@ -20,7 +19,7 @@ fn cutoff_setup_matches_the_control_checked_zero_step_open_cut() {
     let files = lower().encode().unwrap();
     assert_eq!(
         files.sbl.as_bytes(),
-        include_bytes!("golden/agie-setup/LOWER20.SBL")
+        include_bytes!("../golden/agie-setup/LOWER20.SBL")
     );
     assert_eq!(files.sbr, "AGIE.USING_LOWER20.ISO IMPORT LOWER20.ISO;\r\n");
     let cuts: Vec<_> = files

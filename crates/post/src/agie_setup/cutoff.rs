@@ -100,7 +100,7 @@ impl CutoffSetup20<'_> {
             &piece,
             &work,
             "geometry, entry point and exit point",
-            offsets,
+            &offsets,
             &side_check,
         ))
     }

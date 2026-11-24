@@ -2,6 +2,11 @@
 //! Gate map: covers camcraft_post::agie_setup.
 use camcraft_post::agie_setup::{PunchSetup20, SetupError};
 
+#[path = "agie_safe_setup/cutoff.rs"]
+mod cutoff;
+#[path = "agie_safe_setup/group.rs"]
+mod group;
+
 fn punch() -> PunchSetup20<'static> {
     PunchSetup20 {
         stem: "CCSEP20",
