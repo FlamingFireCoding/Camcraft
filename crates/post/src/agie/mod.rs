@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 mod contour;
+mod spacing;
 pub use crate::agie_setup::valid_stem as valid_name;
 
 /// Nominal geometry in setup coordinates (millimetres, stock top at zero).
@@ -175,5 +176,7 @@ fn publish(_: &Path, _: &[(String, String)]) -> Result<Vec<PathBuf>, String> {
     Err("Job bundle output requires a local filesystem".into())
 }
 
+#[cfg(test)]
+mod reentrant_tests;
 #[cfg(test)]
 mod tests;
