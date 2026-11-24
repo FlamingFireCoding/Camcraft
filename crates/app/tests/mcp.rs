@@ -10,6 +10,10 @@
 //! app::operation (detect_holes, #312), app::mcp::pockets (detect_pockets, #35).
 
 mod common;
+#[path = "mcp/background_generate.rs"]
+mod background_generate;
+#[path = "mcp/background_streams.rs"]
+mod background_streams;
 #[path = "mcp/approach_distance.rs"]
 mod mcp_approach_distance;
 #[path = "mcp/finish3d_direction.rs"]
@@ -556,7 +560,7 @@ fn a_null_id_is_an_invalid_request() {
 
 fn serve_bytes(input: &[u8]) -> Vec<Value> {
     let mut out = Vec::new();
-    mcp::serve(input, &mut out).expect("serve");
+    mcp::serve(std::io::Cursor::new(input.to_vec()), &mut out).expect("serve");
     let text = String::from_utf8(out).expect("utf8");
     text.lines().map(|l| serde_json::from_str(l).expect("one JSON object per line")).collect()
 }

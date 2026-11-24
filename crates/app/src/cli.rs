@@ -374,8 +374,8 @@ fn lane_mcp(args: &[String]) -> i32 {
             return 2;
         }
     }
-    let stdin = std::io::stdin();
-    match crate::mcp::serve(stdin.lock(), std::io::stdout().lock()) {
+    // #3035: the stdin reader runs on its own thread, so it takes a Send handle.
+    match crate::mcp::serve(std::io::BufReader::new(std::io::stdin()), std::io::stdout().lock()) {
         Ok(()) => 0,
         Err(e) => {
             eprintln!("camcraft-cli: mcp session ended: {e}");
