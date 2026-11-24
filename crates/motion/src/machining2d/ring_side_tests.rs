@@ -152,3 +152,31 @@ fn a_ring_end_off_the_boundary_chord_by_nanometres_is_shared() {
     assert_eq!(ps[0].pts.first(), Some(&Point2::new(0.0, 0.0)), "an open walk's ends never move");
     assert!(ps[1].pts.contains(&e2), "the closing chord of a closed walk takes the end: {:?}", ps[1].pts);
 }
+
+/// The wall pieces that `sides` gives for a 10 x 10 area whose start side
+/// is a box round it with a notch 0.1 mm wide and `depth` deep in its
+/// bottom edge: the notch puts a 0.1 mm stretch of the area's bottom edge
+/// off the start side by `depth`. Returns the lengths of the wall pieces.
+fn notch_walls(depth: f64) -> Vec<f64> {
+    use crate::machining2d::level_rings::{SIDE_EPS, sides};
+    let center = region(vec![rect(0.0, 0.0, 10.0, 10.0)]);
+    let notch = region(vec![rect(4.95, -1.0, 5.05, depth)]);
+    let start = region(vec![rect(-1.0, -1.0, 11.0, 11.0)]).difference(&notch).unwrap_or_else(|e| panic!("start: {e:?}"));
+    let grown = start.offset(SIDE_EPS).unwrap_or_else(|e| panic!("offset: {e:?}"));
+    let mut out = Vec::new();
+    sides(&center, &grown, true, true, &mut out).unwrap_or_else(|e| panic!("sides: {e:?}"));
+    out.iter().filter(|p| p.level == WALL).map(|p| p.pts.windows(2).map(|w| (w[1].x - w[0].x).hypot(w[1].y - w[0].y)).sum()).collect()
+}
+
+/// #3824 pin: the side tolerance (10 um, twice the 5 um arc flats) reads
+/// a stretch that stands 5 um off the start side as the start side (the
+/// fig8 slivers), but a real wall stretch of 0.1 mm that stands 50 um off
+/// it stays a wall piece.
+#[test]
+fn the_side_tolerance_keeps_a_real_short_wall_and_drops_a_flat_sliver() {
+    let real = notch_walls(0.05);
+    assert_eq!(real.len(), 1, "a real 0.1 mm wall stretch is one wall piece: {real:?}");
+    assert!(real[0] > 0.05 && real[0] < 0.1, "the wall piece spans the notch less the tolerance: {real:?}");
+    let flat = notch_walls(0.005);
+    assert!(flat.is_empty(), "a stretch 5 um off the start side reads as the start side: {flat:?}");
+}

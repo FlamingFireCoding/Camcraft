@@ -100,6 +100,8 @@ impl CreateOperation {
             },
             tabs: None,
             capture: false,
+            both_pieces_restrained: false,
+            stock_centered_in_xy_travel: false,
             taper_deg: 0.0,
             burnout: None,
             clearance: crate::operation::DEFAULT_CLEARANCE,

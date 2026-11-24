@@ -231,6 +231,7 @@ fn guide_image_manifest_has_expected_entries() {
 #[test]
 #[ignore = "off-screen WGPU guide screenshot renderer invoked by `cargo xtask docs-images`"]
 fn render_all_guide_images() {
+    let _gpu = crate::headless_gpu::gpu_guard(); // #3605: paint_and_capture makes devices
     let _guard = snapshot_guard();
     let img_dir = out_dir();
     std::fs::create_dir_all(&img_dir).expect("create guide image output dir");

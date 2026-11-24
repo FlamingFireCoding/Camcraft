@@ -101,6 +101,9 @@ fn region_law(t: &Toolpath, region: &Region, tool: &ToolGeom, mode: Mode, top: f
             spindle: None,
             rims: &[],
             corner_reliefs: &[],
+            // #3679: this fixture states no stepdown, so the plunge
+            // law stays silent.
+            plunge_stepdown: None,
         },
     )
 }

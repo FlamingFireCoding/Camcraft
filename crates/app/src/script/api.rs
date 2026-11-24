@@ -30,6 +30,7 @@ pub(crate) fn v_load(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
     env.world = world;
     env.posted = None;
     env.doc_path = Some(path.clone());
+    env.doc_read_only = false;
     env.doc_stamp = stamp;
     let mut out = json!({ "path": path.display().to_string(), "operations": ops_view(env) });
     if !notes.is_empty() {
@@ -40,7 +41,8 @@ pub(crate) fn v_load(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
 
 /// `cam.save(path?, options?)` - write the document. With no path this saves
 /// over the file `cam.load` opened; with neither, it refuses - a
-/// document that silently goes nowhere is the silent-wrong answer.
+/// document that silently goes nowhere is the silent-wrong answer. A
+/// document open read-only is not saved over its own file (#3609).
 /// #3608: a save over the file loaded or saved here is refused when another
 /// program changed it since, unless `options.overwrite` is true.
 pub(crate) fn v_save(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
@@ -51,10 +53,12 @@ pub(crate) fn v_save(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
         Some(p) => PathBuf::from(p),
         None => env.doc_path.clone().ok_or("no document was loaded to save over - pass a path")?,
     };
+    crate::project::refuse_read_only_save(env.doc_path.as_deref(), env.doc_read_only, &path)?;
     super::save_guard::check(env.doc_stamp.as_ref(), &path, args.get(1))?;
     crate::project::save(&env.world, &path).map_err(|e| e.to_string())?;
     env.doc_stamp = crate::project::DiskStamp::of(&path);
     env.doc_path = Some(path.clone());
+    env.doc_read_only = false;
     Ok(json!({ "path": path.display().to_string() }))
 }
 
@@ -239,22 +243,7 @@ pub(crate) fn v_operations(env: &mut Env, _args: Vec<Value>) -> Result<Value, St
 /// and leaves the generations before it real and undoable, exactly as
 /// in the app.
 pub(crate) fn v_generate(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
-    let all = inventory(env);
-    let targets: Vec<(String, Entity)> = if args.is_empty() {
-        all.iter()
-            .map(|(n, e, _)| (n.clone(), *e))
-            .collect()
-    } else {
-        let mut out = Vec::with_capacity(args.len());
-        for i in 0..args.len() {
-            let name = arg_str(&args, i, "an operation name")?;
-            match all.iter().find(|(n, e, _)| *n == name || model::operation_label(&env.world, n, e) == name) {
-                Some((key, e, _)) => out.push((key.clone(), *e)),
-                None => return Err(format!("no operation named '{name}'")),
-            }
-        }
-        out
-    };
+    let targets = generate_targets(env, &args)?;
     let mut done = Vec::with_capacity(targets.len());
     for (name, entity) in targets {
         if args.is_empty() && crate::operation::status_of(&env.world, &entity) == OpStatus::Ok {
@@ -265,6 +254,29 @@ pub(crate) fn v_generate(env: &mut Env, args: Vec<Value>) -> Result<Value, Strin
         done.push(op_view(env, &name, &entity, false));
     }
     Ok(Value::Array(done))
+}
+
+/// The operations a `generate` call runs, in program order: every one
+/// for no names (the caller skips the Ok ones as it reaches them), or
+/// each named one. #3035: the MCP server's background generate reads
+/// the same list, so the two paths cannot disagree on what runs.
+pub(crate) fn generate_targets(env: &Env, args: &[Value]) -> Result<Vec<(String, Entity)>, String> {
+    let all = inventory(env);
+    Ok(if args.is_empty() {
+        all.iter()
+            .map(|(n, e, _)| (n.clone(), *e))
+            .collect()
+    } else {
+        let mut out = Vec::with_capacity(args.len());
+        for i in 0..args.len() {
+            let name = arg_str(args, i, "an operation name")?;
+            match all.iter().find(|(n, e, _)| *n == name || model::operation_label(&env.world, n, e) == name) {
+                Some((key, e, _)) => out.push((key.clone(), *e)),
+                None => return Err(format!("no operation named '{name}'")),
+            }
+        }
+        out
+    })
 }
 
 /// A refused generation as the script's (and MCP's) error: the refusal,
@@ -506,7 +518,7 @@ pub(crate) fn ops_view(env: &Env) -> Value {
 
 /// One operation as the script sees it: the tree row, plus the cached
 /// path's warnings when the caller is asking for a verdict.
-fn op_view(env: &Env, name: &str, entity: &Entity, warnings: bool) -> Value {
+pub(crate) fn op_view(env: &Env, name: &str, entity: &Entity, warnings: bool) -> Value {
     let op = model::operation_of(&env.world, entity);
     let status = crate::operation::status_of(&env.world, entity);
     let mut row = json!({

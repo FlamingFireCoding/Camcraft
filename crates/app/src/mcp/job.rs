@@ -245,6 +245,8 @@ pub(super) fn list_operation_types(_env: &mut Env, a: &Map<String, Value>) -> Re
                         ("picks", "object", json!({})),
                         ("tabs", "object", Value::Null),
                         ("capture", "boolean", json!(false)),
+                        ("both_pieces_restrained", "boolean", json!(false)),
+                        ("stock_centered_in_xy_travel", "boolean", json!(false)),
                         ("taper_deg", "number", json!(0.0)),
                         ("burnout_clearance", "number", Value::Null),
                         ("clearance", "number", json!(crate::operation::DEFAULT_CLEARANCE)),
@@ -326,6 +328,8 @@ pub(super) fn finding(op: &str, w: &Warning) -> Value {
         Warning::UndercutLift { at } => ("undercut_lift", *at),
         Warning::StrategyFallback { at, .. } => ("strategy_fallback", *at),
         Warning::FluteShort { at, .. } => ("flute_short", *at),
+        Warning::PlungeTooDeep { at, .. } => ("plunge_too_deep", *at),
+        Warning::EntryNotRecommended { at, .. } => ("entry_not_recommended", *at),
     };
     json!({
         "op": op,
