@@ -45,18 +45,20 @@ pub(super) struct Ask<'a> {
     pub air: bool,
 }
 
-/// The plane a descent starts from (M11.3): on the first level the top
+/// The plane a descent starts from (M11.3, #3671): on the first level the top
 /// of the cut plus the plunge height (air above by the generator's
-/// contract), on later levels the plane above - or, for a plain-ladder
-/// ramp to depth, the top of the cut again.
+/// contract), on later levels the plane above plus the plunge height,
+/// capped under the traverse plane - or, for a plain-ladder ramp to depth,
+/// the top of the cut again plus the plunge height.
 pub(super) fn from(lvl: &LevelCtx, a: &Ask, ramp: bool) -> f64 {
     let p = lvl.p;
     let ap = &p.links.approach;
-    if a.prev_cut.is_none() || (ramp && ap.ramp_to_depth && lvl.field.is_none()) {
-        (p.top_z + ap.plunge_height).min(a.prev_z)
+    let top = if ramp && ap.ramp_to_depth && lvl.field.is_none() {
+        p.top_z
     } else {
-        a.prev_z
-    }
+        mat_top(lvl, a)
+    };
+    (top + ap.plunge_height).min(lvl.tz)
 }
 
 /// The material's top under a plunge at this level: the plane above on
