@@ -162,6 +162,74 @@ Agents scale well across machines if each one runs its own small job pool:
 - Keep subagent briefs specific: the issue or PR number, what to check, and
   what not to touch.
 
+## Not a coder? Ways to help without an agent
+
+### The issues are the backlog
+
+Every piece of work on CamCraft is an open
+[GitHub issue](https://github.com/NeoTech/Camcraft/issues): bugs, features,
+research, docs. There is no separate roadmap. That means the issue list is
+where help lands, even without writing code:
+
+- **Read and comment.** "I see this too, on <machine>, in version X" or a
+  model that shows the problem makes an issue easier to fix and moves it up.
+- **File good issues.** Use the templates (bug, toolpath, UI/UX, feature).
+  A good bug report has: what you did, what happened, what you expected,
+  the CamCraft version, your machine and controller, and the project file
+  (`.camproj`) or the model if you can share it. One problem per issue.
+- **Check fixes.** When an issue says "fixed in PR #N", trying it on your
+  machine and commenting the result is real help.
+
+### Contribute with designs
+
+Test parts are valuable: real shapes find real bugs. If you design parts
+(in SolidCraft or any CAD):
+
+- Share **your own** models, or ones whose license allows it, with the issue
+  they show a problem in (attach a STEP, or the `.camproj` with it).
+- A part that "should be easy but CamCraft refuses or cuts it wrongly" is the
+  best kind. Say what you expected to happen.
+- Do not upload vendor CAD or downloaded models whose license forbids
+  sharing; describe the shape instead.
+
+## I have machine X - how do I get it working?
+
+1. **Check what exists.** CamCraft ships machine files in
+   [`assets/machines/`](https://github.com/NeoTech/Camcraft/tree/main/assets/machines)
+   and posts (G-code dialects) in
+   [`assets/posts/`](https://github.com/NeoTech/Camcraft/tree/main/assets/posts):
+   Mach3, Mach4, LinuxCNC, grbl/grblHAL, Tormach PathPilot, Fanuc, Haas,
+   Heidenhain, Sinumerik, Mazak and more. If your controller's dialect is
+   there, pick a similar machine and set your travel - you can start today.
+2. **If it is missing**, open an issue (or ask on Discord) titled
+   `Machine: <make model>` with:
+   - the controller and its version (for example "Mach3", "LinuxCNC 2.9",
+     "Fanuc 0i-MF");
+   - travel in X, Y and Z, and inch or mm;
+   - spindle speed range, tool changer or manual changes, coolant, probe;
+   - which work offsets you use (G54...);
+   - a short program the controller is known to accept that you wrote by
+     hand or took from the controller's manual.
+3. **First cut is an air cut.** Run every new program above the part (or in
+   the controller's simulator) before you cut metal or wood, and report what
+   the controller did - alarms, the line it stopped on, anything unexpected.
+
+## Clean room: what we can and cannot use
+
+CamCraft is a clean-room project: it is built only from public standards,
+controller and machine manuals, general machining knowledge and our own
+tests - never from another CAM product's code or output. That keeps the
+project free to use and share. In practice:
+
+- **Welcome:** your own models and project files; programs you wrote by
+  hand; controller and machine manuals; public G-code references
+  (RS-274, ISO 6983); measurements and photos from your own machine.
+- **Please do not send:** G-code or post processors produced by another CAM
+  program (for example Fusion 360 or HSMWorks), their tool libraries,
+  screenshots of their dialogs or text copied from their help. Even as a
+  "this is how it should look" example, we cannot read it. Describe the
+  behaviour you want in your own words instead.
+
 ## FAQ
 
 **I don't know Rust. Can I still help?**
@@ -198,8 +266,8 @@ as code.
 
 **I have a CNC machine but no development setup.**
 Machine owners are some of the most useful helpers: real controllers catch
-what tests cannot. Say what you have on Discord; we send small programs to
-check (always air-cut or dry-run first).
+what tests cannot. See "I have machine X" above, and say what you have on
+Discord; we send small programs to check (always air-cut or dry-run first).
 
 **I'm overwhelmed. Where do I even start?**
 Say hello on Discord and tell us what you have and what you enjoy. Someone
