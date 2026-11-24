@@ -196,6 +196,7 @@ fn boundary_chain_error(error: boundary_chains::BoundaryError) -> GenError {
 }
 mod contour_open;
 mod contour_sketch_pick;
+mod sketch_mark;
 mod sketch_memo;
 pub use contour_sketch_pick::{SketchChainInfo, sketch_chain_infos_fresh, sketch_z_range_fresh};
 pub use sketch_memo::{
