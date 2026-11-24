@@ -123,12 +123,23 @@ fn open(entry: &Entry) -> std::io::Result<Stream> {
     stream.set_read_timeout(Some(HELLO_TIMEOUT))?;
     stream.set_write_timeout(Some(HELLO_TIMEOUT))?;
     let mut writer = stream.try_clone()?;
-    writeln!(writer, "{}", link::hello_line(&entry.token))?;
+    let nonce = link::new_nonce();
+    writeln!(writer, "{}", link::hello_line(&entry.token, &nonce))?;
     writer.flush()?;
     let mut answer = String::new();
     BufReader::new(stream.try_clone()?).take(4096).read_line(&mut answer)?;
-    if answer.trim() != link::HELLO_OK {
+    let Ok(resp) = serde_json::from_str::<Value>(answer.trim()) else {
+        return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "unreadable hello answer"));
+    };
+    if resp.get("ok") != Some(&json!(true)) {
         return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "the window refused the link token"));
+    }
+    let expected_proof = link::token_proof(&entry.token, &nonce, "server");
+    let Some(proof) = resp.get("proof").and_then(Value::as_str) else {
+        return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "the window did not prove the link token"));
+    };
+    if !link::constant_time_eq(proof.as_bytes(), expected_proof.as_bytes()) {
+        return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "the window failed to prove the link token"));
     }
     // A tool may run for minutes (generate): no read deadline from here.
     stream.set_read_timeout(None)?;
@@ -207,7 +218,8 @@ pub fn call(dir: &Path, select: &Select, tool: &str, args: &Value) -> Result<Val
     let mut reader = BufReader::new(stream);
     loop {
         let mut text = String::new();
-        if reader.read_line(&mut text).map_err(lost)? == 0 {
+        // Limit each answer line to 16 MiB (#3874).
+        if reader.by_ref().take(16 * 1024 * 1024).read_line(&mut text).map_err(lost)? == 0 {
             return Err(LinkError::Failed(format!(
                 "the window {} closed the link before it answered",
                 describe(&entry)
