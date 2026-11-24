@@ -165,6 +165,43 @@ fn the_adaptive_twin_offers_pass_start_and_says_the_trochoidal_refusal() {
     assert_eq!(harness.query_all_by_label(TROCH_PASS_START_REFUSED).count(), 1, "Trochoidal says the refusal");
 }
 
+/// #3745: the Lead in / Lead out tab of each 2D kind with a pass order
+/// shows the "Approach distance" row, with its hover text, only when Pass
+/// starts at is Inside or Outside; Auto hides it.
+#[test]
+fn the_leads_tab_shows_the_approach_distance_only_for_inside_and_outside() {
+    use super::super::approach_page::{APPROACH_DISTANCE_HINT, APPROACH_DISTANCE_LABEL};
+    let leads = super::super::op_tabs::SECTIONS.iter().position(|s| s.starts_with("Lead"));
+    assert!(leads.is_some(), "the op page has a Lead in / Lead out tab");
+    for ty in [OpType::Pocket, OpType::Offset2D, OpType::Adaptive2D] {
+        let mut harness = shell_harness();
+        let cur = harness.state().state.op_ui.params.clone();
+        harness.state_mut().state.op_ui.params = crate::operations::retype(&cur, kind(ty));
+        harness.state_mut().state.op_tab = leads.unwrap_or(0);
+        harness.run();
+        let rows = |h: &Harness<'static, ShellUi>| h.query_all_by_label(APPROACH_DISTANCE_LABEL).count();
+        assert_eq!(rows(&harness), 0, "{ty:?}: Auto shows no approach distance");
+        for start in [PassStart::Inside, PassStart::Outside, PassStart::Auto] {
+            match &mut harness.state_mut().state.op_ui.params {
+                OpParams::Pocket { pass_start, .. }
+                | OpParams::Offset2D { pass_start, .. }
+                | OpParams::Adaptive2D { pass_start, .. } => *pass_start = start,
+                _ => panic!("{ty:?}: the draft has no pass order"),
+            }
+            harness.run();
+            let want = usize::from(start != PassStart::Auto);
+            assert_eq!(rows(&harness), want, "{ty:?} {start:?}: the Approach distance row");
+            // The hover text rides the row's label (`prop_row_hint`), so
+            // it is not a visible node: no dimmed line stands in for it.
+            assert_eq!(
+                harness.query_all_by(|n| n.label().is_some_and(|l| l.contains(APPROACH_DISTANCE_HINT))).count(),
+                0,
+                "{ty:?} {start:?}: the help is a tooltip, not a line"
+            );
+        }
+    }
+}
+
 /// #3316: a pass-start warning on the toolpath is a warning line of the
 /// op page's status, word for word.
 #[test]
