@@ -49,10 +49,10 @@ const MILLTURN: &str = "Mill-turn";
 const MERIDIAN: [(f64, f64); 7] = [(0.0, -16.0), (6.0, -16.0), (6.0, -8.0), (6.0, 2.0), (5.0, 8.0), (5.0, 16.0), (0.0, 16.0)];
 
 /// The bar revolved about `axis` (0 = world X, laid; 2 = world Z,
-/// standing), 16 facets around, centred on the origin.
+/// standing), 72 facets around, centred on the origin.
 fn bar(axis: usize) -> Vec<Triangle> {
     let pt = |rho: f64, s: f64, j: usize| {
-        let th = TAU * j as f64 / 16.0;
+        let th = TAU * j as f64 / 72.0;
         match axis {
             0 => Point3::new(s, rho * th.cos(), rho * th.sin()),
             _ => Point3::new(rho * th.cos(), rho * th.sin(), s),
@@ -61,8 +61,8 @@ fn bar(axis: usize) -> Vec<Triangle> {
     let mut f = Vec::new();
     for w in MERIDIAN.windows(2) {
         let ((ra, za), (rb, zb)) = (w[0], w[1]);
-        for j in 0..16 {
-            let k = (j + 1) % 16;
+        for j in 0..72 {
+            let k = (j + 1) % 72;
             let (a1, a2, b1, b2) = (pt(ra, za, j), pt(ra, za, k), pt(rb, zb, j), pt(rb, zb, k));
             if ra <= 1e-12 {
                 f.push(Triangle::new(a1, b2, b1));
