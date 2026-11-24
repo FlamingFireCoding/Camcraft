@@ -14,7 +14,7 @@ use crate::model;
 #[path = "posting_agie_group.rs"]
 mod group;
 
-pub(crate) use camcraft_post::agie::{AgieJob, AgieSide, Quality};
+pub(crate) use camcraft_post::agie::{AgieJob, AgieSide, MAX_PUNCH_WORKS, Quality};
 pub use camcraft_post::agie::valid_name;
 
 /// The registry name of the native wire EDM post, the one place it is spelled (#3537).
@@ -91,8 +91,8 @@ pub(super) fn post(
     let name = dest.file_name().and_then(|x| x.to_str()).filter(|s| valid_name(s))
         .ok_or("Choose a new native wire EDM job directory named with 1 to 8 uppercase letters or digits, starting with a letter")?;
     let ops = super::program_ops(world)?;
-    if !(1..=2).contains(&ops.len()) {
-        return Err("A native wire EDM job requires exactly one active Wire Contour operation, or two for a group of captured punches or die openings".into());
+    if !(1..=MAX_PUNCH_WORKS).contains(&ops.len()) {
+        return Err(format!("A native wire EDM job requires one active Wire Contour operation, 2 to {MAX_PUNCH_WORKS} for a group of captured punches, or two for the openings of one die plate"));
     }
     let operations = ops
         .iter()
