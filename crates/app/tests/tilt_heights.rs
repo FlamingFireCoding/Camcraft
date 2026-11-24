@@ -146,6 +146,7 @@ fn contour(tilt: Tilt) -> OpParams {
         helix_radius: 1.0,
         blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 
@@ -252,7 +253,7 @@ fn tilted_reference_pocket_preserves_part(src: SrcRef) {
         &world,
         camcraft_app::commands::ImportModel::from_mesh("part", part),
     );
-    let params = OpParams::Pocket {
+    let params = OpParams::Pocket { pass_start: Default::default(),
         rest: None,
         blend_radius: None,
         stepover: 4.0,

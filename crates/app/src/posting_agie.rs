@@ -9,17 +9,60 @@ use flecs_ecs::prelude::World;
 use super::{Posted, mounts};
 use crate::post::{cnc, options::OptionValue};
 use crate::schema::{PostOptions, PostRef};
-use crate::{model, operation};
+use crate::model;
 
+#[path = "posting_agie_group.rs"]
+mod group;
+
+pub(crate) use camcraft_post::agie::{AgieJob, AgieSide, Quality};
 pub use camcraft_post::agie::valid_name;
-pub(crate) use camcraft_post::agie::{AgieJob, AgieQuality, AgieSide};
 
-pub const POST: &str = "Agie native wire EDM";
+/// The registry name of the native wire EDM post, the one place it is spelled (#3537).
+pub const POST: &str = "Native wire EDM job files";
+/// #3537: the name this post had before; a hidden alias that no list shows.
+/// A saved project, an option key `builtin:<name>`, a script or an MCP call
+/// that still says it selects [`POST`].
+pub const LEGACY_POST: &str = "Agie native wire EDM";
 const MODEL: &str = "AGIECUT CLASSIC 2S";
 pub(crate) const PREVIEW_GAP: f64 = 0.005;
 
+/// The work quality that a Wire Contour machine condition requests (#2966).
+/// `AGIE_QN2` requests CCB030 (Ra 0.30 µm) for every qualified job.
+/// `AGIE_BERCO_RA035` requests CCB035 (Ra 0.35 µm) for one 20 mm polygon punch.
+pub(crate) fn quality_of(condition: &str) -> Option<Quality> {
+    match condition {
+        "AGIE_QN2" => Some(Quality::Ccb030),
+        "AGIE_BERCO_RA035" => Some(Quality::Ccb035),
+        _ => None,
+    }
+}
+
+/// The registry name that `name` selects: [`POST`] for its hidden alias, else `name`.
+#[must_use]
+pub fn current_name(name: &str) -> &str {
+    if name == LEGACY_POST { POST } else { name }
+}
+
+/// `post` with a hidden alias name replaced by the registry name it selects.
+#[must_use]
+pub fn current_ref(post: PostRef) -> PostRef {
+    match post {
+        PostRef::Named(name) if name == LEGACY_POST => PostRef::Named(POST.to_owned()),
+        other => other,
+    }
+}
+
+/// An option key `builtin:<alias>` rewritten to the key of the registry name.
+#[must_use]
+pub fn current_key(key: &str) -> String {
+    match key.strip_prefix("builtin:") {
+        Some(name) if name == LEGACY_POST => format!("builtin:{POST}"),
+        _ => key.to_owned(),
+    }
+}
+
 pub fn is_native(post: &PostRef) -> bool {
-    matches!(post, PostRef::Named(name) if name == POST)
+    matches!(post, PostRef::Named(name) if current_name(name) == POST)
 }
 
 pub(super) fn post(
@@ -29,58 +72,56 @@ pub(super) fn post(
 ) -> Result<Posted, String> {
     let mount = mounts::single(world, false)?;
     let Some(machine) = mount.machine.1.as_ref() else {
-        return Err(format!("The Agie job requires the {MODEL} machine profile"));
+        return Err(format!("The native wire EDM job requires the {MODEL} machine profile"));
     };
     if machine.model != MODEL
         || crate::machine::kind(Some(machine)) != crate::machine::Kind::WireEdm
     {
-        return Err(format!("The Agie job requires the {MODEL} machine profile"));
+        return Err(format!("The native wire EDM job requires the {MODEL} machine profile"));
     }
     if let Some(axis) = machine.axes.iter().find(|axis| {
         axis.travel.is_some()
             && (axis.name.eq_ignore_ascii_case("X") || axis.name.eq_ignore_ascii_case("Y"))
     }) {
         return Err(format!(
-            "Agie cannot verify the declared {} travel against the control's resident rough and trim offsets at the installed work datum",
+            "The native wire EDM post cannot verify the declared {} travel against the control's resident rough and trim offsets at the installed work datum",
             axis.name
         ));
     }
     let name = dest.file_name().and_then(|x| x.to_str()).filter(|s| valid_name(s))
-        .ok_or("Choose a new Agie job directory named with 1 to 8 uppercase letters or digits, starting with a letter")?;
+        .ok_or("Choose a new native wire EDM job directory named with 1 to 8 uppercase letters or digits, starting with a letter")?;
     let ops = super::program_ops(world)?;
     if !(1..=2).contains(&ops.len()) {
-        return Err(
-            "An Agie job requires one active wire contour or two independent closed works".into(),
-        );
+        return Err("A native wire EDM job requires exactly one active Wire Contour operation, or two for a group of captured punches".into());
     }
     let operations = ops
         .iter()
         .map(|(name, entity)| {
             model::operation_of(world, entity)
-                .map(|op| (name, op))
-                .ok_or("Agie operation is unavailable")
+                .map(|op| (name.as_str(), op))
+                .ok_or("The Wire Contour operation is unavailable")
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let (_, first) = operations
+    let (_, op) = operations
         .first()
-        .ok_or("Agie requires an active Wire Contour")?;
-    let setup = first.setup.as_deref();
+        .ok_or("A native wire EDM job requires an active Wire Contour operation")?;
+    let setup = op.setup.as_deref();
     if operations
         .iter()
-        .any(|(_, op)| op.setup != first.setup || op.tool != first.tool)
+        .any(|(_, other)| other.setup != op.setup || other.tool != op.tool)
     {
-        return Err("Agie grouped works must use the same setup and wire tool".into());
+        return Err("The punches of a group must use the same setup and wire tool".into());
     }
     if crate::setup_post_options::of(world, setup) != PostOptions::default() {
-        return Err("Agie jobs require default post options and One program output".into());
+        return Err("Native wire EDM jobs require default post options and One program output".into());
     }
     if crate::units::of(world) != crate::units::Unit::Millimeters {
-        return Err("Agie jobs require a millimetre document".into());
+        return Err("Native wire EDM jobs require a millimetre document".into());
     }
     let info = super::program_info(world);
     if info.number.is_some() || info.comment.is_some() {
         return Err(
-            "Agie uses the job directory name; clear the NC program number and comment".into(),
+            "The native wire EDM job uses the job directory name; clear the NC program number and comment".into(),
         );
     }
 
@@ -90,73 +131,37 @@ pub(super) fn post(
     for (op_name, records) in super::op_streams_by(world, false)? {
         for record in records {
             if let cnc::Record::Warn { text } = record {
-                return Err(format!("Agie post blocked - {op_name}: {text}"));
+                return Err(format!("Native wire EDM post blocked - {op_name}: {text}"));
             }
         }
     }
     let report = super::verification_report(world);
     if !report.problems.is_empty() {
         return Err(format!(
-            "Agie post blocked - {}",
+            "Native wire EDM post blocked - {}",
             report.problems.join("; ")
         ));
     }
-    let models = model::model_entities(world);
-    let jobs = match operations.as_slice() {
-        [(name, op)] => {
-            let sketches = crate::sketch::placed_in(world, setup);
-            if let ([], [profile]) = (models.as_slice(), sketches.as_slice()) {
-                vec![operation::agie_job(world, op, name, profile, 1)?]
-            } else {
-                if !sketches.is_empty() {
-                    return Err(
-                        "Agie requires a single sketch or a single modeled workpiece".into(),
-                    );
-                }
-                let [(source, _)] = models.as_slice() else {
-                    return Err("Agie requires exactly one modeled workpiece for one active contour; additional models can intersect the controller path".into());
-                };
-                vec![operation::agie_job(world, op, name, source, 1)?]
-            }
+    // One selected DXF circle or racetrack posts native arcs (#2022). A
+    // group reads modeled punches only.
+    let round = match operations.as_slice() {
+        [(op_name, op)] if crate::operation::wire_sketch::selected(&op.src, &op.params) => {
+            Some(crate::operation::agie_sketch_job(world, op, op_name)?)
         }
-        [(_, left), (_, right)]
-            if [&left.params, &right.params].iter().all(|params| {
-                matches!(params, operation::OpParams::WireContour(wire) if wire.side == operation::WireSide::Die)
-            }) =>
-        {
-            let [(plate, _)] = models.as_slice() else {
-                return Err("Both Agie die operations must select through-openings on the same retained plate, with no other model".into());
-            };
-            if !crate::sketch::placed_in(world, setup).is_empty() {
-                return Err("The grouped Agie die plate must be the only workpiece".into());
-            }
-            // Each selection must match one of the two physical openings.
-            // The group preflight requires disjoint cut and threading envelopes,
-            // so selecting the same opening twice cannot leave an uncut rim.
-            operations
-                .iter()
-                .map(|(name, op)| operation::agie_job(world, op, name, plate, 2))
-                .collect::<Result<Vec<_>, _>>()?
+        _ => None,
+    };
+    let jobs = if round.is_some() { Vec::new() } else { group::jobs(world, &operations)? };
+    // The control checked CCB035 on one 20 mm polygon punch only (#2966).
+    let qualities = operations
+        .iter()
+        .map(|(_, op)| crate::operation::agie_quality(world, op))
+        .collect::<Result<Vec<_>, _>>()?;
+    let quality = match qualities.as_slice() {
+        [quality] if round.is_none() => *quality,
+        _ if qualities.iter().all(|q| *q == Quality::Ccb030) => Quality::Ccb030,
+        _ => {
+            return Err("AGIE_BERCO_RA035 is qualified for one closed polygon punch on a 20 mm plate only. Select AGIE_QN2 for a punch group or a DXF arc punch".into());
         }
-        [(_, left), (_, right)] => {
-            let sources = [&left.src, &right.src].map(|src| match src {
-                operation::SrcRef::Entity(owner) => Some(owner),
-                _ => None,
-            });
-            let [Some(a), Some(b)] = sources else {
-                return Err("Select two complete punch models or two through-openings on the same die plate".into());
-            };
-            if a == b || models.len() != 2 || models.iter().any(|(name, _)| name != a && name != b)
-            {
-                return Err("The two Agie works must cover two distinct modeled punches, with no additional workpiece".into());
-            }
-            operations
-                .iter()
-                .zip([a, b])
-                .map(|((name, op), owner)| operation::agie_job(world, op, name, owner, 1))
-                .collect::<Result<Vec<_>, _>>()?
-        }
-        _ => return Err("Agie supports up to two works".into()),
     };
     let options = super::program_options_for_script(
         world,
@@ -168,11 +173,28 @@ pub(super) fn post(
     let separation = options
         .get("separationLengthMm")
         .and_then(|v| v.as_f64())
-        .ok_or("The Agie post must declare its separation cut length in millimetres")?;
-    let bundle_files = camcraft_post::agie::export_works(&jobs, dest, name, separation)?;
+        .ok_or("The native wire EDM post must declare its separation cut length in millimetres")?;
+    let (bundle, works) = match &round {
+        Some((job, shape)) => {
+            (camcraft_post::agie::export_round_with_review(job, shape, dest, name, separation)?, 1)
+        }
+        None => match (quality, jobs.as_slice()) {
+            (Quality::Ccb035, [job]) => (
+                camcraft_post::agie::export_punch_with_review(
+                    job, quality, dest, name, separation,
+                )?,
+                1,
+            ),
+            _ => (
+                camcraft_post::agie::export_group_with_review(&jobs, dest, name, separation)?,
+                jobs.len(),
+            ),
+        },
+    };
     Ok(Posted {
-        bundle_files,
-        ops: jobs.len(),
+        bundle_files: bundle.files,
+        controller_review: Some(bundle.controller_review),
+        ops: works,
         lines: 0,
         program: String::new(),
         line_pos: Vec::new(),

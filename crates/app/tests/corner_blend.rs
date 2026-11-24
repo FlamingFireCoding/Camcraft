@@ -144,7 +144,7 @@ fn blended_pockets_verify_silent() {
 }
 
 fn pocket_op(blend: bool) -> OpParams {
-    OpParams::Pocket { rest: None,
+    OpParams::Pocket { pass_start: Default::default(), rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         stepover: 3.0,
@@ -189,6 +189,7 @@ fn contour_op(blend: bool) -> OpParams {
         blend_turns: blend,
         tilt: None,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 
