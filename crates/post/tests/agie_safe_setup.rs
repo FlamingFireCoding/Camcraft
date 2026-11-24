@@ -219,3 +219,59 @@ fn stock_and_full_start_hole_must_fit_the_setup_span() {
         assert_eq!(bad.encode().unwrap_err(), error);
     }
 }
+
+/// The die job of `examples/agie/die-plate.camscript` (#2957).
+fn die() -> PunchSetup20<'static> {
+    PunchSetup20 {
+        stem: "DIE20",
+        stock_min_um: [-35_000, -35_000],
+        stock_max_um: [35_000, 35_000],
+        start_hole_um: [-5_500, 0],
+        height_um: 20_000,
+    }
+}
+
+#[test]
+fn die_setup_is_the_zero_step_punch_setup_with_the_die_side() {
+    let files = die().encode_die().unwrap();
+    assert_eq!(
+        files.sbl.as_bytes(),
+        include_bytes!("golden/agie-setup/DIE20.SBL")
+    );
+    assert_eq!(files.sbr, "AGIE.USING_DIE20.ISO IMPORT DIE20.ISO;\r\n");
+    // Only the work side differs from the zero-step punch of the same setup.
+    let punch = die().encode().unwrap();
+    assert_eq!(
+        files.sbl.replace("ID_PUNCH,c_die", "ID_PUNCH,c_punch"),
+        punch.sbl
+    );
+    assert!(
+        files
+            .controller_review
+            .starts_with(punch.controller_review.as_str())
+    );
+    assert!(files.controller_review.ends_with(
+        " Confirm the c_die side and that each offset is inside the opening. \
+         Support the slug before the control releases the separation section."
+    ));
+}
+
+#[test]
+fn die_setup_is_refused_on_every_thickness_but_20_mm() {
+    for mm in [15, 40, 80, 25] {
+        let setup = PunchSetup20 {
+            height_um: mm * 1000,
+            ..die()
+        };
+        assert_eq!(
+            setup.encode_die().unwrap_err(),
+            SetupError::UnqualifiedDieHeight,
+            "{mm} mm"
+        );
+    }
+    let bad_stem = PunchSetup20 {
+        stem: "die20",
+        ..die()
+    };
+    assert_eq!(bad_stem.encode_die().unwrap_err(), SetupError::InvalidStem);
+}
