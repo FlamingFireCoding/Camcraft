@@ -1,4 +1,4 @@
-//! #3822: a 2D Pocket with Outside containment is an area round a part
+//! #3820, #3822: a 2D Pocket with Outside containment is an area round a part
 //! (`around_part`), so its rings link by the ring law of #3747 too. The
 //! pins: on both ring strategies of the pocket, no overcut, no crossing
 //! feeds, each lift named, and no lift round a part that splits no ring.
@@ -6,7 +6,7 @@
 
 use super::ring_links::{assert_no_crossing, band, disc_part, dog_bone, lifts, named_lifts, side};
 use super::{box_facets, mask, params, Z};
-use camcraft_motion::cl::Toolpath;
+use camcraft_motion::cl::{MoveKind, Toolpath};
 use camcraft_motion::geo2d::Region;
 use camcraft_motion::links::Link;
 use camcraft_motion::machining2d::{
@@ -29,9 +29,10 @@ fn plan(part: &Region, p: &PocketParams, start: PassStart) -> Toolpath {
     pocket_started_on(&band(part), p, &[], &CornerRelief::default(), &side(start)).expect("plan")
 }
 
-/// #3822 pin: round a disc (the part splits no ring) the Outside-contained
+/// #3820 / #3822 pin: round a disc (the part splits no ring) the Outside-contained
 /// pocket keeps each level on the floor on Inside and Outside, on both
 /// ring strategies: no lift, no re-entry, no overcut, no crossing feed.
+/// Links between pass rings stay in the cut plane as feed moves.
 #[test]
 fn outside_pocket_rings_round_a_disc_do_not_lift() {
     for strategy in STRATEGIES {
@@ -42,6 +43,16 @@ fn outside_pocket_rings_round_a_disc_do_not_lift() {
             eprintln!("{name}: {up} lift(s), {back} re-entry(ies), notes {:?}", path.notes);
             assert_eq!(named_lifts(&path), up, "{name}: a lift with no named reason: {:?}", path.notes);
             assert_eq!((up, back), (0, 0), "{name}: the rings lift: {:?}", path.notes);
+            let floor_feeds = path
+                .moves
+                .iter()
+                .filter(|m| {
+                    m.kind == MoveKind::Feed
+                        && (m.from.z - Z).abs() < 1e-9
+                        && (m.to.z - Z).abs() < 1e-9
+                })
+                .count();
+            assert!(floor_feeds > 0, "{name}: expected planar feed moves on the floor");
             mask("pocket_outside_disc", &band(&disc_part()), &path).assert_no_overcut();
             assert_no_crossing(&name, &path);
         }

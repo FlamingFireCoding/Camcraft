@@ -44,6 +44,9 @@ stock edge cut began a new pass, and `Retract` lifted there.
 **Scope kept small.**
 - A pocket (`around_part: false`) keeps its join law and pass link byte
   for byte; #3752 moves 2D Pocket Inside and Outside to the shared law.
+  A 2D Pocket with Outside containment (`around_part: true`) takes the
+  ring-link law (#3820, #3822): every in-plane link stays in the certified
+  cutter-centre area or lifts with a named reason.
 - The level link, the entry and the re-entry after a named lift (the
   dead-end ramp, the solid restart) do not change; #3746 owns the entry.
 - No new `Links::RINGS` seed. The ring law lives in the motion layer for
