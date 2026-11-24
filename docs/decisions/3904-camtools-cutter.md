@@ -4,7 +4,7 @@
 (`ToolCutter`) as `cutter`, the `[z, r, arc]` points that a `.camproj`
 tool stores. A file with one or more cutters says version 5
 (`CUTTER_VERSION`). A file without a cutter keeps version 4 or lower.
-The reader judges a cutter with `project::cutter_from_dto`, the same check
+The reader judges a cutter with `cutter_profile::check`, the same check
 as the project loader. A cutter that disagrees with its tool refuses the
 whole file by tool name. `ImportTools` sets the cutter on Add, Update and
 Replace, and undo restores the previous cutter in the same step. A library

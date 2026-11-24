@@ -31,7 +31,7 @@
 //! the file then says version 5 (`CUTTER_VERSION`): the stack laws read
 //! its neck (#852), so a reader that predates the key would drop it and
 //! judge a different tool; it must refuse the file. A cutter is judged as
-//! the project loader judges one (`project::cutter_from_dto`); one that
+//! the project loader judges one (`cutter_profile::check`); one that
 //! disagrees with its tool's numbers refuses the whole file by name.
 
 use flecs_ecs::prelude::World;
@@ -40,7 +40,7 @@ use serde_json::{Value, json};
 use crate::model;
 use crate::project::{self, HolderRefDto, ToolBodyDto};
 use crate::schema::ToolBody;
-use crate::spun::SpunProfile;
+use crate::spun::{SpunPoint, SpunProfile};
 use crate::tool_body;
 use crate::tool_cutter;
 use crate::tools::Tool;
@@ -139,7 +139,8 @@ pub fn export_tool_library(world: &World) -> Result<String, String> {
         if let Some(c) = tool_cutter::cutter_of(world, &e) {
             version = version.max(CUTTER_VERSION);
             if let Value::Object(o) = &mut def {
-                o.insert("cutter".into(), json!(project::spun_to_dto(&c)));
+                let pts: Vec<[f64; 3]> = c.points().iter().map(|p| [p.z, p.r, p.arc]).collect();
+                o.insert("cutter".into(), json!(pts));
             }
         }
         tools.push(json!({ "name": n, "definition": def }));
@@ -247,14 +248,18 @@ fn read_body(def: &Value, tool: &Tool, name: &str) -> Result<Option<ToolBody>, S
 }
 
 /// #3904: a definition's `cutter`, judged as the project loader judges
-/// it (`project::cutter_from_dto`), or the file refuses naming the tool.
+/// it (`cutter_profile::check`, the judge of `cutter_from_dto`), or the
+/// file refuses naming the tool.
 fn read_cutter(def: &Value, tool: &Tool, name: &str) -> Result<Option<SpunProfile>, String> {
     let Some(raw) = def.get("cutter").filter(|v| !v.is_null()) else {
         return Ok(None);
     };
     let pts: Vec<[f64; 3]> =
         serde_json::from_value(raw.clone()).map_err(|e| format!("tool '{name}': cutter is malformed: {e}"))?;
-    project::cutter_from_dto(tool, &pts, name).map(Some)
+    let points = pts.iter().map(|p| SpunPoint { z: p[0], r: p[1], arc: p[2] }).collect();
+    camcraft_tools::cutter_profile::check(tool, points)
+        .map(Some)
+        .map_err(|e| format!("tool '{name}': cutter profile: {e}"))
 }
 
 /// How many of a library's tools carry a body (#889) - what the import
