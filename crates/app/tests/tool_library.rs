@@ -283,3 +283,33 @@ fn a_body_electrodes_outline_roundtrips_through_the_library() {
     let why = parse_tool_library(&v.to_string()).expect_err("sizes off the outline");
     assert!(why.contains("tool 'E-L' is refused") && why.contains("the outline's X and Y extents"), "{why}");
 }
+
+/// #3368: a flat or ball taper tip rides the library file, and such a file
+/// says `TIP_FORM_VERSION`, so an older build refuses it instead of reading
+/// the tip as sharp. A library of sharp tools keeps its older number.
+#[test]
+fn a_tip_form_round_trips_and_steps_the_version() {
+    use camcraft_app::tool_library::{HOLDER_REF_VERSION, TIP_FORM_VERSION};
+    use camcraft_app::tools::TaperTip;
+    let sharp = cat("CM-0600-90");
+    let (w, _h) = world_with(&[("CM", sharp.clone())]);
+    let text = export_tool_library(&w).expect("export");
+    let doc: Value = serde_json::from_str(&text).expect("json");
+    assert!(doc["version"].as_u64().is_some_and(|v| v < TIP_FORM_VERSION), "no tip form, no step: {doc}");
+    assert!(!text.contains("tip_form"), "{text}");
+    let flat = Tool { tip_form: TaperTip::Flat, tip_diameter: 1.0, ..sharp.clone() };
+    let ball = Tool { tip_form: TaperTip::Ball, corner_r: 0.5, ..sharp };
+    let (w, _h) = world_with(&[("FLAT", flat.clone()), ("BALL", ball.clone())]);
+    let text = export_tool_library(&w).expect("export");
+    let doc: Value = serde_json::from_str(&text).expect("json");
+    assert_eq!(doc["version"], json!(TIP_FORM_VERSION), "a tip form steps the version");
+    let back = parse_tool_library(&text).expect("this build reads its own file");
+    let got = |n: &str| back.iter().find(|t| t.name == n).map(|t| (t.tool.tip_form, t.tool.tip_diameter, t.tool.corner_r));
+    assert_eq!(got("FLAT"), Some((TaperTip::Flat, 1.0, flat.corner_r)));
+    assert_eq!(got("BALL"), Some((TaperTip::Ball, 0.0, 0.5)));
+    // The step is no number an older reader knows: one past holder refs
+    // (version 5 waits for the drawn cutter of PR #3906).
+    assert!(TIP_FORM_VERSION > HOLDER_REF_VERSION);
+    let newer = text.replacen(&format!("\"version\": {TIP_FORM_VERSION}"), &format!("\"version\": {}", TIP_FORM_VERSION + 1), 1);
+    assert!(parse_tool_library(&newer).is_err_and(|e| e.contains("not supported")), "a newer number is refused");
+}

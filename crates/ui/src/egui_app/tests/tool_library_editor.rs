@@ -154,3 +154,44 @@ fn details_tab_shows_the_catalog_facts() {
     }
     assert!(win.query_all_by_label("Diameter").next().is_none(), "the geometry stays on the Tool tab");
 }
+
+/// #3368: a chamfer mill's Tool tab shows the Tip form row (enabled, Sharp
+/// for a catalog V-bit) and, for a flat tip, the Tip diameter row; another
+/// kind shows neither. A form edit lands as one `ChangeTool` on Apply.
+#[test]
+fn the_tip_form_row_shows_for_a_taper() {
+    let mut h = shell_harness();
+    h.run_steps(2);
+    let (end_mill, _) = two_tools(&mut h);
+    let name = "CM-0600-90";
+    let Some((_, cone)) = camcraft_app::tools::catalog().into_iter().find(|(n, _)| *n == name) else {
+        panic!("the catalog has {name}");
+    };
+    h.state_mut().state.pending.push_back(crate::state::CommandKind::AddTool { name: name.into(), tool: cone });
+    h.run_steps(2);
+    open_in_window(&mut h, name);
+    {
+        let win = library_window(&h);
+        let combo = win.get_by_role_and_label(Role::ComboBox, "Tip form");
+        assert_eq!(combo.value().as_deref(), Some("Sharp"), "a catalog chamfer mill is sharp");
+        assert!(!combo.accesskit_node().is_disabled(), "the tip form can be chosen");
+        assert!(win.query_all_by_label("Tip diameter").next().is_none(), "a sharp tip states no diameter");
+    }
+    let before = tool(&h, name);
+    let done = h.state().state.history.done_len();
+    draft(&mut h).tip_form = camcraft_app::tools::TaperTip::Flat;
+    draft(&mut h).tip_diameter = 1.0;
+    h.run_steps(2);
+    assert!(library_window(&h).query_all_by_label("Tip diameter").next().is_some(), "a flat tip shows its diameter");
+    click_window_button(&mut h, "Apply");
+    let after = tool(&h, name);
+    assert_eq!((after.tip_form, after.tip_diameter), (camcraft_app::tools::TaperTip::Flat, 1.0), "{}", h.state().state.status);
+    assert_eq!(h.state().state.history.done_len(), done + 1, "one Apply is one undo step");
+    crate::actions::undo(&mut h.state_mut().state);
+    h.run_steps(2);
+    assert_eq!(tool(&h, name), before, "one undo gives the sharp tip back");
+    h.state_mut().state.open_tool_in_library(&end_mill);
+    h.run_steps(3);
+    assert_eq!(draft(&mut h).name, end_mill);
+    assert!(library_window(&h).query_all_by_label("Tip form").next().is_none(), "only a chamfer mill has a tip form");
+}
