@@ -4,6 +4,16 @@
 
 use super::*;
 
+/// Pass starts at (#3316, #3354, #3355): written only off Auto, so every
+/// earlier operation keeps the digest it had. One byte pair for every kind.
+pub(super) fn write_pass_start(s: crate::machining2d::PassStart, h: &mut std::hash::DefaultHasher) {
+    match s {
+        crate::machining2d::PassStart::Auto => {}
+        crate::machining2d::PassStart::Inside => h.write_u8(0xC1),
+        crate::machining2d::PassStart::Outside => h.write_u8(0xC2),
+    }
+}
+
 /// Corner relief (#2400): written only when non-default, so every
 /// operation without relief keeps its digest.
 pub(super) fn write_corner_relief(
@@ -37,6 +47,50 @@ pub(super) fn write_corner_relief(
             crate::machining2d::CornerReliefChoice::TBoneX => 4,
             crate::machining2d::CornerReliefChoice::TBoneY => 5,
         });
+    }
+}
+
+/// The arc-turn radius (#1759), after the blend tag: written only when
+/// set, so every earlier blended operation keeps its digest.
+pub(super) fn write_blend_radius(h: &mut std::hash::DefaultHasher, r: Option<f64>) {
+    if let Some(r) = r {
+        h.write_u8(0xB4);
+        w(h, r);
+    }
+}
+
+/// The blend tag and its radius, written only for arc turns: a legacy
+/// (sharp) operation keeps the digest it was cached under.
+pub(super) fn write_blend(h: &mut std::hash::DefaultHasher, on: bool, r: Option<f64>) {
+    if on {
+        h.write_u8(0xB1);
+        write_blend_radius(h, r);
+    }
+}
+
+/// Rest machining (#1489, #2033, #1446): written only when ON, so
+/// operations without rest machining keep their digest. `entered` is
+/// `true` on 2D Pocket (`0xD7` + previous tool fields) and `false` on
+/// 2D Adaptive (`0xD9` + allowance).
+pub(super) fn write_rest(
+    rest: &Option<crate::machining2d::RestParams>,
+    h: &mut std::hash::DefaultHasher,
+    entered: bool,
+) {
+    let Some(r) = rest else {
+        return;
+    };
+    if entered {
+        h.write_u8(0xD7);
+        for v in [r.previous_tool_diameter, r.previous_corner_radius, r.previous_stock_to_leave, r.allowance] {
+            w(h, v);
+        }
+    } else {
+        h.write_u8(0xD9);
+        w(h, r.allowance);
+    }
+    if r.source == crate::machining2d::RestSource::PreviousOperations {
+        h.write_u8(0xD8);
     }
 }
 
@@ -187,6 +241,13 @@ impl OpParams {
                 // #1449: pre-drilled entry - a byte only when on.
                 if a.predrilled {
                     h.write_u8(0xC7);
+                }
+                // #3745: the approach distance outside the stock - bytes
+                // only when it differs from the default, so every earlier
+                // approach keeps its digest.
+                if a.approach_distance.to_bits() != crate::links::Approach::DEFAULT.approach_distance.to_bits() {
+                    h.write_u8(0xCA);
+                    w(h, a.approach_distance);
                 }
                 // M13.11: control compensation moves what the post
                 // writes - a byte only when on, so every earlier

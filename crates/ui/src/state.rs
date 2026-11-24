@@ -130,9 +130,12 @@ mod prefs_ui;
 mod setups_ui;
 #[path = "state_step_budget.rs"]
 mod step_budget_ui;
+#[path = "state_step_units.rs"]
+mod step_units_ui;
 #[path = "state_vouch.rs"]
 mod vouch_ui;
 pub use step_budget_ui::StepBudgetUi;
+pub use step_units_ui::StepUnitsAsk;
 pub use tool_profile_ui::{ToolColumn, ToolProfileUi, is_spun_kind, parametric_points};
 use flecs_ecs::prelude::World;
 
@@ -160,6 +163,12 @@ pub enum CommandKind {
     /// Post NC through the save-dialog law (M1.7b): path via rfd, gate
     /// via `posting::post_setup`.
     PostProgramDialog,
+    ExportAgieInspection(String),
+    ImportAgieDrawing,
+    CreateAgieInspection {
+        name: String, tool: String, drawing: String,
+        chain: camcraft_app::geometry::sketch_chains::ChainId, start: [f64; 2], setup: Option<String>,
+    },
     /// The same post at a known path - what the headless tests run.
     PostProgramFile(PathBuf),
     /// One file per operation into a known folder (#111) - the
@@ -175,6 +184,10 @@ pub enum CommandKind {
     /// The answer to the unsaved-changes prompt (#107): New, Open or Quit
     /// over a dirty document is held in `unsaved_prompt` until this lands.
     ResolveUnsaved(crate::unsaved::UnsavedChoice),
+    /// The answer to the length-unit question of a STEP file that states
+    /// none (#1874): import it again in the unit, or (`None`) import
+    /// nothing.
+    ResolveStepUnits(Option<camcraft_app::units::Unit>),
     /// The Setup pane's shape+placement draft; the command itself is built
     /// here, so validation and status reporting live in one place.
     SetStock {
@@ -240,6 +253,9 @@ pub enum CommandKind {
     SelectPostBuiltin,
     SelectPostDialog,
     SelectPostFile(PathBuf),
+    /// #2950: the browser's folder picker - every `.mch` and `.cps` of
+    /// one folder joins the session's machine and post lists (read-only).
+    LoadSetupFolderDialog,
     /// Pick a built-in from the shipped registry by NAME (M3.3 B) -
     /// the combo's index is screen furniture; what the document stores
     /// is the name, so a registry re-growth never re-points a saved
@@ -1028,7 +1044,7 @@ impl Default for OpUi {
                 plunge_feed: 300.0,
                 climb: true,
                 // Opt-in, like `seed_face` (M11.1 A).
-                blend_turns: false,
+                blend_turns: false, blend_radius: None,
             },
         }
     }
@@ -1741,6 +1757,11 @@ pub struct State {
     /// The Browser's "Show work envelope" box (#1567): view state, never
     /// saved, never a command; display only.
     pub show_work_envelope: bool,
+    /// The "Show operator side" box (#2632): the arrow and the text at the
+    /// work envelope. View state like the envelope box; on by default.
+    pub show_operator_side: bool,
+    /// The kept operator-side arrow, built when its input changes (#2632).
+    pub operator_side_cache: std::sync::Mutex<crate::operator_side::Cache>,
     pub operation_clipboard: Option<OperationClipboard>,
     /// Expanded state of Setup, Models, Tools, and Operations in the browser.
     pub browser_expanded: [bool; 3],
@@ -1861,6 +1882,9 @@ pub struct State {
     /// The transport's timeline, built once per `doc_version` (never
     /// per frame: it walks every op's path) - see `shell::cached_script`.
     pub sim_script_cache: Option<(u64, std::sync::Arc<camcraft_app::sim::Script>)>,
+    /// #2608: the operation starts of that timeline, with a `Weak` of the
+    /// script they belong to - see `sim_steps::cached_op_starts`.
+    pub sim_op_starts: Option<(std::sync::Weak<camcraft_app::sim::Script>, std::sync::Arc<camcraft_app::sim::OpStarts>)>,
     /// #743: the revolved mesh of the tool at the playhead, as the
     /// collision laws read it - rebuilt only when its judged outline
     /// changes, emptied when the tool, its operation or the transport
@@ -1916,6 +1940,16 @@ pub struct State {
     /// preference (kept beside the theme), the `holders` parameter of
     /// the `ImportTools` command an import runs. On by default.
     pub import_tool_holders: bool,
+    /// #2428: check GitHub for a newer release once per day on startup.
+    pub check_for_updates: bool,
+    /// #2428: UTC Unix timestamp (seconds) of the last update check.
+    pub last_update_check_utc: Option<u64>,
+    /// #2428: strictly newer release discovered by the startup check (or test injection).
+    pub update_available: Option<camcraft_app::update_check::ReleaseInfo>,
+    /// #2428: top-band Settings dropdown open flag.
+    pub ribbon_settings_open: bool,
+    /// #2428: non-blocking watcher for the one-shot startup update check.
+    pub(crate) update_watcher: crate::update_check::UpdateWatcher,
     /// The dock's closable panels as of this frame (see [`PanelsOpen`]).
     pub panels_open: PanelsOpen,
     /// The View door's pending dock ask (see [`LayoutRequest`]).
@@ -1966,6 +2000,10 @@ pub struct State {
     /// Set only while a held action runs after the user chose to discard
     /// (or saved first), so the guard lets it through once.
     pub(crate) discard_confirmed: bool,
+    /// #3608: the disk stamp of the project file, and a Save held because
+    /// that file on disk changed after the open or the last save (the
+    /// Overwrite prompt).
+    pub save_guard: crate::save_guard::SaveGuard,
     /// Receiver for the in-flight import worker (None when idle). The worker
     /// runs `ImportModel::new` off-thread and sends the finished command back.
     import_rx: Option<mpsc::Receiver<Result<ImportModel, CommandError>>>,
@@ -2001,6 +2039,11 @@ pub struct State {
     /// implicit first setup. Public so tests run the dialog hand-off
     /// without a modal file picker.
     pub import_as_fixture: Option<Option<String>>,
+    /// #1874: a STEP import that waits for its length unit (the prompt
+    /// shows while it is set). View state, never on the history.
+    pub step_units_ask: Option<StepUnitsAsk>,
+    /// #1874: the unit chosen for the next import of that file.
+    pub(crate) step_units_next: Option<(PathBuf, camcraft_app::units::Unit)>,
     /// #1054: the STEP facet budget the next import runs under (an import
     /// setting, not on the history; the import that uses it is).
     pub step_budget: StepBudgetUi,
@@ -2343,6 +2386,8 @@ impl State {
             hidden_paths: Vec::new(),
             shown_setups: Vec::new(),
             show_work_envelope: false,
+            show_operator_side: true,
+            operator_side_cache: std::sync::Mutex::default(),
             operation_clipboard: None,
             browser_expanded: [true; 3],
             cam: Camera::default(),
@@ -2372,6 +2417,7 @@ impl State {
             field_view: None,
             field_play: None,
             sim_script_cache: None,
+            sim_op_starts: None,
             sim_tool_cache: std::sync::Mutex::default(),
             move_center: std::sync::Mutex::default(),
             field_mode: None,
@@ -2380,6 +2426,7 @@ impl State {
             ribbon_mode_open: false,
             ribbon_view_open: false,
             ribbon_theme_open: false,
+            ribbon_settings_open: false,
             home_page: None,
             ribbon_recent_open: None,
             recent: camcraft_app::recent::RecentFiles::default(),
@@ -2387,6 +2434,10 @@ impl State {
             view_store: None,
             prefs_store: None,
             import_tool_holders: true,
+            check_for_updates: true,
+            last_update_check_utc: None,
+            update_available: None,
+            update_watcher: crate::update_check::UpdateWatcher::default(),
             panels_open: PanelsOpen { browser: true, properties: true, machines: false, ai_chat: false },
             layout_request: None,
             panel_setups: camcraft_app::prefs::PanelSetups::default(),
@@ -2407,6 +2458,7 @@ impl State {
             request_quit: false,
             unsaved_prompt: None,
             discard_confirmed: false,
+            save_guard: crate::save_guard::SaveGuard::default(),
             import_rx: None,
             import_file: None,
             import_started: None,
@@ -2426,6 +2478,8 @@ impl State {
             repair_ui: RepairUi::default(),
             pocket_scan: PocketScan::default(),
             import_as_fixture: None,
+            step_units_ask: None,
+            step_units_next: None,
             step_budget: StepBudgetUi::default(),
             vouch_by: String::new(),
             accessory_sizes: HashMap::new(),
@@ -3307,6 +3361,8 @@ impl State {
         self.poll_generation();
         // #31: a file the browser's picker has read since the last frame.
         self.take_picked_files();
+        // #2428: non-blocking check for the one-shot startup update result.
+        self.poll_update_check();
         drop(s);
         // A refusal that no longer describes the page retires, with its
         // status-strip mirror (crate::feedback).
@@ -3407,6 +3463,8 @@ impl State {
                 self.post_last_name = None;
                 self.rename_draft = None;
                 self.dragging_op = None;
+                // #3608: a new document has no file; a held Save is dropped.
+                self.save_guard = crate::save_guard::SaveGuard::default();
                 self.doc_version += 1;
                 self.status = String::from("new document");
             }
@@ -3432,6 +3490,11 @@ impl State {
             CommandKind::SaveProjectFile(path) => self.save_project_path(path),
             CommandKind::OpenRecent(kind, path) => self.open_recent(kind, path),
             CommandKind::ClearRecent(kind) => self.clear_recent(kind),
+            CommandKind::ImportAgieDrawing => self.import_agie_drawing(),
+            CommandKind::CreateAgieInspection { name, tool, drawing, chain, start, setup } => {
+                self.create_agie_inspection(name, tool, drawing, chain, start, setup);
+            }
+            CommandKind::ExportAgieInspection(name) => self.export_agie_inspection(&name),
             CommandKind::PostProgramDialog => self.post_program_dialog(),
             CommandKind::PostProgramFile(path) => self.post_program_path(path),
             CommandKind::PostProgramFolder(dir) => self.post_program_folder(dir),
@@ -3478,6 +3541,7 @@ impl State {
             CommandKind::FrameAll => self.frame_all(),
             CommandKind::Quit => self.request_quit = true,
             CommandKind::ResolveUnsaved(choice) => self.resolve_unsaved(choice),
+            CommandKind::ResolveStepUnits(unit) => self.resolve_step_units(unit),
             CommandKind::DeleteByName(name) => match DeleteEntity::new(&self.world, &name) {
                 Ok(command) => {
                     self.history.execute(&self.world, command);
@@ -3529,12 +3593,7 @@ impl State {
                 }
                 Err(err) => self.refuse(ErrorScope::Setup, format!("units not set: {err}")),
             },
-            CommandKind::LoadMachineDialog => {
-                let dir = crate::egui_app::machines_pane::user_dir(self);
-                if let Some(path) = pick_machine_file(dir.as_deref()) {
-                    self.load_machine_path(path);
-                }
-            }
+            CommandKind::LoadMachineDialog => self.load_machine_dialog(),
             CommandKind::LoadMachineFile(path) => self.load_machine_path(path),
             // #343: the machine verbs land on the active setup's own
             // machine when it has one (`setup_mount`).
@@ -3567,11 +3626,8 @@ impl State {
             // like every machine verb (`setup_mount`).
             CommandKind::UseCatalogueMachine(source) => self.mount_catalogue(&source),
             CommandKind::SelectPostBuiltin => self.select_post(PostRef::Builtin),
-            CommandKind::SelectPostDialog => {
-                if let Some(path) = pick_post_file() {
-                    self.select_post(PostRef::File(path.display().to_string()));
-                }
-            }
+            CommandKind::SelectPostDialog => self.select_post_dialog(),
+            CommandKind::LoadSetupFolderDialog => self.load_setup_folder_dialog(),
             CommandKind::SelectPostFile(path) => {
                 self.select_post(PostRef::File(path.display().to_string()));
             }
@@ -4378,6 +4434,8 @@ impl State {
         let (tx, rx) = mpsc::channel();
         let worker_path = path.clone();
         let budget = self.step_budget_for(&path);
+        // #1874: the unit chosen for a STEP file that states none.
+        let units = self.take_step_units(&path);
         if let (Some(b), false) = (budget, self.step_budget.explicit) {
             self.status = format!("importing {} under its recorded STEP facet budget of {b}…", file_label(&path));
         }
@@ -4385,7 +4443,7 @@ impl State {
             .name("camcraft-import".to_string())
             .spawn(move || {
                 // No World here: pure file + geometry work, Send across.
-                let result = ImportModel::within(&worker_path, budget);
+                let result = ImportModel::within_in(&worker_path, budget, units);
                 // A dropped rx means the document changed or we are closing;
                 // the command is simply never applied.
                 if tx.send(result).is_err() {
@@ -4397,7 +4455,7 @@ impl State {
             Err(err) => {
                 // Thread exhaustion must not lose the import: run inline.
                 diag_warn!("import: worker spawn failed ({err}); running inline");
-                let result = ImportModel::within(&path, budget);
+                let result = ImportModel::within_in(&path, budget, units);
                 self.finish_import(result);
             }
         }
@@ -4415,10 +4473,20 @@ impl State {
         match result {
             Ok(command) => {
                 // #2463: a file a model is linked to lands on that model,
-                // whatever the file is called.
-                let command = match file.as_deref().and_then(|f| crate::model_link_watch::linked_name(&self.world, f)) {
-                    Some(linked) if linked != command.name => command.renamed(&linked),
-                    _ => command,
+                // whatever the file is called. #3686: the link keeps its
+                // text (a relative link stays relative to the project).
+                let linked = file
+                    .as_deref()
+                    .and_then(|f| crate::model_link_watch::linked_to(&self.world, f, self.project_path.as_deref()));
+                let command = match linked {
+                    Some((linked, link)) => {
+                        let mut command = if linked == command.name { command } else { command.renamed(&linked) };
+                        if let Some(source) = command.source.as_mut() {
+                            source.path = link;
+                        }
+                        command
+                    }
+                    None => command,
                 };
                 let name = command.name.clone();
                 // #1573 review: what the importer changed (a STEP face
@@ -4485,6 +4553,14 @@ impl State {
                 {
                     let said = camcraft_app::mesh_open::summary(&self.world, &e, chord);
                     self.status = format!("{} - {said}", self.status);
+                }
+            }
+            // #1874: a STEP file that states no length unit is never read
+            // in a guessed one: ask for the unit, then import it again.
+            Err(CommandError::Import(camcraft_app::geometry::ImportError::StepUnitsMissing)) if file.is_some() => {
+                let as_fixture = self.import_as_fixture.take();
+                if let Some(path) = file {
+                    self.ask_step_units(path, as_fixture);
                 }
             }
             Err(err) => {
@@ -4560,6 +4636,8 @@ impl State {
         self.import_file = None;
         self.import_started = None;
         self.import_as_fixture = None;
+        self.step_units_ask = None;
+        self.step_units_next = None;
     }
 
     /// Mount a `.mch` machine definition on the document (M2.3 C). The
@@ -4662,10 +4740,13 @@ impl State {
 
     fn open_project_path(&mut self, path: PathBuf) {
         let loaded = new_world();
+        // #3608: stamped before the read, so a write during the load asks at the next Save.
+        let stamp = camcraft_app::project::DiskStamp::of(&path);
         match project::load_noted(&loaded, &path) {
             Ok(notes) => {
                 self.reset_for_open(loaded);
                 self.project_path = Some(path.clone());
+                self.save_guard.stamp = stamp;
                 self.note_recent(camcraft_app::recent::RecentKind::Project, &path);
                 // The loaded document is the new clean point (#107).
                 self.history.mark_clean();
@@ -4707,6 +4788,9 @@ impl State {
         self.post_last_name = None;
         self.rename_draft = None;
         self.dragging_op = None;
+        // #3608: the old document's stamp and a held Save are dropped; a
+        // desktop open stamps its own file after this.
+        self.save_guard = crate::save_guard::SaveGuard::default();
         self.world = loaded;
         // #1997: the orbit pivot is the new document's part and stock, never
         // the old document's target (the envelope is not in the bounds).
@@ -4714,10 +4798,16 @@ impl State {
     }
 
     pub(crate) fn save_project_path(&mut self, path: PathBuf) {
+        // #3608: when the file on disk changed after the open or the last
+        // save, the save waits for the Overwrite prompt; nothing is written.
+        if !self.may_save_over(&path) {
+            return;
+        }
         match project::save(&self.world, &path) {
             Ok(()) => {
                 // What is on disk now matches the history position (#107).
                 self.history.mark_clean();
+                self.save_guard.stamp = camcraft_app::project::DiskStamp::of(&path);
                 self.status = format!("saved {}", path.display());
                 self.note_recent(camcraft_app::recent::RecentKind::Project, &path);
                 self.project_path = Some(path);
@@ -4773,6 +4863,20 @@ impl State {
                 // A program went out: an earlier refusal no longer
                 // describes the document's post (#265).
                 self.post_refusal = None;
+                if !posted.bundle_files.is_empty() {
+                    self.post_view = None;
+                    self.status = format!(
+                        "Native wire EDM job prepared in {} ({} controller files, zero working steps)",
+                        path.display(), posted.bundle_files.len()
+                    );
+                    if let Some(review) = posted.controller_review {
+                        self.status.push_str(&format!(" — {review}"));
+                    }
+                    if let Some(note) = posted.not_judged {
+                        self.status.push_str(&format!(" — {note}"));
+                    }
+                    return;
+                }
                 self.status = format!(
                     "posted {} op(s), {} lines in {} to {}",
                     posted.ops,

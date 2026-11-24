@@ -201,16 +201,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
         prop_row(ui, "Run-out clearance", |ui| num(ui, u, clearance));
         // #3216: the closing overlap rides the seam over.
         prop_row(ui, "Closing overlap", |ui| num(ui, u, overlap));
-        let mut stated = start.is_some();
-        check_row(ui, "Start hole stated", &mut stated);
-        match (stated, start.as_mut()) {
-            (true, Some(s)) => {
-                prop_row(ui, "Start hole X", |ui| num(ui, u, &mut s[0]));
-                prop_row(ui, "Start hole Y", |ui| num(ui, u, &mut s[1]));
-            }
-            (true, None) => *start = Some([0.0, 0.0]),
-            (false, _) => *start = None,
-        }
+        super::start_exit_rows::wire_start_group(ui, u, start);
         hint(ui, "pick the one closed profile to cut; the wire is threaded at the start hole - inside the profile for a die, outside it for a punch; a closing overlap rides the cut past its seam that far before the lead-out, to burn over the start (not with tabs)");
         hint(ui, "or pick one open run reaching the stock's edge at both ends (a cut-off, a slot): left / right puts the kerf beside its travel, centre cuts a slit along the run itself with the kerf on both sides; each pass is threaded outside the stock the run-out clearance off its edge");
         // #3207: sharp inside corners keep the wire's own radius.

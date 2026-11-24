@@ -54,6 +54,7 @@ fn finish(pattern: FinishPattern, top_z: f64, bottom_z: f64) -> Finish3DParams {
         entry_ramp: false,
         steep_stepover: None,
         pencil_reference: None,
+        waterlines: true,
     }
 }
 
@@ -176,6 +177,7 @@ fn slab_with_boss() -> Vec<Triangle> {
 
 fn rough_params() -> Pocket3DParams {
     Pocket3DParams {
+        pass_start: Default::default(),
         links: camcraft_motion::links::Links::ROUGH3D,
         tool_diameter: 2.0 * R,
         stepover: 2.5,

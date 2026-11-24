@@ -85,6 +85,7 @@ fn drill_from(break_through: Option<f64>, break_through_from: BreakThroughFrom) 
 
 fn bore(break_through: Option<f64>) -> OpParams {
     OpParams::Bore {
+        pass_start: camcraft_app::machining2d::PassStart::Auto,
         links: camcraft_app::links::Links::PLANAR,
         clearance_z: Height::fixed(30.0),
         retract_z: None,
@@ -379,7 +380,7 @@ fn issue_2441_through_hole_drill_adds_point_length_and_posts_full_breakthrough()
     let face = OpParams::Face {
         holes: camcraft_app::machining2d::FaceHoles::CutAir,
         tilt: None,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         stepover: 4.0,
         clearance_z: Height::of(HeightReference::TopOfStock, 15.0),
         cut_z: Height::of(HeightReference::TopOfModel, 0.0),

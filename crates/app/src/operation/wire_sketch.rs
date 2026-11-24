@@ -68,6 +68,16 @@ pub(crate) fn resolve(
     name: &str,
     hs: &ResolvedHeights,
 ) -> Result<SelectedWireChain, String> {
+    resolve_geometry(world, op, hs, Some(name))
+}
+
+/// Resolve nominal geometry. A machining operation also requires fresh stock at its place in the sequence.
+pub(super) fn resolve_geometry(
+    world: &World,
+    op: &Operation,
+    hs: &ResolvedHeights,
+    machining_operation: Option<&str>,
+) -> Result<SelectedWireChain, String> {
     let (profile, chain) = pick(world, &op.src)?;
     let (e, sk) = sketch::find(world, &profile).ok_or("the selected DXF profile is missing")?;
     let declared = op.setup.as_deref();
@@ -98,8 +108,9 @@ pub(crate) fn resolve(
     if sketch::placed_in(world, declared).len() != 1 {
         return Err("selected DXF wire cuts can check only one placed drawing in the setup".into());
     }
-    if crate::rest::carried_stock_block(world, name, declared)?.is_some()
-        || has_predecessor(world, name, declared)
+    if let Some(name) = machining_operation
+        && (crate::rest::carried_stock_block(world, name, declared)?.is_some()
+            || has_predecessor(world, name, declared))
     {
         return Err("selected DXF wire cuts require fresh stock; an earlier operation or setup changes its material".into());
     }
