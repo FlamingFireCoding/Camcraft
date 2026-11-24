@@ -64,3 +64,53 @@ fn the_tool_library_window_closes_and_opens_again() {
     h.run_steps(3);
     let _ = library_window(&h);
 }
+
+/// #3893: a tool open in the window. The list folds into a rail on the
+/// left; the editor stands right of it: the heading, the Tool and Details
+/// tabs, the rows, then Apply at the foot. The window still leaves the
+/// Properties pane free. Queries stay inside the window, because a tool
+/// can be open in Properties too.
+#[test]
+fn layout_window_tool_editor() {
+    let _g = snapshot_guard();
+    let mut h = shell_harness();
+    h.run_steps(2);
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Tools").click();
+    h.run_steps(2);
+    let Some(name) = h.state().state.tool_names().into_iter().next() else {
+        panic!("the seeded document has a tool");
+    };
+    h.state_mut().state.open_tool_in_library(&name);
+    h.run_steps(3);
+    let win = library_window(&h);
+    let screen = h.ctx.content_rect();
+    assert!(screen.contains_rect(win), "the window {win:?} stays on the screen {screen:?}");
+    let node = h
+        .query_all_by_role(egui::accesskit::Role::Window)
+        .find(|n| n.accesskit_node().label().as_deref() == Some("Tool library"))
+        .unwrap_or_else(|| panic!("the Tool library window is not open"));
+    let rect = |label: &str| {
+        node.query_all_by_label(label)
+            .next()
+            .unwrap_or_else(|| panic!("the editor has no widget labelled {label:?}"))
+            .rect()
+    };
+    let heading = format!("Tool: {name}");
+    let mut last: Option<(&str, f32)> = None;
+    for a in [heading.as_str(), "Details", "Diameter", "Apply"] {
+        let r = rect(a);
+        assert!(win.expand(1.0).contains_rect(r), "{a:?} {r:?} leaves the window {win:?}");
+        if let Some((prev, y)) = last {
+            assert!(r.top() > y, "{a:?} (top {}) must be under {prev:?} (top {y})", r.top());
+        }
+        last = Some((a, r.top()));
+    }
+    let rail = rect("All tools");
+    let row = rect(&name);
+    assert!(rail.right() < rect("Diameter").left() && row.right() < rect(&heading).left(), "the rail {rail:?} stands left of the editor");
+    assert!(node.query_all_by_label("Import library…").next().is_none(), "the file row folds away with the list");
+    let Some(props) = super::layout::leaf_rect(&h.state().dock, &Tab::Properties) else {
+        panic!("the Properties leaf is not laid out");
+    };
+    assert!(!win.intersects(props), "the window {win:?} stands beside the Properties pane {props:?}");
+}

@@ -59,7 +59,7 @@ mod program_info;
 mod tool_library_io;
 #[path = "state_tool_library_dialog.rs"]
 mod tool_library_dialog;
-pub use tool_library_dialog::{ToolLibraryView, ToolSource};
+pub use tool_library_dialog::{ToolEditorTab, ToolEditorView, ToolLibraryView, ToolSource};
 #[path = "state_setup_mount.rs"]
 mod setup_mount;
 #[path = "state_pockets.rs"]
