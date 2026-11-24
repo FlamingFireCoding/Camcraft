@@ -67,6 +67,8 @@ pub enum LinkError {
     Choose(String),
     /// The window refused the session or the connection failed. Exit 1.
     Failed(String),
+    /// The window is busy with another call. Exit 4.
+    Busy(String),
 }
 
 impl LinkError {
@@ -77,6 +79,7 @@ impl LinkError {
             LinkError::NoWindow(_) => 3,
             LinkError::Choose(_) => 2,
             LinkError::Failed(_) => 1,
+            LinkError::Busy(_) => 4,
         }
     }
 }
@@ -84,7 +87,10 @@ impl LinkError {
 impl fmt::Display for LinkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LinkError::NoWindow(m) | LinkError::Choose(m) | LinkError::Failed(m) => f.write_str(m),
+            LinkError::NoWindow(m)
+            | LinkError::Choose(m)
+            | LinkError::Failed(m)
+            | LinkError::Busy(m) => f.write_str(m),
         }
     }
 }
@@ -163,25 +169,35 @@ pub fn connect(dir: &Path, select: &Select) -> Result<(Entry, Stream), LinkError
         )));
     }
     let mut refused = None;
+    let mut busy = None;
     let mut open_ones = Vec::new();
     for entry in candidates {
         match open(entry) {
             Ok(stream) => open_ones.push((entry.clone(), stream)),
             Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => refused = Some(describe(entry)),
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock) => {
+                tracing::info!("ui link: {} is busy: {e}", describe(entry));
+                busy = Some(describe(entry));
+            }
             // A stale file of a closed window: its socket does not answer.
             Err(e) => tracing::info!("ui link: {} does not answer: {e}", describe(entry)),
         }
     }
     match open_ones.len() {
         1 => open_ones.pop().ok_or_else(|| LinkError::Failed("ui link: lost the open session".into())),
-        0 => Err(match refused {
-            Some(who) => LinkError::Failed(format!(
+        0 => Err(if let Some(who) = refused {
+            LinkError::Failed(format!(
                 "the CamCraft window {who} refused the link token in its link file (nothing ran)"
-            )),
-            None => LinkError::NoWindow(format!(
+            ))
+        } else if let Some(who) = busy {
+            LinkError::Busy(format!(
+                "the CamCraft window {who} is busy with another call (nothing ran)"
+            ))
+        } else {
+            LinkError::NoWindow(format!(
                 "no running CamCraft window answered: the link files in {} are stale (nothing ran)",
                 dir.display()
-            )),
+            ))
         }),
         n => {
             let names: Vec<String> = open_ones.iter().map(|(e, _)| describe(e)).collect();
