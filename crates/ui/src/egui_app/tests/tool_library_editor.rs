@@ -35,10 +35,22 @@ fn draft(h: &mut H) -> &mut crate::state::ToolUi {
     }
 }
 
-/// Two different tools of the seeded document.
-fn two_tools(h: &H) -> (String, String) {
+/// Two different tools: the seeded document's tool, and a second one from
+/// the catalog (the `AddTool` command) when the document has only one.
+fn two_tools(h: &mut H) -> (String, String) {
+    if h.state().state.tool_names().len() < 2 {
+        let st = &h.state().state;
+        let Some((name, tool)) = camcraft_app::tools::catalog().into_iter().find(|(n, t)| {
+            model::find_by_name(&st.world, n).is_none() && crate::machine_modes::tool_kind_offered(&st.world, t.kind)
+        }) else {
+            panic!("the catalog has a second tool for this machine");
+        };
+        let cmd = crate::state::CommandKind::AddTool { name: name.to_owned(), tool };
+        h.state_mut().state.pending.push_back(cmd);
+        h.run_steps(2);
+    }
     let names = h.state().state.tool_names();
-    assert!(names.len() >= 2, "the seeded document has two tools: {names:?}");
+    assert!(names.len() >= 2, "the document has two tools: {names:?}");
     (names[0].clone(), names[1].clone())
 }
 
@@ -61,17 +73,17 @@ fn click_window_button(h: &mut H, label: &str) {
 fn apply_is_one_change_tool_and_undo_restores() {
     let mut h = shell_harness();
     h.run_steps(2);
-    let (name, _) = two_tools(&h);
+    let (name, _) = two_tools(&mut h);
     open_in_window(&mut h, &name);
     let before = tool(&h, &name);
     let done = h.state().state.history.done_len();
-    draft(&mut h).diameter = before.diameter + 2.0;
+    draft(&mut h).diameter = before.diameter + 0.5;
     draft(&mut h).vendor = "Acme".into();
     h.run_steps(2);
     assert_eq!(tool(&h, &name), before, "a draft does not write the document");
     click_window_button(&mut h, "Apply");
     let after = tool(&h, &name);
-    assert_eq!(after.diameter, before.diameter + 2.0, "Apply lands the draft: {}", h.state().state.status);
+    assert_eq!(after.diameter, before.diameter + 0.5, "Apply lands the draft: {}", h.state().state.status);
     assert_eq!(after.catalog.vendor.as_deref(), Some("Acme"), "the Details tab's facts ride the same Apply");
     assert_eq!(h.state().state.history.done_len(), done + 1, "one Apply is one undo step");
     crate::actions::undo(&mut h.state_mut().state);
@@ -87,7 +99,7 @@ fn apply_is_one_change_tool_and_undo_restores() {
 fn the_dialog_draft_and_the_properties_draft_do_not_mix() {
     let mut h = shell_harness();
     h.run_steps(2);
-    let (a, b) = two_tools(&h);
+    let (a, b) = two_tools(&mut h);
     crate::actions::target(&mut h.state_mut().state, UiTarget::Tool(a.clone()));
     h.run_steps(3);
     open_in_window(&mut h, &b);
@@ -96,17 +108,18 @@ fn the_dialog_draft_and_the_properties_draft_do_not_mix() {
     assert_eq!(h.state().state.tool_ui.name, a, "Properties' draft is tool {a}");
     assert_eq!(draft(&mut h).name, b, "the window's draft is tool {b}");
     // Half-typed numbers in both drafts, then frames: neither resets.
-    draft(&mut h).diameter = 9.5;
+    let typed = tool(&h, &b).diameter + 0.5;
+    draft(&mut h).diameter = typed;
     h.state_mut().state.tool_ui.diameter = 7.25;
     h.run_steps(4);
     let kept = draft(&mut h).clone();
-    assert_eq!((kept.name.as_str(), kept.diameter), (b.as_str(), 9.5), "the window keeps its draft");
+    assert_eq!((kept.name.as_str(), kept.diameter), (b.as_str(), typed), "the window keeps its draft");
     let props = &h.state().state.tool_ui;
     assert_eq!((props.name.as_str(), props.diameter), (a.as_str(), 7.25), "Properties keeps its draft");
     click_window_button(&mut h, "Apply");
-    assert_eq!(tool(&h, &b).diameter, 9.5, "the window's Apply writes its tool: {}", h.state().state.status);
+    assert_eq!(tool(&h, &b).diameter, typed, "the window's Apply writes its tool: {}", h.state().state.status);
     assert_eq!(tool(&h, &a), tool_a, "the window's Apply never writes Properties' tool");
-    assert_ne!(tool_b.diameter, 9.5);
+    assert_ne!(tool_b.diameter, typed);
     assert_eq!(h.state().state.tool_ui.name, a, "Properties still shows tool {a}");
     // A pick in the rail opens another tool in the window only.
     library_window(&h).get_by_role_and_label(Role::Button, &a).click();
@@ -121,7 +134,7 @@ fn the_dialog_draft_and_the_properties_draft_do_not_mix() {
 fn details_tab_shows_the_catalog_facts() {
     let mut h = shell_harness();
     h.run_steps(2);
-    let (name, _) = two_tools(&h);
+    let (name, _) = two_tools(&mut h);
     let mut t = tool(&h, &name);
     t.catalog.vendor = Some("Acme".into());
     t.catalog.part_number = Some("P-77".into());
