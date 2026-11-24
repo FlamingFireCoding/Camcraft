@@ -17,6 +17,7 @@ use crate::plunge_law;
 use super::face::GenError;
 use super::levels::{Cert, Motion};
 use super::pass_start::StartSide;
+use super::PocketStrategy;
 
 /// How far (in tool radii) outside the stock a centre stands in air: its
 /// disc then cuts at most [`SWATH`] radii into the stock, as a centre
@@ -79,16 +80,27 @@ impl RingLinks {
 }
 
 /// The ring law of a start side (Inside or Outside; Auto once resolved):
-/// only an area round a part links by it, a pocket keeps its own links.
+/// only the rings of an area round a part link by it. A pocket keeps its
+/// own links, and so do the passes that are not rings (#3822: the Adaptive
+/// spiral, the Zigzag rows), whatever the side.
 pub(super) fn for_side(
     side: &StartSide,
+    strategy: PocketStrategy,
     tool_r: f64,
     fixtures: Option<Region>,
 ) -> Result<Option<RingLinks>, GenError> {
-    if !side.around_part {
+    if !side.around_part || !rings(strategy) {
         return Ok(None);
     }
     RingLinks::new(side.stock.as_ref(), tool_r, fixtures).map(Some)
+}
+
+/// #3822: the strategies whose passes are the rings of one ring set, the
+/// only passes the ring law links. Read on the strategy of the passes
+/// posted: an Adaptive plan that falls back to Offset rings posts rings,
+/// and the planner joined them by the same law (`level_order`).
+pub(super) fn rings(strategy: PocketStrategy) -> bool {
+    matches!(strategy, PocketStrategy::Waterline | PocketStrategy::OffsetRings)
 }
 
 impl Motion {
@@ -99,11 +111,12 @@ impl Motion {
     }
 }
 
-/// The in-plane link from the tool to `e` on the plane `z` (#3747), proved
-/// in this order: the stay-down limit, the certified area (else the part or
-/// a fixture is named), no crossing of `cuts`, and every sample in air or
-/// over a column the path has cut. `Ok` posts the feed; `Err` is the reason
-/// the pass link lifts.
+/// The in-plane link from the tool to `e` on the plane `z` (#3747): the
+/// straight chord, else (#3824) the walk along the edge of the area that
+/// [`edge_route`] finds, each of its chords proved as the straight one is
+/// ([`chord_proof`]) and the whole walk within the stay-down limit. `Ok`
+/// posts the feeds and returns the walk from the tool to `e`; `Err` is the
+/// straight chord's reason, which the pass link's lift names.
 pub(super) fn link(
     b: &mut PathBuilder,
     rl: &RingLinks,
@@ -112,28 +125,68 @@ pub(super) fn link(
     cuts: &[&[Vec<Point2>]],
     e: Point2,
     z: f64,
-) -> Result<(), &'static str> {
+) -> Result<Vec<Point2>, &'static str> {
     let cur = b.at();
     let at = Point2::new(cur.x, cur.y);
     if !m.links.within_stay_down(dist(at, e)) {
         return Err(TOO_LONG);
     }
     if at == e {
-        return Ok(());
+        return Ok(vec![at, e]);
     }
     let r = m.tool_r();
     let Some(cen) = cert.filter(|_| r > 0.0) else {
         return Err(NO_AREA);
     };
-    let pts = samples(&[at, e], 0.25 * r);
-    if !cen.chord_ok(at, e) {
+    let walk = match chord_proof(b, rl, cen, cuts, at, e, z, r) {
+        Ok(()) => vec![at, e],
+        Err(why) => {
+            let walks: Vec<&[Point2]> = cuts.iter().flat_map(|c| c.iter().map(Vec::as_slice)).collect();
+            let ok = |p: Point2, q: Point2| chord_proof(b, rl, cen, cuts, p, q, z, r).is_ok();
+            let Some(via) = edge_route(at, e, cen.room(), SWATH * r, &walks, ok) else {
+                return Err(why);
+            };
+            let mut w = vec![at];
+            w.extend(via);
+            if !m.links.within_stay_down(length(&w)) {
+                return Err(why);
+            }
+            w
+        }
+    };
+    for q in walk.iter().skip(1) {
+        b.push(MoveKind::Feed, Point3::new(q.x, q.y, z), Some(m.feed));
+    }
+    Ok(walk)
+}
+
+/// The proof of one in-plane chord `a -> s` on the plane `z`, in this
+/// order: the certified area (else the part or a fixture is named), no
+/// crossing of `cuts`, and every sample in air or over a column the path
+/// has cut. `Err` is the reason.
+#[allow(clippy::too_many_arguments)]
+fn chord_proof(
+    b: &PathBuilder,
+    rl: &RingLinks,
+    cen: &Cert<'_>,
+    cuts: &[&[Vec<Point2>]],
+    a: Point2,
+    s: Point2,
+    z: f64,
+    r: f64,
+) -> Result<(), &'static str> {
+    if a == s {
+        return Ok(());
+    }
+    let pts = samples(&[a, s], 0.25 * r);
+    if !cen.chord_ok(a, s) {
         let fixture = rl
             .fixtures
             .as_ref()
             .is_some_and(|f| pts.iter().any(|&q| f.contains(q)));
         return Err(if fixture { HITS_FIXTURE } else { CUTS_PART });
     }
-    if cuts.iter().any(|c| chord_hits_plan(at, e, c)) {
+    if cuts.iter().any(|c| chord_hits_plan(a, s, c)) {
         return Err(CROSSES_CUT);
     }
     // `column_cleared` reads a centre within (1 - CORE) of its radius from
@@ -145,7 +198,6 @@ pub(super) fn link(
     {
         return Err(UNCUT_STOCK);
     }
-    b.push(MoveKind::Feed, Point3::new(e.x, e.y, z), Some(m.feed));
     Ok(())
 }
 

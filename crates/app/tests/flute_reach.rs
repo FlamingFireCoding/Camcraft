@@ -95,7 +95,8 @@ fn texts(warns: &[Warning]) -> Vec<String> {
 /// The #3319 case: flute 10 mm, shank 10 mm over an 8 mm cutter. The
 /// search on #3319 read three rapid findings beside the shank runs.
 /// #3811: the count follows the ring plan (3 at v0.26.0, 12 after #3790,
-/// 9 after #3818), so the test pins the cause, not a count. Each rapid
+/// 9 after #3818, 3 after #3824), so the test pins the cause and an upper
+/// bound. Each rapid
 /// finding is a straight lift or drop along the tool axis whose low end
 /// puts the shank under the part top: the shank of the short flute, not a
 /// traverse through the part. The 25 mm flute twin below has none.
@@ -113,6 +114,11 @@ fn a_ten_mm_flute_names_its_cause_before_the_rapid_findings() {
     let part_top = floor + depth_mm - 2.0;
     let rapids: Vec<usize> = warns.iter().filter_map(|w| if let Warning::RapidInPart { at } = *w { Some(at) } else { None }).collect();
     assert!(!rapids.is_empty(), "the shank meets the part on a rapid too: {all:?}");
+    eprintln!("flute 10: {} rapid finding(s): {rapids:?}", rapids.len());
+    // #3824: the part wall reads as one wall, so the pass links to its
+    // slivers at X about +-46.5, Y about 123.2 no longer lift and drop
+    // there: 9 findings before, 3 after.
+    assert!(rapids.len() <= 3, "#3824: {} rapid findings, at most 3: {rapids:?}", rapids.len());
     for at in rapids {
         let m = &path.moves[at];
         let vertical = (m.to.x - m.from.x).abs() < 1e-9 && (m.to.y - m.from.y).abs() < 1e-9;

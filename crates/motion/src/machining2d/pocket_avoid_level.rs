@@ -14,7 +14,7 @@ use super::arc_cross::{CROSS_ROUNDS, crossing_arcs, own_keys, refuse};
 use super::arc_proof::ProofTally;
 use super::arcs::Seg;
 use super::corner_relief::{CornerRelief, ResolvedRelief, capsule_region, plan_corner_reliefs};
-use super::level_rings::ring_plan_ramped;
+use super::level_rings::ring_plan;
 use super::levels::{Cert, Motion, WalkState, walk_one_level};
 use super::pass_start::StartSide;
 use super::pocket::{PocketParams, PocketStrategy, non_sliver_center, pocket_over_with_relief};
@@ -26,7 +26,7 @@ use super::pocket_zigzag::rest_passes;
 use super::rest2d::{RELIEF_START_TOL, RestPlan};
 
 pub(super) type LevelPlan =
-    (Vec<Vec<Point2>>, PocketStrategy, Option<EntryRoom>, super::pocket_hsm::Joins, Region, Vec<Point2>);
+    (Vec<Vec<Point2>>, PocketStrategy, Option<EntryRoom>, super::pocket_hsm::Joins, Region);
 
 pub(super) fn check_reliefs_avoid(
     reliefs: &[ResolvedRelief],
@@ -65,7 +65,7 @@ pub(super) fn plan_avoid_level(
                 let what = format!("level at Z {z:.2}");
                 let (ps, anotes, act, rm, js) = adaptive_passes_from(region, level_center, p, &what, side)?;
                 notes.extend(anotes);
-                Ok(Some((ps, act, rm, js, level_center.clone(), Vec::new())))
+                Ok(Some((ps, act, rm, js, level_center.clone())))
             } else if matches!(strategy, PocketStrategy::Zigzag | PocketStrategy::Auto) {
                 Ok(Some((
                     rest_passes(level_center, p.tiling_step(), p.climb)?,
@@ -73,14 +73,13 @@ pub(super) fn plan_avoid_level(
                     None,
                     Vec::new(),
                     level_center.clone(),
-                    Vec::new(),
                 )))
             } else {
                 // #3744: Auto round a part cuts the one ring set from one side.
                 let side = &super::ring_side::resolve(level_center, strategy, p.tool_diameter * 0.5, side)?;
-                let (ps, pnotes, ramps) = ring_plan_ramped(region, level_center, p, strategy, side, true)?;
+                let (ps, pnotes) = ring_plan(region, level_center, p, strategy, side)?;
                 notes.extend(pnotes.into_iter().filter(|n| !notes.contains(n)).collect::<Vec<_>>());
-                Ok(Some((ps, strategy, None, Vec::new(), level_center.clone(), ramps)))
+                Ok(Some((ps, strategy, None, Vec::new(), level_center.clone())))
             }
         }
         AvoidSource::Rest(plan) => {
@@ -91,7 +90,6 @@ pub(super) fn plan_avoid_level(
                     None,
                     Vec::new(),
                     level_center.clone(),
-                    Vec::new(),
                 )))
             } else {
                 let level_plan = RestPlan {
@@ -102,7 +100,7 @@ pub(super) fn plan_avoid_level(
                 match super::rest_rings::rest_passes(&level_plan, p.tool_diameter, p.tiling_step(), p.climb) {
                     Ok((mut ps, cut_center)) => {
                         super::rest_anchor::anchor_first_pass(&mut ps, &level_plan, p);
-                        Ok(Some((ps, strategy, None, Vec::new(), cut_center, Vec::new())))
+                        Ok(Some((ps, strategy, None, Vec::new(), cut_center)))
                     }
                     Err(GenError::Empty(_)) => Ok(None),
                     Err(e) => Err(e),
@@ -239,7 +237,6 @@ pub(super) fn emit_rest_avoid(
             holes: &[],
             corner_reliefs: &corner_reliefs,
             cleared_links: false,
-            ramp_starts: Vec::new(),
             ring_links: None,
             air: None,
         },

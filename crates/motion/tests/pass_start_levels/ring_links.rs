@@ -28,18 +28,18 @@ fn disc(cx: f64, r: f64) -> Vec<Point2> {
         .collect()
 }
 
-fn stock() -> Region {
+pub(super) fn stock() -> Region {
     region(vec![rect(-40.0, -25.0, 40.0, 25.0)])
 }
 
 /// A disc of radius 12 in the middle of the box.
-fn disc_part() -> Region {
+pub(super) fn disc_part() -> Region {
     region(vec![disc(0.0, 12.0)])
 }
 
 /// The #3744 dog bone: two discs of radius 12 at X -15 and X 15, joined by
 /// a neck 8 mm wide.
-fn dog_bone() -> Region {
+pub(super) fn dog_bone() -> Region {
     region(vec![disc(-15.0, 12.0)])
         .union(&region(vec![disc(15.0, 12.0)]))
         .and_then(|p| p.union(&region(vec![rect(-15.0, -4.0, 15.0, 4.0)])))
@@ -48,14 +48,14 @@ fn dog_bone() -> Region {
 
 /// The band the disc may sweep: the stock grown by the diameter (the
 /// Outside reach), less the part.
-fn band(part: &Region) -> Region {
+pub(super) fn band(part: &Region) -> Region {
     stock()
         .offset(2.0 * R)
         .and_then(|s| s.difference(part))
         .expect("band")
 }
 
-fn side(start: PassStart) -> StartSide {
+pub(super) fn side(start: PassStart) -> StartSide {
     StartSide {
         start,
         stock: Some(stock()),
@@ -72,7 +72,7 @@ fn plan(part: &Region, start: PassStart) -> Toolpath {
 /// The lifts and re-entries of the one level at `Z`: a lift leaves the
 /// floor with a cut on the floor still to come; a re-entry comes back to
 /// the floor after the first floor cut.
-fn lifts(path: &Toolpath) -> (usize, usize) {
+pub(super) fn lifts(path: &Toolpath) -> (usize, usize) {
     let on = |i: usize| {
         path.moves.get(i).is_some_and(|m| {
             m.kind != MoveKind::Rapid && (m.from.z - Z).abs() < 1e-9 && (m.to.z - Z).abs() < 1e-9
@@ -99,7 +99,7 @@ fn lifts(path: &Toolpath) -> (usize, usize) {
 
 /// #3744: a crossing of two planar feeds blocks the post; the in-plane
 /// links along the edge of the area touch the pieces that end there.
-fn assert_no_crossing(name: &str, path: &Toolpath) {
+pub(super) fn assert_no_crossing(name: &str, path: &Toolpath) {
     let planar = |i: usize| {
         path.moves
             .get(i)
@@ -113,7 +113,7 @@ fn assert_no_crossing(name: &str, path: &Toolpath) {
 }
 
 /// The lifts that the link notes name ("lifted ... N time(s)").
-fn named_lifts(path: &Toolpath) -> usize {
+pub(super) fn named_lifts(path: &Toolpath) -> usize {
     path.notes
         .iter()
         .filter(|n| n.starts_with("link: "))
