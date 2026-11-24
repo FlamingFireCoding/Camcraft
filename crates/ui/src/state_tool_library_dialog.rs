@@ -7,10 +7,13 @@
 //! #3893 (U2): a tool open in the window has its OWN draft
 //! ([`ToolEditorView`]). Properties keeps `State::tool_ui`, so the two can
 //! show different tools and never write into each other's draft.
+//! #3894 (U3): the editor's preview - the 3D model view (the default) or
+//! the to-scale side view - and the 3D view's orbit are view state of the
+//! window too ([`EditorFace`]).
 //! Provenance: our own view state, after the tool shape window's
 //! `Option` pattern; no HSMWorks material involved.
 
-use super::{State, ToolUi, UiTarget};
+use super::{Orbit, State, ToolUi, UiTarget};
 use camcraft_app::model;
 
 /// Which tools the list shows.
@@ -33,6 +36,25 @@ pub enum ToolEditorTab {
     Details,
 }
 
+/// #3894: which view the editor's preview area shows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PreviewMode {
+    /// The orbitable 3D model: the imported body, or the revolved profile.
+    #[default]
+    Model,
+    /// The to-scale side view with dimension lines.
+    Side,
+}
+
+/// The editor's view state that stays when another tool opens: the tab,
+/// the preview view and the 3D view's orbit.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct EditorFace {
+    pub tab: ToolEditorTab,
+    pub preview: PreviewMode,
+    pub orbit: Orbit,
+}
+
 /// #3893: the tool open in the window, with its own draft. `synced` is the
 /// (name, `doc_version`) the draft was read at, the same key that
 /// `State::sync_tool_ui` uses for Properties. Typing does not change
@@ -42,7 +64,7 @@ pub enum ToolEditorTab {
 pub struct ToolEditorView {
     pub draft: ToolUi,
     pub(super) synced: (String, u64),
-    pub tab: ToolEditorTab,
+    pub face: EditorFace,
 }
 
 /// The open tool library window.
@@ -98,13 +120,13 @@ impl State {
         let Some(view) = self.tool_library.as_mut() else {
             return;
         };
-        let tab = view.editor.as_ref().map(|e| e.tab).unwrap_or_default();
+        let face = view.editor.as_ref().map(|e| e.face).unwrap_or_default();
         view.source = ToolSource::Document;
         view.editor = Some(ToolEditorView {
             draft: ToolUi { name: name.to_owned(), ..ToolUi::default() },
             // An empty name never matches, so the first draw reads the tool.
             synced: (String::new(), self.doc_version),
-            tab,
+            face,
         });
     }
 
@@ -119,16 +141,17 @@ impl State {
     /// key in `tool_synced`), then put Properties' draft back. The shared
     /// row and Apply helpers read `tool_ui`; this lets them serve the
     /// window without a copy, while the two drafts stay apart. `f` also
-    /// gets the editor's tab. `None` when no tool is open in the window.
+    /// gets the editor's view state (tab, preview, orbit). `None` when no
+    /// tool is open in the window.
     pub(crate) fn with_library_draft<R>(
         &mut self,
-        f: impl FnOnce(&mut State, &mut ToolEditorTab) -> R,
+        f: impl FnOnce(&mut State, &mut EditorFace) -> R,
     ) -> Option<R> {
         let mut editor = self.tool_library.as_mut().and_then(|v| v.editor.take())?;
         std::mem::swap(&mut self.tool_ui, &mut editor.draft);
         std::mem::swap(&mut self.tool_synced, &mut editor.synced);
         self.sync_tool_ui();
-        let out = f(self, &mut editor.tab);
+        let out = f(self, &mut editor.face);
         std::mem::swap(&mut self.tool_ui, &mut editor.draft);
         std::mem::swap(&mut self.tool_synced, &mut editor.synced);
         if let Some(view) = self.tool_library.as_mut()

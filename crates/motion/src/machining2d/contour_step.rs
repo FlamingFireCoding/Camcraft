@@ -21,6 +21,7 @@ use crate::approach::CENTER_CUT_REFUSAL;
 use super::contour_bore::{BoreStep, bore_entry};
 use super::contour_entry::Engage;
 use super::contour_params::Lead;
+use super::contour_peck;
 use super::contour_wall_ramp::wall_ramp;
 use super::descent::feed_down;
 
@@ -50,6 +51,10 @@ pub(super) struct Step {
     /// earlier ring, so it lifts there, crosses to the lead-in and starts
     /// the descent from it.
     pub traverse: Option<f64>,
+    /// #3678: the floor with no cut under the disc on a level below the
+    /// ring's first (`contour_peck::uncut_floor`); the dive pecks where it
+    /// would go more than one stepdown below the floor under the disc.
+    pub uncut: Option<f64>,
 }
 
 /// Structural refusals, each said once per path.
@@ -112,7 +117,7 @@ pub(super) fn engage_level(b: &mut PathBuilder, eng: &Engage, s: &Step, lead: &[
         }
         let cur = b.at();
         b.push(MoveKind::Rapid, Point3::new(e2.x, e2.y, cur.z), None);
-        graze(b, eng, e2, s.lead_top, s.arm);
+        graze(b, eng, e2, s.lead_top, s.arm, s.uncut);
         None
     } else if s.inside {
         // The bore side: the eroded region states the bounded air
@@ -152,7 +157,7 @@ pub(super) fn engage_level(b: &mut PathBuilder, eng: &Engage, s: &Step, lead: &[
         }
         let cur = b.at();
         b.push(MoveKind::Rapid, Point3::new(e2.x, e2.y, cur.z), None);
-        graze(b, eng, e2, s.lead_top, s.arm);
+        graze(b, eng, e2, s.lead_top, s.arm, s.uncut);
         None
     }
 }
@@ -162,8 +167,9 @@ pub(super) fn engage_level(b: &mut PathBuilder, eng: &Engage, s: &Step, lead: &[
 /// generator's contract, nothing is engaged above it (M11.3) - then feed.
 /// A tool that is not centre-cutting may not plunge here (the stock
 /// beside the wall is not proved cleared): the operation is refused by
-/// name.
-fn graze(b: &mut PathBuilder, eng: &Engage, e2: Point2, z: f64, arm: Entry3D) {
+/// name. Below a ring's first level the dive pecks where it would go more
+/// than one stepdown below the floor under the disc (#3678).
+fn graze(b: &mut PathBuilder, eng: &Engage, e2: Point2, z: f64, arm: Entry3D, uncut: Option<f64>) {
     let p = eng.p;
     let a = &p.links.approach;
     if !a.center_cutting {
@@ -174,7 +180,8 @@ fn graze(b: &mut PathBuilder, eng: &Engage, e2: Point2, z: f64, arm: Entry3D) {
             graze_hint(arm, p.lead == Lead::None)
         ));
     }
-    feed_down(b, e2, z, p.entry_top(), eng.m, a.plunge(p.plunge_feed));
+    let feed = a.plunge(p.plunge_feed);
+    contour_peck::dive(b, p, e2, z, uncut, eng.m.hop_z, feed, |b, d| feed_down(b, e2, d, p.entry_top(), eng.m, feed));
 }
 
 /// What the user can change to lift the refusal. The Arc entry is already

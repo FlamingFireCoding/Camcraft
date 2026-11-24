@@ -7,7 +7,7 @@ mod cutoff;
 mod group;
 mod round_profile;
 mod spacing;
-pub use crate::agie_setup::Quality;
+pub use crate::agie_setup::{MAX_PUNCH_WORKS, Quality};
 pub use crate::agie_setup::valid_stem as valid_name;
 pub use group::export_group_with_review;
 pub use round_profile::export_round_with_review;
@@ -280,7 +280,11 @@ fn publish(_: &Path, _: &[(String, String)]) -> Result<Vec<PathBuf>, String> {
 #[cfg(test)]
 mod cutoff_tests;
 #[cfg(test)]
+mod die_group_tests;
+#[cfg(test)]
 mod die_tests;
+#[cfg(test)]
+mod group_count_tests;
 #[cfg(test)]
 mod group_tests;
 #[cfg(test)]
