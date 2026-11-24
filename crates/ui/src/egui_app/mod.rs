@@ -126,6 +126,8 @@ mod stock_material_row;
 mod tool_body_assembly_page;
 mod tool_body_lathe_page;
 mod tool_body_page;
+// #3894: the orbitable model view shared by the body page and the tool library window.
+mod tool_model_view;
 // #630: the tool editor's lathe orientation row.
 mod tool_orientation_row;
 // #894: the Thread operation's pitch and hand rows.

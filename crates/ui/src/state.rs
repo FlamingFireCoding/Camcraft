@@ -59,7 +59,7 @@ mod program_info;
 mod tool_library_io;
 #[path = "state_tool_library_dialog.rs"]
 mod tool_library_dialog;
-pub use tool_library_dialog::{ToolEditorTab, ToolLibraryView, ToolSource};
+pub use tool_library_dialog::{EditorFace, PreviewMode, ToolEditorTab, ToolLibraryView, ToolSource};
 #[path = "state_setup_mount.rs"]
 mod setup_mount;
 #[path = "state_pockets.rs"]
@@ -109,7 +109,7 @@ mod program_entry;
 pub use program_entry::EntryVerb;
 #[path = "state_tool_body.rs"]
 mod tool_body_ui;
-pub use tool_body_ui::{BodyDraft, BodyPickMode, ToolBodyUi, ZOOM_MAX, ZOOM_MIN, clamp_zoom};
+pub use tool_body_ui::{BodyDraft, BodyPickMode, Orbit, ToolBodyUi, ZOOM_MAX, ZOOM_MIN, clamp_zoom};
 #[path = "state_tool_body_lathe.rs"]
 mod tool_body_lathe_ui;
 pub use tool_body_lathe_ui::{LatheBodyDraft, LatheDraft};

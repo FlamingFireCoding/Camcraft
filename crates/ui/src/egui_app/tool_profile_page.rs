@@ -39,8 +39,8 @@ pub(super) type PreviewInputs = (Option<Vec<(f64, f64, f64)>>, Option<Vec<(f64, 
 /// #2007: what the one to-scale preview draws. On the Profile tab a draft
 /// that validates shows at once - the drawn holder as the bands the
 /// collision check sweeps (#2017), the drawn cutter as the steel
-/// outline. Otherwise the landed body, as before. A draft that does not
-/// validate shows the landed state; its refusal stands below the table.
+/// outline. Otherwise the landed body and the landed drawn cutter. A draft
+/// that does not validate shows the landed state; its refusal stands below.
 pub(super) fn preview_inputs(state: &mut State, exists: bool) -> PreviewInputs {
     if !exists {
         return (None, None);
@@ -52,25 +52,28 @@ pub(super) fn preview_inputs(state: &mut State, exists: bool) -> PreviewInputs {
     let profile_tab = is_spun_kind(state.tool_ui.tool_kind()) && state.tool_profile_ui.column == ToolColumn::Profile;
     let geom = tool.geom();
     let bands = |p: Option<&_>| tool_body::stack(&geom, p).bands.iter().map(|q| (q.above, q.len, q.r)).collect::<Vec<_>>();
-    if profile_tab && state.tool_cutter_ui.shown {
+    // #3894 (#93 leftover): a landed drawn cutter shows on every tab.
+    let draw_cutter = profile_tab && state.tool_cutter_ui.shown;
+    let steel = if draw_cutter || state.editor_tool_cutter().is_some() {
         state.sync_tool_cutter_ui();
-        let steel = cutter_profile::check(&tool, state.tool_cutter_ui.points.clone()).ok().map(|s| s.outline());
-        let body = super::tool_body_page::envelope(state);
-        // The drawn cutter stops at the shank top: the holder cylinder
-        // goes on top of it as bands when no body is landed.
-        let body = match (&steel, body) {
-            (Some(_), None) => Some(bands(None)),
-            (_, b) => b,
-        };
-        return (body, steel);
-    }
-    if profile_tab && state.tool_profile_ui.custom {
+        cutter_profile::check(&tool, state.tool_cutter_ui.points.clone()).ok().map(|s| s.outline())
+    } else {
+        None
+    };
+    if !draw_cutter && profile_tab && state.tool_profile_ui.custom {
         state.sync_tool_profile_ui();
         if let Ok(s) = tool_body_view::spun_preview(&tool, &state.tool_profile_ui.points) {
-            return (Some(bands(Some(&s.holder_profile()))), None);
+            return (Some(bands(Some(&s.holder_profile()))), steel);
         }
     }
-    (super::tool_body_page::envelope(state), None)
+    let body = super::tool_body_page::envelope(state);
+    // The drawn cutter stops at the shank top: the holder cylinder goes
+    // on top of it as bands when no body is landed.
+    let body = match (&steel, body) {
+        (Some(_), None) => Some(bands(None)),
+        (_, b) => b,
+    };
+    (body, steel)
 }
 
 /// #2397: the tool shape editor's body - the holder library first (a
