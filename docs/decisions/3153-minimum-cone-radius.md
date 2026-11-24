@@ -46,3 +46,32 @@ change how explicit Inside and Outside are validated. It would require
 new motion and application refusal tests. A later real-tip model must
 keep the ideal-cone band law as a distinct case and must preserve the
 original EdgeBreak credit.
+
+
+### PR #3251 review fixes
+
+**What was decided:** At zero tip offset, both the closed-loop and
+open-chain routes keep the legacy edge-break depth calculation,
+`top_z - tip_z`, including its floating-point rounding. Positive offsets
+keep the authored width-derived depth. Complete captured legacy paths
+pin the zero-offset results rather than comparing two paths generated
+by the updated implementation.
+
+A positive closed-loop offset must preserve every original boundary
+span. Reverse the offset with sharp joins and clip every original span
+to its boundary tube. The 0.011 mm allowance covers two 5 µm
+flattenings and the micron lattice; it contains no chamfer-width
+allowance that could hide a lost span.
+
+**Why:** Equal loop counts can hide a narrow branch that disappears
+while its parent loop survives. The generator must refuse that partial
+ride before it declares an edge break on the complete selected edge.
+Legacy floating-point bytes are part of zero-offset compatibility.
+
+**Dropped:** Loop-count comparison alone cannot establish complete
+boundary preservation. A coverage allowance based on chamfer width
+could accept a missing selected span and is therefore not used.
+
+**Versioning:** Project format v79 is incompatible with v78 readers.
+The fix round records that existing format break with a
+`BREAKING CHANGE:` commit footer and corrects the PR body to v79.

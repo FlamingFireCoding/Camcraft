@@ -118,13 +118,23 @@ impl ChamferParams {
     /// The depth of the authored edge break.
     #[must_use]
     pub fn break_depth(&self) -> f64 {
-        self.width * self.angle_deg.to_radians().tan()
+        if self.minimum_cone_radius == 0.0 {
+            // Preserve the legacy subtraction and its rounding in EdgeBreak
+            // metadata and the open-wall probes, not just in move positions.
+            self.top_z - self.tip_z()
+        } else {
+            self.width * self.angle_deg.to_radians().tan()
+        }
     }
 
     /// The lower edge of the authored chamfer, on the selected wall.
     #[must_use]
     pub fn corner_z(&self) -> f64 {
-        self.top_z - self.break_depth()
+        if self.minimum_cone_radius == 0.0 {
+            self.tip_z()
+        } else {
+            self.top_z - self.break_depth()
+        }
     }
 
     /// The virtual cone tip that the CL move carries.
@@ -181,6 +191,33 @@ pub fn chamfer(region: &crate::geo2d::Region, p: &ChamferParams) -> Result<Toolp
                 "the tip offset of {} mm folds, disappears, or changes the selected loop count; pick a smaller offset or a gentler boundary",
                 p.minimum_cone_radius
             )));
+        }
+        // Loop count alone misses a narrow branch (or inlet) disappearing
+        // while its parent loop survives. Undo the offset with sharp joins:
+        // this restores ordinary inset corners without rounding them away.
+        // Every span of every original boundary must survive that round trip.
+        // Two round-join flattenings (5 um each) and the micron lattice are
+        // the only allowance; the chamfer width must never hide a lost span.
+        let restored = offset.offset_sharp(-distance)?;
+        let restored_edges: Vec<Vec<Point2>> = restored
+            .loops()
+            .iter()
+            .map(|l| {
+                let mut edge = l.points().to_vec();
+                if let Some(&first) = edge.first() {
+                    edge.push(first);
+                }
+                edge
+            })
+            .collect();
+        let surviving = Region::sweep(&restored_edges, 0.011)?;
+        for edge in &original {
+            if !surviving.clip_polyline(edge, false)?.is_empty() {
+                return Err(GenError::Invalid(format!(
+                    "the tip offset of {} mm loses a selected boundary span; pick a smaller offset or a gentler boundary",
+                    p.minimum_cone_radius
+                )));
+            }
         }
         let mut shifted: Vec<&Loop> = offset.loops().iter().collect();
         shifted.sort_by(|x, y| y.area().abs().total_cmp(&x.area().abs()));

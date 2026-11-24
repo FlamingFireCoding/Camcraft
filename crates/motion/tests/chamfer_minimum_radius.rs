@@ -234,10 +234,7 @@ fn minimum_radius_refuses_invalid_and_collapsed_offsets_by_name() {
             &rect(0.0, 0.0, 20.0, 20.0),
             &params(value, Side::Outside),
         ));
-        assert!(
-            why.contains("tip offset") && why.contains(word),
-            "{why}"
-        );
+        assert!(why.contains("tip offset") && why.contains(word), "{why}");
     }
     let why = refusal(chamfer(
         &rect(0.0, 0.0, 4.0, 4.0),
@@ -247,4 +244,146 @@ fn minimum_radius_refuses_invalid_and_collapsed_offsets_by_name() {
         why.contains("disappears") && why.contains("tip offset"),
         "{why}"
     );
+}
+
+#[test]
+fn a_partial_branch_collapse_is_refused_even_with_one_surviving_loop() {
+    for height in [20.5, 30.0] {
+        let boundary = Region::new(vec![
+            Loop::new(vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(20.0, 0.0),
+                Point2::new(20.0, 20.0),
+                Point2::new(12.0, 20.0),
+                Point2::new(12.0, height),
+                Point2::new(8.0, height),
+                Point2::new(8.0, 20.0),
+                Point2::new(0.0, 20.0),
+            ])
+            .expect("branch"),
+        ])
+        .expect("region");
+        assert_eq!(boundary.offset(-3.0).expect("offset").loops().len(), 1);
+        let why = refusal(chamfer(&boundary, &params(3.0, Side::Inside)));
+        assert!(
+            why.contains("tip offset") && why.contains("boundary span"),
+            "{why}"
+        );
+    }
+}
+
+#[test]
+fn a_partial_inlet_collapse_is_refused_even_with_one_surviving_loop() {
+    let boundary = Region::new(vec![
+        Loop::new(vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(20.0, 0.0),
+            Point2::new(20.0, 20.0),
+            Point2::new(12.0, 20.0),
+            Point2::new(12.0, 10.0),
+            Point2::new(8.0, 10.0),
+            Point2::new(8.0, 20.0),
+            Point2::new(0.0, 20.0),
+        ])
+        .expect("inlet"),
+    ])
+    .expect("region");
+    assert_eq!(boundary.offset(3.0).expect("offset").loops().len(), 1);
+    let why = refusal(chamfer(&boundary, &params(3.0, Side::Outside)));
+    assert!(
+        why.contains("tip offset") && why.contains("boundary span"),
+        "{why}"
+    );
+}
+
+// Captured by running the generator at 2fbe6f2fbb33d3be8181ae6097766f2b1415c94e
+// (the parent of #3153's first cone-band commit), with width 1, angle 45,
+// top Z 20, and the same fixtures below. These are complete Toolpaths;
+// no expected coordinate, depth, or slope is calculated by the new code.
+fn captured_legacy_path(closed: bool) -> camcraft_motion::cl::Toolpath {
+    use MoveKind::{Feed, Plunge, Rapid};
+    use camcraft_motion::cl::{EdgeBreak, Move, Toolpath};
+    use camcraft_motion::geometry::Point3;
+
+    let (moves, edge) = if closed {
+        (
+            vec![
+                (Rapid, [0.0, 0.0, 25.0], [4.0, 4.0, 25.0], None),
+                (Plunge, [4.0, 4.0, 25.0], [4.0, 4.0, 19.0], Some(100.0)),
+                (Feed, [4.0, 4.0, 19.0], [4.0, 0.0, 19.0], Some(500.0)),
+                (Feed, [4.0, 0.0, 19.0], [0.0, 0.0, 19.0], Some(500.0)),
+                (Feed, [0.0, 0.0, 19.0], [0.0, 4.0, 19.0], Some(500.0)),
+                (Feed, [0.0, 4.0, 19.0], [4.0, 4.0, 19.0], Some(500.0)),
+                (Rapid, [4.0, 4.0, 19.0], [4.0, 4.0, 25.0], None),
+            ],
+            vec![
+                [4.0, 4.0, 20.0],
+                [4.0, 0.0, 20.0],
+                [0.0, 0.0, 20.0],
+                [0.0, 4.0, 20.0],
+                [4.0, 4.0, 20.0],
+            ],
+        )
+    } else {
+        (
+            vec![
+                (Rapid, [0.0, 0.0, 25.0], [-20.0, 21.0, 25.0], None),
+                (
+                    Plunge,
+                    [-20.0, 21.0, 25.0],
+                    [-20.0, 21.0, 19.0],
+                    Some(100.0),
+                ),
+                (Feed, [-20.0, 21.0, 19.0], [-20.0, 20.0, 19.0], Some(500.0)),
+                (Feed, [-20.0, 20.0, 19.0], [20.0, 20.0, 19.0], Some(500.0)),
+                (Feed, [20.0, 20.0, 19.0], [20.0, 21.0, 19.0], Some(500.0)),
+                (Rapid, [20.0, 21.0, 19.0], [20.0, 21.0, 25.0], None),
+            ],
+            vec![[-20.0, 20.0, 20.0], [20.0, 20.0, 20.0]],
+        )
+    };
+    let point = |q: [f64; 3]| Point3::new(q[0], q[1], q[2]);
+    Toolpath {
+        moves: moves
+            .into_iter()
+            .map(|(kind, from, to, feed)| Move::new(kind, point(from), point(to), feed))
+            .collect(),
+        breaks: vec![EdgeBreak {
+            edge: edge.into_iter().map(point).collect(),
+            depth: 1.0,
+            slope: 0.9999999999999999,
+            volume: None,
+        }],
+        ..Toolpath::default()
+    }
+}
+
+fn assert_captured_legacy(actual: camcraft_motion::cl::Toolpath, closed: bool) {
+    let expected = captured_legacy_path(closed);
+    assert_eq!(
+        actual, expected,
+        "the complete legacy Toolpath must survive"
+    );
+    assert_eq!(actual.breaks[0].depth.to_bits(), 4_607_182_418_800_017_408);
+    assert_eq!(
+        format!("{actual:?}"),
+        format!("{expected:?}"),
+        "also preserve signed zero and the full floating-point representation"
+    );
+}
+
+#[test]
+fn zero_radius_matches_captured_legacy_closed_toolpath() {
+    let p = params(0.0, Side::Auto);
+    let closed = chamfer(&rect(0.0, 0.0, 4.0, 4.0), &p).expect("zero closed");
+    assert_captured_legacy(closed, true);
+}
+
+#[test]
+fn zero_radius_matches_captured_legacy_open_toolpath() {
+    let p = params(0.0, Side::Auto);
+    let run = vec![Point2::new(-20.0, 20.0), Point2::new(20.0, 20.0)];
+    let open = chamfer_open_runs(&[run], &p, &|_| Ok(Some(rect(-20.0, -20.0, 20.0, 20.0))))
+        .expect("zero open");
+    assert_captured_legacy(open, false);
 }
