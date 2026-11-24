@@ -291,6 +291,8 @@ mod tests {
                 hold_crossings: false,
                 holes: &[],
                 corner_reliefs: &reliefs,
+                cleared_links: false,
+                ramp_starts: Vec::new(),
             },
         )
         .expect("emit disconnected pocket passes");
