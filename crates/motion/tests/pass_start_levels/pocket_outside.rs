@@ -77,29 +77,33 @@ fn outside_pocket_dog_bone_names_each_lift() {
     }
 }
 
-/// A digest (FNV-1a, stable on every toolchain) of every move (kind and
-/// both ends, to 1e-4 mm) and note.
-fn digest(path: &Toolpath) -> u64 {
-    let mut text = String::new();
-    for m in &path.moves {
-        let e = [m.from.x, m.from.y, m.from.z, m.to.x, m.to.y, m.to.z].map(|v| format!("{v:.4}"));
-        text.push_str(&format!("{:?} {}\n", m.kind, e.join(" ")));
-    }
-    path.notes.iter().for_each(|n| text.push_str(n));
-    text.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, c| (h ^ u64::from(c)).wrapping_mul(0x0100_0000_01b3))
+/// #3853: the same plan with `around_part` off, which never links by the
+/// ring law; both are computed on this machine, so the comparison is exact
+/// on every platform (a recorded path hash is not: the float results of a
+/// long plan differ in the last bits across targets).
+fn without_ring_law(region: &Region, p: &PocketParams, side: &StartSide) -> Toolpath {
+    let off = StartSide { around_part: false, ..side.clone() };
+    pocket_started_on(region, p, &[], &CornerRelief::default(), &off).expect("plan")
+}
+
+/// The two paths post the same moves (kind and both ends) and notes.
+fn assert_same_moves(name: &str, got: &Toolpath, want: &Toolpath) {
+    assert_eq!(got.moves.len(), want.moves.len(), "{name}: the move count changed");
+    let first = got.moves.iter().zip(&want.moves).position(|(a, b)| a.kind != b.kind || a.from != b.from || a.to != b.to);
+    assert!(first.is_none(), "{name}: move {first:?} differs: {:?} vs {:?}", first.map(|i| &got.moves[i].to), first.map(|i| &want.moves[i].to));
+    assert_eq!(got.notes, want.notes, "{name}: the notes changed");
 }
 
 /// #3822 pin: Zigzag rows are no ring set, so the ring law does not link
-/// them. Round the dog bone, Inside and Outside post the moves that main
-/// posted before #3818 (the digest read on `b2ff0ef1b`, the first parent
-/// of the #3818 merge; the rows have no start side, so both read alike).
+/// them. Round the dog bone, Inside and Outside post the same moves as the
+/// plan that never links by the ring law (#3853: compared live).
 #[test]
 fn zigzag_rows_keep_their_links_round_a_part() {
     for start in [PassStart::Inside, PassStart::Outside] {
-        let path = plan(&dog_bone(), &pocket(PocketStrategy::Zigzag), start);
-        let got = digest(&path);
-        eprintln!("zigzag {start:?}: {} move(s), digest {got}", path.moves.len());
-        assert_eq!(got, 8_921_186_595_469_344_120, "zigzag {start:?}: the moves changed: {:?}", path.notes);
+        let p = pocket(PocketStrategy::Zigzag);
+        let path = plan(&dog_bone(), &p, start);
+        let want = without_ring_law(&band(&dog_bone()), &p, &side(start));
+        assert_same_moves(&format!("zigzag {start:?}"), &path, &want);
     }
 }
 
@@ -154,8 +158,8 @@ fn hsm_square() -> PocketParams {
 
 /// #3822 pin (review of #3837): round a part with Outside and a stock, the
 /// Adaptive spiral runs its own air plan (no fallback to rings). It is no
-/// ring set, so the ring law does not link it: it posts the moves that
-/// main posted before #3818 (the digest read on `b2ff0ef1b`).
+/// ring set, so the ring law does not link it: it posts the moves of the
+/// plan that never links by the ring law (#3853: compared live).
 #[test]
 fn adaptive_spiral_round_a_part_outside_equals_main_before_3818() {
     use camcraft_motion::geo2d::Point2;
@@ -169,9 +173,9 @@ fn adaptive_spiral_round_a_part_outside_equals_main_before_3818() {
         "the spiral falls back to rings: {:?}",
         path.notes
     );
-    let got = digest(&path);
-    eprintln!("adaptive square Outside: {} move(s), digest {got}", path.moves.len());
-    assert_eq!(got, 13_996_707_157_284_497_335, "the Adaptive spiral changed: {:?}", path.notes);
+    let want = without_ring_law(&band, &hsm_square(), &side);
+    eprintln!("adaptive square Outside: {} move(s)", path.moves.len());
+    assert_same_moves("adaptive square Outside", &path, &want);
 }
 
 /// The Z of each lift off the floor at `Z` (a cut on the floor still to
