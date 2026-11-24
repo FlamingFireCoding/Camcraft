@@ -34,6 +34,10 @@
 //! # Ok::<(), camcraft_post::agie_setup::SetupError>(())
 //! ```
 
+mod inspection;
+mod publish;
+pub use inspection::{INSPECTION_RECEIPT, InspectionProfile, InspectionSegment};
+
 /// Wire-centre offsets in µm of the rough pass and the three trims on a
 /// straight outside face, for each measured stock thickness in mm. Offline
 /// Agie Control plots of steel 0001, Berco Cut 0.25 and quality CCB030 (#2954).
@@ -135,6 +139,7 @@ impl WorkSide {
 
 mod cutoff;
 mod piece;
+use piece::{attribute_call, checked};
 pub use cutoff::{CUTOFF_HEIGHT_UM, CutoffSetup20, CutoffSide};
 
 impl PunchSetup20<'_> {

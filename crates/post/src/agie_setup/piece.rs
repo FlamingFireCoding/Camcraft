@@ -24,12 +24,15 @@ fn mm(value_um: i64) -> String {
 }
 
 fn attribute(lines: &mut Vec<String>, object: &str, context: &str, key: &str, value: &str) {
-    lines.push(format!(
-        "  ok=JE_AttribObject({object},SETATTR,je_piece,{context},{key},{value},je_dim)"
-    ));
+    lines.push(attribute_call(object, context, key, value));
 }
 
-fn checked(lines: &mut Vec<String>, command: String) {
+/// One SBL attribute call. The inspection work shares it (#3219).
+pub(super) fn attribute_call(object: &str, context: &str, key: &str, value: &str) -> String {
+    format!("  ok=JE_AttribObject({object},SETATTR,je_piece,{context},{key},{value},je_dim)")
+}
+
+pub(super) fn checked(lines: &mut Vec<String>, command: String) {
     lines.push(command);
     lines.extend([
         "  if (ok<>0) then".into(),

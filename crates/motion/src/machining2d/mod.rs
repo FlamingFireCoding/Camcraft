@@ -81,6 +81,7 @@ mod lead_fit;
 mod lead_seam;
 mod ladder_links;
 mod level_order;
+mod level_ramp_entry;
 mod level_rings;
 mod levels;
 mod microlift;
@@ -114,6 +115,7 @@ mod tab_clear;
 mod tab_kerf;
 mod slots;
 mod slot_band;
+mod trace_avoid;
 mod slot_ends;
 mod slot_lap;
 mod slot_room;
@@ -188,6 +190,7 @@ pub use rest_prior_adaptive::{rest_adaptive_previous, REST_ADAPTIVE_ENTERED, RES
 pub use ring::{on_boundary, ring_is_circular};
 pub use slot_band::slot_centre_band;
 pub use slots::{chord_clears, slot, trace, SlotParams, TraceParams};
+pub use trace_avoid::trace_avoid;
 pub use slot_ends::extended_ends as slot_extended_ends;
 pub use slot_room::{SlotBound, SlotFit, FIT_TOL as SLOT_FIT_TOL};
 pub use undercut::{undercut, undercut_band, undercut_station, UndercutParams, MAX_BULGE as UNDERCUT_MAX_BULGE};
@@ -205,7 +208,8 @@ pub use trochoid_slot::{
 };
 pub use thread_mill::{thread_mill, PassSchedule, ThreadHole, ThreadParams, ThreadPasses, MAX_SPRING_PASSES, EXTERNAL_THREAD_DEPTH_PER_PITCH, THREAD_DEPTH_PER_PITCH};
 pub(crate) use pocket::plan_passes;
-pub(crate) use pocket_zigzag::rest_passes as zigzag_ringed_passes;
+pub(crate) use pocket_zigzag::{SeamWrap, ringed_passes as zigzag_ringed_passes};
+pub use pocket_zigzag::boundary_rings_probe;
 pub(crate) use adaptive_troch_level::{TrochLevel, WHO_3D, plan_troch_level, refusal_text as troch_refusal_text};
 pub(crate) use adaptive::PLAN_SAG;
 // The HSM planner's door, its arc proofs and its microlift link, read
