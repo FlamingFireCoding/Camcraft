@@ -6,12 +6,14 @@
 //! maintainer's words on #3748 ("it uses a safe entry and names it in a
 //! warning") and the Prime Directive; no vendor material consulted.
 
+use crate::approach::{AIR_ENTRY_REFUSAL, OUTSIDE_AIR_REFUSAL};
 use crate::cl::{MoveKind, PathBuilder, Toolpath};
 use crate::entry::Entry3D;
 use crate::geo2d::Point2;
 use crate::verify::Warning;
 
 use super::GenError;
+use super::descent::{Descent, Lvl};
 use super::levels::Motion;
 use super::pass_start::PassStart;
 
@@ -25,21 +27,42 @@ pub const ENTRY_STAND_IN_NOTE: &str =
 pub const PLUNGE_INTO_STOCK_NOTE: &str =
     "entry: Pass starts at - the selected Plunge entry plunges into uncut stock at a pass start that no earlier cut cleared";
 
-/// #3884 (the maintainer's rule on #3741: an Outside pass goes down in air
-/// outside the stock, never by a helix or a ramp): the refusal of a
-/// selected Arc on an Outside ring pass with no air room.
-pub const OUTSIDE_AIR_REFUSAL: &str =
-    "entry refused: no air room for an Outside entry: set a stock, or choose an Inside start or a Helix, Ramp or Plunge entry";
-
-/// Refuse the selected Arc on an Outside ring pass (`rings`: the resolved
-/// strategy walks rings) that has no air room - no stock known, not round
-/// a part, or the fixtures fill it. A selected Helix, Ramp or Plunge runs,
-/// with its one warning.
-pub(super) fn refuse_outside_arc(start: PassStart, entry: Entry3D, rings: bool, air: bool) -> Result<(), GenError> {
-    if start == PassStart::Outside && entry == Entry3D::Arc && rings && !air {
-        return Err(GenError::Invalid(OUTSIDE_AIR_REFUSAL.to_owned()));
+/// #3884: the one Outside-air check of every Outside entry path - the
+/// plan (no air room at all), the first entry of a level (no air lead
+/// fits, `air_entry::stand_in`) and the re-entry after a lift
+/// (`descent_dive::entry_restart`). A selected Arc on an Outside ring pass
+/// goes down in air outside the stock (`in_air`), or it is refused by name
+/// with `why`: never an automatic helix, ramp or dive. A selected Helix,
+/// Ramp or Plunge runs, with its one warning.
+pub(super) fn outside_air_check(outside: bool, entry: Entry3D, in_air: bool, why: &str) -> Result<(), String> {
+    if outside && entry == Entry3D::Arc && !in_air {
+        return Err(format!("{OUTSIDE_AIR_REFUSAL} ({why})"));
     }
     Ok(())
+}
+
+/// #3884: the selected Arc on an Outside pass re-enters a pass start in
+/// material in air outside the stock, or the op is refused by name - never
+/// a ramp or a helix. `None`: not that case.
+pub(super) fn outside_arc_restart(b: &PathBuilder, l: &Lvl, e: Point2, z: f64, plane: f64, m: &Motion) -> Option<Descent> {
+    let air = m.air.as_ref().filter(|a| a.outside() && m.entry == Entry3D::Arc)?;
+    let site = format!("the pass start ({:.3}, {:.3}) at Z {z:.3} is in material", e.x, e.y);
+    if let Some(a) = super::air_entry::restart(l, m).filter(|d| super::descent_dive::moves_clear(b, d, l, z, plane, m)) {
+        return Some(Descent::Named(Box::new(a), format!("entry: {site} - entered from the air outside the stock box instead")));
+    }
+    let why = format!("{site} and no air lead reaches it");
+    Some(Descent::Refused(match outside_air_check(air.outside(), m.entry, false, &why) {
+        Err(r) => r,
+        Ok(()) => format!("{AIR_ENTRY_REFUSAL} - {why}"),
+    }))
+}
+
+/// The plan's call of [`outside_air_check`]: an Outside ring pass
+/// (`rings`: the resolved strategy walks rings, an Adaptive op's ring
+/// fallback too) with no air room - no stock known, not round a part, or
+/// the fixtures fill it.
+pub(super) fn refuse_outside_arc(start: PassStart, entry: Entry3D, rings: bool, air: bool) -> Result<(), GenError> {
+    outside_air_check(start == PassStart::Outside && rings, entry, air, "the pass has no air room outside the stock").map_err(GenError::Invalid)
 }
 
 /// The tails of the notes that name a stand-in entry: the entry that the

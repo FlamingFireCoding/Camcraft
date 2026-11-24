@@ -296,8 +296,14 @@ fn a_short_dead_end_no_longer_falls_back_to_auto() {
 /// The pocket form of the band (no stock known, so no air room) with
 /// "Pass starts at: Outside" and the lead-in `entry`.
 fn band_pocket(entry: Entry3D) -> Result<(Toolpath, PocketParams), String> {
+    band_pocket_as(PocketStrategy::Waterline, entry)
+}
+
+/// [`band_pocket`] with the pocket `strategy`.
+fn band_pocket_as(strategy: PocketStrategy, entry: Entry3D) -> Result<(Toolpath, PocketParams), String> {
     let (region, _) = band();
     let mut p = params(true);
+    p.strategy = strategy;
     p.entry = entry;
     if entry == Entry3D::Ramp {
         p.links.approach.ramp_angle = RAMP_DEG;
@@ -318,14 +324,21 @@ fn named_warnings(path: &Toolpath, entry: Entry3D) -> usize {
 /// refused by name - no automatic ramp or helix is posted.
 #[test]
 fn outside_pocket_arc_without_air_is_refused() {
-    match band_pocket(Entry3D::Arc) {
-        Ok((path, _)) => panic!("the Arc entry with no air room was not refused: {:?}", path.notes),
-        Err(e) => assert!(e.contains(OUTSIDE_AIR_REFUSAL), "{e}"),
+    // Adaptive too: with no stock outline it falls back to Offset rings,
+    // which has no air room either (#3884 review: it dived into stock).
+    for strategy in [PocketStrategy::Waterline, PocketStrategy::OffsetRings, PocketStrategy::Adaptive] {
+        match band_pocket_as(strategy, Entry3D::Arc) {
+            Ok((path, _)) => panic!("{strategy:?}: the Arc entry with no air room was not refused: {:?}", path.notes),
+            Err(e) => assert!(e.contains(OUTSIDE_AIR_REFUSAL), "{strategy:?}: {e}"),
+        }
     }
 }
 
 /// #3884 pin 2: the same pocket with a selected Plunge or Ramp runs as
-/// selected, and names the selected entry in exactly one warning.
+/// selected, and names the selected entry in exactly one warning. A Ramp
+/// may also post `EntryStandIn`: it names the other entries the ladder
+/// used (an axial dive, ramps along the pass at pass starts in material),
+/// not the selected Ramp, so it is not counted here.
 #[test]
 fn outside_pocket_selected_entry_keeps_one_warning() {
     for entry in [Entry3D::Plunge, Entry3D::Ramp] {

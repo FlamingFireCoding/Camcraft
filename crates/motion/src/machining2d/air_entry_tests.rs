@@ -198,6 +198,10 @@ fn block(min: [f64; 3], max: [f64; 3]) -> Vec<crate::geometry::Triangle> {
 }
 
 fn avoid_cut(items: Vec<crate::verify::AvoidItem>) -> Toolpath {
+    avoid_try(items).unwrap_or_else(|e| panic!("avoid: {e}"))
+}
+
+fn avoid_try(items: Vec<crate::verify::AvoidItem>) -> Result<Toolpath, String> {
     use crate::machining2d::pocket_avoid_started_on;
     use crate::verify::{AvoidSpec, Cutter};
     let geom = crate::tools::ToolGeom {
@@ -212,16 +216,14 @@ fn avoid_cut(items: Vec<crate::verify::AvoidItem>) -> Toolpath {
     let spec = AvoidSpec { items, cutter: Cutter::flat(&geom), clearance: 1.0 };
     let (stock, band) = dog_bone();
     let side = StartSide { start: PassStart::Outside, stock: Some(stock), around_part: true };
-    match pocket_avoid_started_on(&band, &params(Entry3D::Arc, 0.0, 0.0), &spec, &CornerRelief::default(), &side) {
-        Ok(t) => t,
-        Err(e) => panic!("avoid: {e}"),
-    }
+    pocket_avoid_started_on(&band, &params(Entry3D::Arc, 0.0, 0.0), &spec, &CornerRelief::default(), &side).map_err(|e| e.to_string())
 }
 
 /// #3810: with fixtures to avoid, the Arc entry of Outside still plunges
 /// in air outside the stock box; with a clamp over that plunge point the
 /// entry moves off it or stands down by name, and no move touches the
-/// clamp.
+/// clamp. #3884: an Outside entry that cannot move off it in air is
+/// refused by name, never a helix or ramp stand-in.
 #[test]
 fn avoid_route_entry_plunges_in_air_clear_of_a_clamp() {
     use crate::verify::{AVOID_VERIFY_TOL, AvoidItem, AvoidSpec, Cutter, avoid_hits};
@@ -233,7 +235,13 @@ fn avoid_route_entry_plunges_in_air_clear_of_a_clamp() {
     // A clamp 8 mm square, from the table to over the stock, on the plunge point.
     let (cx, cy) = (p.to.x, p.to.y);
     let clamp = AvoidItem { label: "clamp".into(), tris: block([cx - 4.0, cy - 4.0, 0.0], [cx + 4.0, cy + 4.0, 20.0]), edges: vec![] };
-    let t = avoid_cut(vec![clamp.clone()]);
+    let t = match avoid_try(vec![clamp.clone()]) {
+        Ok(t) => t,
+        Err(e) => {
+            assert!(e.contains(crate::approach::OUTSIDE_AIR_REFUSAL), "{e}");
+            return;
+        }
+    };
     let geom = crate::tools::ToolGeom {
         radius: R,
         nose_radius: 0.0,
@@ -247,10 +255,58 @@ fn avoid_route_entry_plunges_in_air_clear_of_a_clamp() {
     let hits = avoid_hits(&t, &spec, AVOID_VERIFY_TOL).unwrap_or_else(|e| panic!("verify: {e}"));
     assert!(hits.is_empty(), "the path touches the clamp: {hits:?}");
     // The clamp's keep-out covers the corner lead: the entry moves off the
-    // clamp in air, or stands down by name - never onto the clamp.
-    let named = t.notes.iter().any(|n| n.starts_with("entry: Outside pass - no air entry"));
+    // clamp in air (or the op is refused above) - never onto the clamp.
     let moved = t.moves.iter().find(|m| m.kind == MoveKind::Plunge && (m.to.z - BOTTOM).abs() < 1e-9).is_some_and(|q| {
         (q.to.x - cx).hypot(q.to.y - cy) > 4.0 + R && off_box(q.to.x, q.to.y) >= need - 1e-6
     });
-    assert!(named || moved, "the entry neither moved off the clamp nor was named: {:?}", t.notes);
+    assert!(moved, "the entry did not move off the clamp in air: {:?}", t.notes);
+}
+
+/// #3884 pin (first entry): an Outside pass whose Arc lead fits nowhere -
+/// an arc far larger than the air round the stock - is refused by name,
+/// with no helix or ramp stand-in. Inside keeps its named stand-in.
+#[test]
+fn outside_first_entry_without_an_air_lead_is_refused() {
+    let p = params(Entry3D::Arc, 5000.0, 0.0);
+    let (stock, band) = dog_bone();
+    let side = |start| StartSide { start, stock: Some(stock.clone()), around_part: true };
+    match pocket_started_on(&band, &p, &[], &CornerRelief::default(), &side(PassStart::Outside)) {
+        Ok(t) => panic!("the Outside Arc with no air lead was not refused: {:?}", t.notes),
+        Err(e) => assert!(e.to_string().contains(crate::approach::OUTSIDE_AIR_REFUSAL), "{e}"),
+    }
+    let inside = pocket_started_on(&band, &p, &[], &CornerRelief::default(), &side(PassStart::Inside));
+    assert!(inside.is_ok_and(|t| t.notes.iter().any(|n| n.starts_with("entry: Inside pass - no air entry"))), "Inside lost its stand-in");
+}
+
+/// #3884 pin (re-entry after a lift): a pass start in material that no air
+/// lead reaches - a ring of the level encloses it - is refused by name on
+/// an Outside pass with the Arc entry: no ramp along the pass, no helix.
+#[test]
+fn outside_reentry_without_an_air_lead_is_refused() {
+    use super::super::descent::{Descent, Lvl};
+    use super::super::levels::Cert;
+    use crate::cl::PathBuilder;
+    use crate::geometry::Point3;
+    let stock = region(vec![rect(-40.0, -25.0, 40.0, 25.0)]);
+    let center = region(vec![rect(-44.0, -29.0, 44.0, 29.0)]);
+    let Some(air) = super::AirRoom::new(&stock, &center, R, 1.0, false) else { panic!("air room") };
+    let ring = |x0: f64, y0: f64, x1: f64, y1: f64| {
+        vec![Point2::new(x0, y0), Point2::new(x1, y0), Point2::new(x1, y1), Point2::new(x0, y1), Point2::new(x0, y0)]
+    };
+    let passes = vec![ring(-36.0, -21.0, 36.0, 21.0), ring(0.0, 0.0, 4.0, 4.0)];
+    let cert = Cert::Region(&center);
+    let l = Lvl { cen: &cert, passes: &passes, pass: &passes[1], walk: None, mat_top: TOP };
+    let m = super::super::levels::Motion::new(30.0, None, 1200.0, 300.0)
+        .with_entry(Entry3D::Arc, 2.0)
+        .with_arc_radius(2.0 * R)
+        .with_links(crate::links::Links::PLANAR, 2.0)
+        .with_cleared_links(true)
+        .with_air(Some(air));
+    let b = PathBuilder::approached(Point3::new(0.0, 0.0, 30.0));
+    let d = super::super::descent_dive::entry_restart(&b, &l, Point2::new(0.0, 0.0), BOTTOM, TOP + 2.0, 30.0, &m);
+    match d {
+        Descent::Refused(r) => assert!(r.starts_with(crate::approach::OUTSIDE_AIR_REFUSAL), "{r}"),
+        Descent::Named(_, note) => panic!("a stand-in re-entry, not a refusal: {note}"),
+        _ => panic!("not refused"),
+    }
 }
