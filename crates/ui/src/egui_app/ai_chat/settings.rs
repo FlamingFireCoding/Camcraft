@@ -1,6 +1,7 @@
 //! Provenance: issue #3781; transient credential controls over our existing provider APIs.
 
 use std::sync::{Arc, mpsc};
+use std::time::{Duration, Instant};
 
 use camcraft_app::ai::ApiKey;
 
@@ -30,6 +31,8 @@ pub(crate) struct Settings {
     request: Option<SettingsRequest>,
     pending: Option<mpsc::Receiver<Result<String, String>>>,
     needs_check: bool,
+    check_after: Option<Instant>,
+    tested_model: Option<String>,
 }
 
 impl Default for Settings {
@@ -42,6 +45,8 @@ impl Default for Settings {
             request: None,
             pending: None,
             needs_check: false,
+            check_after: None,
+            tested_model: None,
         }
     }
 }
@@ -57,13 +62,31 @@ impl Settings {
         self.pending.is_some()
     }
 
-    /// Keep one job in flight. Discard a stale result after a provider/model switch.
+    pub fn has_work(&self) -> bool {
+        self.busy() || self.needs_check
+    }
+
+    /// Keep one job in flight. Cloud readiness depends on credentials, not the model.
     pub fn sync(&mut self, request: SettingsRequest) {
+        self.sync_at(request, Instant::now());
+    }
+
+    pub(crate) fn sync_at(&mut self, request: SettingsRequest, now: Instant) {
         if self.request.as_ref() != Some(&request) {
+            let same_provider = self.request.as_ref().is_some_and(|previous| {
+                previous.preset_id == request.preset_id
+                    && previous.offline_only == request.offline_only
+            });
+            let cloud = camcraft_app::ai::by_id(&request.preset_id)
+                .is_some_and(|preset| preset.key.is_some());
             self.close_editor();
             self.request = Some(request);
-            self.status = "Checking provider...".into();
-            self.needs_check = true;
+            if !same_provider || !cloud {
+                self.status = "Checking provider...".into();
+                self.needs_check = true;
+                // Coalesce local Model keystrokes. Provider switches check immediately.
+                self.check_after = same_provider.then(|| now + Duration::from_millis(500));
+            }
         }
         if let Some(rx) = &self.pending {
             let result = match rx.try_recv() {
@@ -74,11 +97,26 @@ impl Settings {
                 Err(mpsc::TryRecvError::Empty) => None,
             };
             if let Some(result) = result {
-                self.status = result.unwrap_or_else(|message| message);
+                if !self.needs_check {
+                    let current_model = self.request.as_ref().map(|request| &request.model);
+                    if self
+                        .tested_model
+                        .as_ref()
+                        .is_none_or(|model| Some(model) == current_model)
+                    {
+                        self.status = result.unwrap_or_else(|message| message);
+                    } else {
+                        self.status = "Model changed. Click Test to test this model.".into();
+                    }
+                }
+                self.tested_model = None;
                 self.pending = None;
             }
         }
-        if !self.busy() && self.needs_check {
+        if !self.busy()
+            && self.needs_check
+            && self.check_after.is_none_or(|deadline| now >= deadline)
+        {
             // Starting the queued check replaces a stale status before the UI draws it.
             self.needs_check = false;
             self.start(SettingsAction::Check);
@@ -110,6 +148,7 @@ impl Settings {
                 "Offline only blocks the cloud test. Clear Offline only to test this key.".into();
             return;
         }
+        let tested_model = matches!(&action, SettingsAction::Test).then(|| request.model.clone());
         let backend = Arc::clone(&self.backend);
         let (tx, rx) = mpsc::channel();
         let started = request.clone();
@@ -122,6 +161,9 @@ impl Settings {
             Ok(_) => {
                 self.status = "Checking provider...".into();
                 self.pending = Some(rx);
+                self.tested_model = tested_model;
+                self.needs_check = false;
+                self.check_after = None;
             }
             Err(_) => {
                 self.status = "The provider check could not start. Click Test to retry.".into()

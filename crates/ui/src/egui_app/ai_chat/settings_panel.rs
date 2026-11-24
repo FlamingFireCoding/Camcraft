@@ -14,7 +14,7 @@ pub(crate) fn draw(ui: &mut Ui, settings: &mut Settings, preset: &str, model: &s
         model: model.into(),
         offline_only: offline,
     });
-    if settings.busy() {
+    if settings.has_work() {
         ui.ctx().request_repaint_after(Duration::from_millis(50));
     }
     ui.label(&settings.status);
@@ -55,6 +55,13 @@ pub(crate) fn draw(ui: &mut Ui, settings: &mut Settings, preset: &str, model: &s
         egui::CollapsingHeader::new("Ollama setup").show(ui, |ui| {
             ui.hyperlink_to("Download Ollama", "https://ollama.com/download");
             ui.label("Install and start Ollama. In Terminal, run ollama pull followed by the Model name above. Then click Test.");
+            ui.label("If the app is not running, start the server with ollama serve. It listens at http://localhost:11434.");
+            ui.label("Check the server with curl http://localhost:11434/api/version or ollama list. Model must match an installed name exactly.");
+            ui.label("Set these environment variables before ollama serve:");
+            ui.label("OLLAMA_HOST=127.0.0.1:11500 changes the port. This panel uses http://localhost:11434/v1 and has no endpoint field yet.");
+            ui.label("OLLAMA_HOST=0.0.0.0:11434 exposes the server to the network. Anyone on that network can use it. This panel connects only to loopback.");
+            ui.label("OLLAMA_CONTEXT_LENGTH=32768 gives the tools more context, if memory permits.");
+            ui.label("OLLAMA_KEEP_ALIVE=30m keeps the model loaded between messages.");
             ui.hyperlink_to("Install a model", "https://docs.ollama.com/quickstart");
         });
     }
@@ -130,6 +137,7 @@ fn provider_help(ui: &mut Ui, name: KeyName) {
             ui.label("3. Copy the secret key now. You cannot view it again.");
         }
         KeyName::Gemini => {
+            ui.label("A Gemini app subscription does not include an API key. Get the key from Google AI Studio.");
             ui.label("1. Sign in to Google AI Studio. Open API keys.");
             ui.label("2. Create an API key and choose a project. Name the key for this computer.");
             ui.label("3. Copy the key from AI Studio.");

@@ -59,6 +59,9 @@ See Anthropic's [API key instructions](https://platform.claude.com/docs/en/get-a
 
 #### Get a Gemini key
 
+A Gemini app subscription does not include an API key. Create the key in
+Google AI Studio with your Google account.
+
 1. Sign in to [Google AI Studio](https://aistudio.google.com/api-keys).
 2. Create an API key for your Google Cloud project. Give it a name that identifies this computer.
 3. Copy the key and keep it secret.
@@ -119,6 +122,9 @@ Choose a model that fits your computer's memory.
 
 Ollama runs on http://localhost:11434. The panel uses its OpenAI-compatible endpoint
 at http://localhost:11434/v1.
+If the app is not running, start the server with `ollama serve`.
+Check it with `curl http://localhost:11434/api/version` or `ollama list`.
+On Linux, `systemctl status ollama` checks the installed service.
 The status names an unavailable server or an uninstalled model before you
 send a prompt. Start Ollama if the server is unavailable. Install the exact
 model named in **Model** if it is missing, then select **Test** again.
@@ -127,6 +133,15 @@ model named in **Model** if it is missing, then select **Test** again.
 2. Enter the exact installed model name in **Model**.
 3. Tick **Offline only**.
 4. Send the read-only request above.
+
+Set these environment variables before `ollama serve`:
+
+| Variable | Effect |
+|---|---|
+| `OLLAMA_HOST=127.0.0.1:11500` | Changes the port. The client would need `http://127.0.0.1:11500/v1`. The panel has no endpoint field yet; keep the default address for CamCraft. |
+| `OLLAMA_HOST=0.0.0.0:11434` | Exposes the server to other computers. Anyone on that network can use it. CamCraft's local panel connects only to loopback; it cannot connect to a remote GPU server yet. |
+| `OLLAMA_CONTEXT_LENGTH=32768` | Gives the tool list more context space. Use it if the computer has enough memory. A small context can truncate the tools. |
+| `OLLAMA_KEEP_ALIVE=30m` | Keeps the model loaded between messages. This avoids a reload on each Send. |
 
 In native-tools mode, CamCraft first asks Ollama whether the model supports
 tools. If it does not, choose **Local Prompt-JSON** for proposed tool calls,

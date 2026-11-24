@@ -7,6 +7,8 @@ mod delete_confirmation;
 mod regressions;
 mod safety;
 mod settings;
+mod settings_help;
+mod settings_model;
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
