@@ -4,7 +4,7 @@
 //! draws `kind_rows`), so a new kind row lands in one place. The preview
 //! stands above the tabs (U3, `preview`); #3895 (U4): the holder, the
 //! gauge length and the stick-out follow the rows (`assembly_group`). The
-//! recipes come to the window later (U5).
+//! cutting rows are on the Recipes tab (#3896, U5: `recipes_tab`).
 //! Provenance: our own tab over the tool draft; no HSMWorks material
 //! involved.
 
