@@ -108,8 +108,8 @@ fn assert_same(got: &DockState<Tab>, want: &DockState<Tab>) {
 }
 
 /// An arrangement unlike the default: a second tab behind Properties, a
-/// bottom split for Machines at its own share, and the tool library
-/// floating at a rect of its own.
+/// bottom split for Machines at its own share, and Debug info floating at
+/// a rect of its own (#3892: the old Tool library tab is dropped on load).
 fn arrange(dock: &mut DockState<Tab>) {
     if let Some(props) = dock.find_tab(&Tab::Properties)
         && let Ok(leaf) = dock.leaf_mut(props.node_path())
@@ -123,8 +123,8 @@ fn arrange(dock: &mut DockState<Tab>) {
         0.72,
         Node::leaf(Tab::Machines),
     );
-    if dock.find_tab(&Tab::Tools).is_none() {
-        let surface = dock.add_window(vec![Tab::Tools]);
+    if dock.find_tab(&Tab::DebugInfo).is_none() {
+        let surface = dock.add_window(vec![Tab::DebugInfo]);
         if let Some(w) = dock.get_window_state_mut(surface) {
             w.set_position(egui::pos2(700.0, 120.0));
             w.set_size(egui::vec2(260.0, 220.0));

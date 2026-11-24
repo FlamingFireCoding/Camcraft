@@ -61,8 +61,11 @@ fn known(rect: egui::Rect) -> egui::Rect {
 /// Read a saved arrangement back. A shape this build does not know, or a
 /// dock that breaks the permanence law, is refused by name.
 pub(crate) fn decode(value: &serde_json::Value) -> Result<DockState<Tab>, String> {
-    let dock: DockState<Tab> = serde_json::from_value(value.clone())
+    let mut dock: DockState<Tab> = serde_json::from_value(value.clone())
         .map_err(|e| format!("not a panel arrangement ({e})"))?;
+    // #3892: the old "Tool library" tab is a window now. A setup saved
+    // with it still loads; the tab (and a float left empty) goes.
+    dock.retain_tabs(|tab| !matches!(tab, Tab::Tools));
     validate(&dock)?;
     Ok(dock)
 }

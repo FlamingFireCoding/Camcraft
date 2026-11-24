@@ -42,3 +42,25 @@ fn layout_window_tool_library() {
         "the window {win:?} stands beside the Properties pane {props:?}, not over it"
     );
 }
+
+/// A closed window (its ✕ clears `state.tool_library`) opens again from
+/// the ribbon; the dock never gets a Tool library tab.
+#[test]
+fn the_tool_library_window_closes_and_opens_again() {
+    let mut h = shell_harness();
+    h.run_steps(2);
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Tools").click();
+    h.run_steps(3);
+    let _ = library_window(&h);
+    assert!(!super::layout::is_open(&h.state().dock, &Tab::Tools), "no dock tab");
+    h.state_mut().state.tool_library = None;
+    h.run_steps(2);
+    assert!(
+        !h.query_all_by_role(egui::accesskit::Role::Window)
+            .any(|n| n.accesskit_node().label().as_deref() == Some("Tool library")),
+        "a closed window is gone"
+    );
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Tools").click();
+    h.run_steps(3);
+    let _ = library_window(&h);
+}
