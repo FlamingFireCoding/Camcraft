@@ -60,9 +60,11 @@ says what it costs to change.
     `zero_offset`, `rollover` and `controller.rtcp` as fields are #1970's,
     in the same files (`fields.rs`, `sheet.rs`). This PR keeps those keys on
     every edit and does not draw them.
-11. **The group draws through the form helpers** (`layout/form.rs`,
-    `layout/controls.rs`; #1122): one setting per row, label left and
-    control right, help as a hover tooltip. Each axis has a row with its
+11. **The group draws in one property grid, as the editor's other
+    groups** (`prop_grid` in `layout/form.rs`; #1122): one setting per
+    row, the label in the first column and the control beside it in the
+    second, help as a hover tooltip. Controls pushed to the right edge
+    (`prop_row`) drifted away from their labels in a wide pane. Each axis has a row with its
     letter and kind and the buttons Up, Down and ✖ (their accessible names
     stay "Move A up", "Move A down", "Remove A"), then "A moves" (the work
     or the tool), then its own fields. The direction and the new axis's
