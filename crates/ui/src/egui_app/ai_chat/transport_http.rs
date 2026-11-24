@@ -102,6 +102,10 @@ impl HttpTransport {
         let automatic = ollama && req.model.trim().is_empty();
         let model = if automatic {
             discover_ollama_cancellable(&client, ep, cancel)?
+        } else if req.model.trim().is_empty()
+            && req.preset.endpoint_kind == super::EndpointKind::Cloud
+        {
+            camcraft_app::ai::presets::default_model(req.preset.provider).to_owned()
         } else {
             req.model.clone()
         };

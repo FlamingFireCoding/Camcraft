@@ -114,6 +114,42 @@ fn cloud_presets_use_current_shared_model_defaults() {
 }
 
 #[test]
+fn empty_cloud_request_uses_table_default_without_local_discovery() {
+    for input in ["", "   ", "explicit-cloud-model"] {
+        let preset = default_presets()
+            .into_iter()
+            .find(|p| p.id == "anthropic")
+            .expect("Anthropic preset");
+        let expected = if input.trim().is_empty() {
+            "claude-sonnet-5-5"
+        } else {
+            input
+        };
+        let (ep, server) = recorded_ollama(vec![(
+            "POST /v1/messages HTTP/1.1",
+            Some(expected),
+            json!({"content":[{"type":"text","text":"ready"}],"stop_reason":"end_turn"}),
+        )]);
+        let request = TransportRequest {
+            model: input.to_owned(),
+            fallback_mode: preset.fallback_mode,
+            preset,
+            offline_only: true,
+            tools_payload: json!({"tools":[]}),
+            messages: vec![],
+        };
+        let result = HttpTransport.complete_at(&request, &AtomicBool::new(false), &ep, None);
+        let requests = server.join().expect("cloud fixture");
+        assert!(result.is_ok(), "cloud model {input:?}: {result:?}");
+        assert_eq!(
+            requests.len(),
+            1,
+            "cloud requests must not discover local models"
+        );
+    }
+}
+
+#[test]
 fn ollama_defaults_discover_installed_tool_model_before_first_send() {
     for id in ["local-ollama", "local-prompt-json", "local-readonly"] {
         let steps = vec![
@@ -151,7 +187,7 @@ fn ollama_defaults_without_tool_models_give_install_guidance() {
             &local_request("local-ollama"), &AtomicBool::new(false), &ep, None);
         let requests = server.join().expect("recorded server");
         let message = result.expect_err("a model without tools must not receive chat");
-        assert!(message.contains("ollama pull "), "install command missing: {message}");
+        assert!(message.contains("ollama pull ornith-1.5:35b"), "install command missing: {message}");
         assert!(message.contains("https://ollama.com"), "model link missing: {message}");
         assert_eq!(requests.len(), count);
         assert!(requests.iter().all(|r| !r.starts_with("POST /v1/")));

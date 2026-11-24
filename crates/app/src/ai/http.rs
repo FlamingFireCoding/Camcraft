@@ -291,6 +291,6 @@ pub fn discover_ollama_cancellable(
             return Ok(model);
         }
     }
-    Err("Ollama has no installed model that can call tools. Run `ollama pull qwen3:8b`, \
+    Err("Ollama has no installed model that can call tools. Run `ollama pull ornith-1.5:35b`, \
          then send again. Get models at https://ollama.com/library".into())
 }

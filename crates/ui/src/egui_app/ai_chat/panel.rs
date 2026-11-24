@@ -73,11 +73,17 @@ fn draw_header(ui: &mut Ui, state: &mut State, pal: &theme::Tokens) {
         state.ai_chat.select_preset(idx);
     }
 
+    let model_hint = match state.ai_chat.selected_preset().endpoint_kind {
+        super::EndpointKind::Local => "Automatic: installed tool-capable model",
+        super::EndpointKind::Cloud => camcraft_app::ai::presets::default_model(
+            state.ai_chat.selected_preset().provider,
+        ),
+    };
     ui.horizontal(|ui| {
         let model_lbl = ui.label("Model");
         ui.add(
             egui::TextEdit::singleline(&mut state.ai_chat.model_input)
-                .hint_text("Automatic: installed tool-capable model")
+                .hint_text(model_hint)
                 .desired_width(f32::INFINITY),
         )
         .labelled_by(model_lbl.id);
