@@ -111,6 +111,15 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
         } else if k == "pass_start" && *v == json!("auto") && !back.contains_key(k) && pass_start_kept(&key, &fields_of(base)) {
             // #3316: `auto` is never written, so it never comes back.
             back.insert(k.clone(), v.clone());
+        } else if k == "picks" && base.kind() != operation::OpType::Probe && let Some(req) = v.as_object() {
+            // #3339: empty `picks` / empty role lists are skipped on save.
+            let mut bp = back.get("picks").and_then(Value::as_object).cloned().unwrap_or_default();
+            for role in ["start", "exit"] {
+                if req.get(role) == Some(&json!([])) && !bp.contains_key(role) {
+                    bp.insert(role.into(), json!([]));
+                }
+            }
+            back.insert("picks".into(), Value::Object(bp));
         }
     }
     if let Some(path) = lost(patch, &back, "") {

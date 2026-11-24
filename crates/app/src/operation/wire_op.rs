@@ -33,7 +33,7 @@ pub(super) fn seed_wire_contour(c: &Carried) -> OpParams {
         bottom_z: c.bottom,
         condition: String::new(),
         side: WireSide::Die,
-        start: None,
+        picks: crate::path_picks::PathPicks::default(),
         tabs: None,
         capture: false,
         taper_deg: 0.0,
@@ -333,7 +333,7 @@ pub fn wire_params(
         gap: cond.gap,
         condition: cond.id.clone(),
         side: op.side,
-        start: op.start.map(|[x, y]| Point2::new(x, y)),
+        start: op.picks.first(crate::path_picks::PickRole::Start).map(|p| p.xy),
         plane_z: bottom,
         tabs: op.tabs.as_ref().map(|t| TabParams {
             count: t.count,

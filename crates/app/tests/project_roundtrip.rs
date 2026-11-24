@@ -384,6 +384,7 @@ fn tools_and_generated_operations_round_trip() {
                 feed: 1200.0,
                 plunge_feed: 300.0,
                 climb: true,
+                picks: Default::default(),
             },
         )
         .expect("create op"),
@@ -493,6 +494,7 @@ fn arc_move_round_trips() {
                 blend_turns: false, blend_radius: None,
                 links: camcraft_app::links::Links::PLANAR,
                 chain_overrides: Vec::new(),
+                picks: Default::default(),
             },
         )
         .expect("create"),
@@ -560,6 +562,7 @@ fn a_stated_pose_round_trips_verbatim() {
                 feed: 1000.0,
                 plunge_feed: 200.0,
                 climb: true,
+                picks: Default::default(),
             },
         )
         .expect("face"),
@@ -985,6 +988,7 @@ fn v5_roundtrips_retract_and_auto() {
                 optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
                 blend_turns: false,
                 corner_relief: Default::default(),
+                picks: Default::default(),
             },
         )
         .expect("pocket"),
@@ -1005,6 +1009,7 @@ fn v5_roundtrips_retract_and_auto() {
                 feed: 1200.0,
                 plunge_feed: 300.0,
                 climb: true,
+                picks: Default::default(),
             },
         )
         .expect("trace"),
@@ -1084,6 +1089,7 @@ fn patch_selection_round_trips() {
                 feed: 1200.0,
                 plunge_feed: 300.0,
                 climb: true,
+                picks: Default::default(),
             },
         )
         .expect("create"),
@@ -1171,6 +1177,7 @@ fn a_selection_round_trips_and_stays_ok() {
         blend_turns: false, blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         chain_overrides: Vec::new(),
+        picks: Default::default(),
     };
     history.execute(
         &world,
@@ -2684,6 +2691,7 @@ fn level_link_choice_round_trips_and_the_default_writes_no_key() {
             blend_turns: false, blend_radius: None,
             links,
             chain_overrides: Vec::new(),
+            picks: Default::default(),
         };
         history.execute(
             &world,
@@ -2773,6 +2781,7 @@ fn side_choice_round_trips_and_a_hand_edited_inside_refuses_at_generate() {
                 blend_turns: false, blend_radius: None,
                 links: camcraft_app::links::Links::PLANAR,
                 chain_overrides: Vec::new(),
+                picks: Default::default(),
             },
         )
         .expect("create"),
@@ -2848,6 +2857,7 @@ fn side_choice_round_trips_and_a_hand_edited_inside_refuses_at_generate() {
                 blend_turns: false, blend_radius: None,
                 links: camcraft_app::links::Links::PLANAR,
                 chain_overrides: Vec::new(),
+                picks: Default::default(),
             },
         )
         .expect("create C2"),

@@ -126,6 +126,7 @@ fn slot_op(a: Point2, b: Point2, width: f64) -> OpParams {
         tilt: None,
         extend_start: 0.0,
         extend_end: 0.0,
+        picks: Default::default(),
     }
 }
 
@@ -208,6 +209,7 @@ pub fn region_verdicts() -> Vec<(&'static str, Vec<Warning>)> {
         return_feed: 2000.0,
         plunge_feed: 200.0,
         climb: true,
+        picks: Default::default(),
     };
     let (reg, mode) = op_region(op, None);
     check("trochoid_slot_small.cl", &t, region_law(&t, &reg, &mill(6.0), mode, 0.0, 5.0, 0.0));
@@ -228,6 +230,7 @@ pub fn region_verdicts() -> Vec<(&'static str, Vec<Warning>)> {
         plunge_feed: 100.0,
         climb: true,
         tilt: None,
+        picks: Default::default(),
     };
     let (reg, mode) = op_region(op, Some(Mesh::from_facets(part)));
     check("trace_plate_with_hole.cl", &t, region_law(&t, &reg, &mill(3.0), mode, 0.0, 5.0, 0.0));
@@ -293,6 +296,7 @@ pub fn sinker_gouge_cells() -> usize {
         layer: None,
         wear_lost: None,
         wear_over: None,
+        picks: Default::default(),
     });
     h.execute(&world, CreateOperation::new(&world, "Burn1", "E-10x6", SrcRef::Stock, op).expect("a sinker burn"));
     h.execute(&world, GenerateOperation::new(&world, "Burn1").expect("generates"));

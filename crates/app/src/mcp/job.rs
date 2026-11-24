@@ -242,7 +242,7 @@ pub(super) fn list_operation_types(_env: &mut Env, a: &Map<String, Value>) -> Re
                     &mut fields,
                     &[
                         ("condition", "string", json!("")),
-                        ("start", "array", Value::Null),
+                        ("picks", "object", json!({})),
                         ("tabs", "object", Value::Null),
                         ("capture", "boolean", json!(false)),
                         ("taper_deg", "number", json!(0.0)),
@@ -288,8 +288,7 @@ fn start_exit(k: &KindInfo) -> Value {
     let mut out = json!({ "start": cap.takes(PickRole::Start), "exit": cap.takes(PickRole::Exit) });
     match cap {
         operation::PickCapability::NotTaken(why) => out["why_not"] = json!(why),
-        operation::PickCapability::Threading => out["field"] = json!("start"),
-        _ => out["field"] = json!("links.approach.start_point / exit_point"),
+        _ => out["field"] = json!("picks"),
     }
     out
 }

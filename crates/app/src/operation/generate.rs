@@ -538,6 +538,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             entry,
             helix_radius,
             blend_turns, blend_radius,
+            picks,
             ..
         } => {
             // Backstop for a committed file that carries Inside on a
@@ -590,7 +591,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry: *entry,
                 helix_radius: *helix_radius,
                 blend_turns: *blend_turns, blend_radius: *blend_radius,
-            links: lk,
+                links: lk,
+                picks: picks.clone(),
             };
             let (region, path) = if let Some(plan_res) = sketch_contour.take() {
                 let mut carry = |reach: &Region, candidate: &Toolpath| -> Option<f64> {

@@ -94,7 +94,10 @@ impl CreateOperation {
             top_z: Height::of(HeightReference::TopOfStock, 0.0),
             bottom_z: Height::of(HeightReference::BottomOfStock, 0.0),
             side: WireSide::Die,
-            start: Some(start),
+            picks: crate::path_picks::PathPicks {
+                start: vec![crate::path_picks::PathPick::xy(crate::geo2d::Point2::new(start[0], start[1]))],
+                exit: Vec::new(),
+            },
             tabs: None,
             capture: false,
             taper_deg: 0.0,

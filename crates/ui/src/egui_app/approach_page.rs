@@ -156,7 +156,12 @@ fn lead_idx(l: Option<Lead>) -> usize {
 }
 
 /// The contour's lead geometry beyond the lead-in's shape.
-pub(super) fn contour_leads_editor(ui: &mut Ui, u: Unit, a: &mut Approach) {
+pub(super) fn contour_leads_editor(
+    ui: &mut Ui,
+    u: Unit,
+    a: &mut Approach,
+    picks: &mut camcraft_app::path_picks::PathPicks,
+) {
     group(ui, "Lead out", None, |ui| {
         let mut i = lead_idx(a.lead_out);
         let before = i;
@@ -198,7 +203,7 @@ pub(super) fn contour_leads_editor(ui: &mut Ui, u: Unit, a: &mut Approach) {
         );
     });
     // #1448: the user's start and exit points, typed in model X/Y.
-    super::start_exit_rows::start_exit_groups(ui, u, a);
+    super::start_exit_rows::start_exit_groups(ui, u, picks);
     // M13.11: where the cutter radius comes off - the computer walks
     // the centre (the simulation and every file before the option), the
     // control offsets the part contour by its register.

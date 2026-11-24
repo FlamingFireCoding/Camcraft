@@ -44,7 +44,8 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
         return Err("The native wire EDM job requires the complete punch, or the edge chains of one through-opening in the retained die plate".into());
     }
     let start = wire
-        .start
+        .picks
+        .first(crate::path_picks::PickRole::Start)
         .ok_or("The native wire EDM job requires a predrilled 2 mm start hole on the waste side")?;
     let setup = op.setup.as_deref();
     let condition = super::wire_op::condition_of(world, setup, &op.tool, wire)?;
@@ -138,7 +139,7 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
     Ok(agie::AgieJob {
         side,
         contour: ring.points().iter().map(|p| [p.x - ox, p.y - oy]).collect(),
-        start: [start[0] - ox, start[1] - oy],
+        start: [start.xy.x - ox, start.xy.y - oy],
         stock_min: [lo.x - ox, lo.y - oy, lo.z - oz],
         stock_max: [hi.x - ox, hi.y - oy, hi.z - oz],
     })

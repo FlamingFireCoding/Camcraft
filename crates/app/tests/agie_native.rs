@@ -91,7 +91,10 @@ fn punch_setup(
         bottom_z: Height::fixed(0.0),
         condition: "AGIE_QN2".into(),
         side: WireSide::Punch,
-        start: Some(start),
+        picks: camcraft_app::path_picks::PathPicks {
+            start: vec![camcraft_app::path_picks::PathPick::xy(camcraft_app::geo2d::Point2::new(start[0], start[1]))],
+            exit: Vec::new(),
+        },
         capture: true,
         tabs: None,
         taper_deg: 0.0,

@@ -441,6 +441,7 @@ pub struct OperationDto {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub needs_review: Vec<String>,
     pub tool: String,
+    #[serde(alias = "source")]
     pub src: SrcDto,
     pub params: ParamsDto,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -72,7 +72,7 @@ fn has_saved_geometry(params: &OpParams) -> bool {
         return true;
     }
     // A picked start or exit point (#1448, #1473) is a source coordinate.
-    if params.links().is_some_and(|l| l.approach.start_point.is_some() || l.approach.exit_point.is_some()) {
+    if !params.path_picks().is_empty() {
         return true;
     }
     match params {
