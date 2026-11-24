@@ -43,11 +43,19 @@ fn read_request(s: &mut TcpStream) -> String {
 pub(super) fn recorded_ollama(
     steps: Vec<(&'static str, Option<&'static str>, Value)>,
 ) -> (Endpoint, std::thread::JoinHandle<Vec<String>>) {
+    recorded_ollama_delayed(steps.into_iter().map(|(line, model, answer)| {
+        (line, model, answer, Duration::ZERO)
+    }).collect())
+}
+
+pub(super) fn recorded_ollama_delayed(
+    steps: Vec<(&'static str, Option<&'static str>, Value, Duration)>,
+) -> (Endpoint, std::thread::JoinHandle<Vec<String>>) {
     let (listener, ep) = listener();
     listener.set_nonblocking(true).expect("nonblocking fixture");
     let server = std::thread::spawn(move || {
         let mut requests = Vec::new();
-        for (request_line, model, answer) in steps {
+        for (request_line, model, answer, delay) in steps {
             let start = Instant::now();
             let mut stream = loop {
                 match listener.accept() {
@@ -77,9 +85,14 @@ pub(super) fn recorded_ollama(
             } else {
                 json!({"error":"unexpected model or endpoint in recorded fixture"}).to_string()
             };
-            write!(stream,
+            std::thread::sleep(delay);
+            let written = write!(stream,
                 "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()).expect("fixture answer");
+                body.len());
+            // A delayed answer can arrive after the client closes on its deadline.
+            if delay.is_zero() {
+                written.expect("fixture answer");
+            }
             if !matches_line || !matches_model {
                 return requests;
             }

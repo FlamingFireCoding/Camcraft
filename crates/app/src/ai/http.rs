@@ -306,18 +306,26 @@ pub fn discover_ollama_within(
     const ADVICE: &str = "Run `ollama pull ornith-1.5:35b`, then send again. \
                           Get models at https://ollama.com/library";
     let start = crate::clock::Instant::now();
-    let step = Client {
-        offline_only: client.offline_only,
-        timeouts: Timeouts {
-            connect: client.timeouts.connect.min(DISCOVERY_STEP),
-            total: client.timeouts.total.min(DISCOVERY_STEP),
-        },
+    let step = || {
+        let remaining = total.checked_sub(start.elapsed()).filter(|r| !r.is_zero())?;
+        Some(Client {
+            offline_only: client.offline_only,
+            timeouts: Timeouts {
+                connect: client.timeouts.connect.min(DISCOVERY_STEP).min(remaining),
+                total: client.timeouts.total.min(DISCOVERY_STEP).min(remaining),
+            },
+        })
     };
-    let answer = step
+    let list_limit = || format!(
+        "Ollama model selection stopped after {} s before reading installed models. \
+         Enter a model name in Model.", total.as_secs());
+    let answer = step().ok_or_else(list_limit)?
         .get_json_cancellable(&ep.with_base_path(""), "/api/tags", cancel)
         .map_err(|e| {
             if cancel.load(Ordering::Relaxed) {
                 e
+            } else if start.elapsed() >= total {
+                list_limit()
             } else {
                 format!("Ollama server did not answer its model list ({e}). \
                          Start the Ollama app or run `ollama serve`, then send again.")
@@ -325,16 +333,17 @@ pub fn discover_ollama_within(
         })?;
     let models = probe::parse_tags(&answer)?;
     let mut failed: Vec<(String, String)> = Vec::new();
+    let limit = |checked| format!(
+        "Ollama model selection stopped after {} s: {checked} of {} installed models \
+         checked, and none can call tools. Enter a model name in Model.",
+        total.as_secs(), models.len());
     for (checked, model) in models.iter().enumerate() {
-        if start.elapsed() >= total {
-            return Err(format!(
-                "Ollama model selection stopped after {} s: {checked} of {} installed models \
-                 checked, and none can call tools. Enter a model name in Model.",
-                total.as_secs(),
-                models.len()
-            ));
+        let step = step().ok_or_else(|| limit(checked))?;
+        let result = probe_ollama_cancellable(&step, ep, model, cancel);
+        if !cancel.load(Ordering::Relaxed) && start.elapsed() >= total {
+            return Err(limit(checked + 1));
         }
-        match probe_ollama_cancellable(&step, ep, model, cancel) {
+        match result {
             Ok(caps) if caps.tools => return Ok(model.clone()),
             Ok(_) => {}
             Err(e) if cancel.load(Ordering::Relaxed) => return Err(e),

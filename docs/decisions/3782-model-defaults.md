@@ -19,3 +19,13 @@ Each row in the shared `CLOUD_DEFAULTS` table includes its retirement status. An
 **What was dropped.** The first version stopped the selection at the first failed probe and used the 300 s chat time limit for each probe. The reporter's machine has about 30 installed models, so one damaged model or a slow server could block each Send. A display of the selected model after a successful Send was dropped from this PR: the panel status line is the work of #3798. The local automatic-selection hint was dropped for cloud providers because cloud requests use the table default. The `qwen3:8b` suggestion was dropped because the reporter's benchmark showed unreliable project changes. The app does not download a model automatically. A download can consume substantial disk space and bandwidth. The app does not silently replace an explicit model name. That would hide the user's choice. A fixed local model name was dropped because the selected machine might not have that model. Live cloud checks were dropped because they require network access and can require API keys.
 
 **Cost to change later.** A different automatic selection policy changes the candidate selection and its recorded-response tests. Provider changes require an update to the shared defaults table or its retirement status fields. A provider wire-format change can also require transport work. These changes do not require a project format migration.
+
+### PR #3799 review: enforce the total discovery time limit
+
+**What was decided.** The model list request and each model probe use the remaining total discovery time. Each request also keeps its 5 s maximum.
+
+**Why.** A check before each probe lets the last request exceed the total time limit. The request timeout must also use the remaining time.
+
+**What was dropped.** A fixed 5 s request timeout without the remaining total time was dropped. It can exceed the stated 20 s selection limit.
+
+**Cost to change later.** A different time limit requires an update to the discovery timeout policy and its slow-response tests.
