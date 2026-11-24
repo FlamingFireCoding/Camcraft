@@ -33,7 +33,7 @@ fn a_die_pair_writes_an_iso_a_die_work_and_a_hole_for_each_opening() {
         ["DUODI201.ISO", "DUODI202.ISO", "DUODI20.SBR", "DUODI20.SBL"]
     );
     assert_eq!(std::fs::read_dir(&out).unwrap().count(), 4);
-    // The control-checked setup of the die pair (camcraft-post agie_die_group_setup).
+    // The control-checked setup of the die pair (camcraft-post agie_safe_setup::die_group).
     let sbl = std::fs::read(out.join("DUODI20.SBL")).unwrap();
     assert_eq!(
         sbl,

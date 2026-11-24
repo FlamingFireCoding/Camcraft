@@ -1,6 +1,5 @@
 //! Setup-only die group records of two through-openings in one retained plate, from CamCraft's
 //! offline controller-checked synthetic die pair (#2977).
-//! Gate map: covers camcraft_post::agie_setup::PunchGroup20::encode_die.
 use camcraft_post::agie_setup::{GroupPunch, PunchGroup20, PunchSetup20, SetupError};
 
 const OPENINGS: [GroupPunch<'static>; 2] = [
@@ -31,11 +30,11 @@ fn die_group_files_match_the_control_checked_die_pair() {
     let files = plate(&OPENINGS).encode_die().unwrap();
     assert_eq!(
         files.sbl.as_bytes(),
-        include_bytes!("golden/agie-setup/DUODI20.SBL")
+        include_bytes!("../golden/agie-setup/DUODI20.SBL")
     );
     assert_eq!(
         files.sbr.as_bytes(),
-        include_bytes!("golden/agie-setup/DUODI20.SBR")
+        include_bytes!("../golden/agie-setup/DUODI20.SBR")
     );
     let review = &files.controller_review;
     assert!(review.contains("CUT1 DUODI201.ISO, CUT2 DUODI202.ISO"));
@@ -92,7 +91,7 @@ fn a_single_die_keeps_its_zero_step_setup() {
     .unwrap();
     assert_eq!(
         files.sbl.as_bytes(),
-        include_bytes!("golden/agie-setup/DIE20.SBL")
+        include_bytes!("../golden/agie-setup/DIE20.SBL")
     );
 }
 
