@@ -83,7 +83,6 @@ mod lead_seam;
 mod ladder_links;
 mod level_flanks;
 mod level_order;
-mod level_ramp_entry;
 mod level_rings;
 mod levels;
 mod microlift;
@@ -181,7 +180,9 @@ pub use corner_relief::{
 };
 pub use corner_relief_spur::pocket_relief_plan;
 pub use level_rings::level_ring_plan;
-pub use pass_start::{PASS_START_NOTE, PASS_START_REST_NOTE, PASS_START_ZIGZAG_NOTE, PassStart, StartSide, pass_start_fallbacks};
+pub use pass_start::{
+    PASS_START_NOTE, PASS_START_REST_NOTE, PASS_START_ZIGZAG_NOTE, PassStart, StartSide, advised, entry_advice, pass_start_fallbacks,
+};
 pub use pocket::{
     pocket, pocket_entered, pocket_entered_with_relief, pocket_started, pocket_started_on, PocketParams, PocketStrategy,
 };

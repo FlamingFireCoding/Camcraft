@@ -16,7 +16,7 @@ use crate::geo2d::{Point2, Region};
 
 use super::face::GenError;
 use super::level_flanks::{Material, full_width_at};
-use super::pass_start::{PassStart, StartSide};
+use super::pass_start::StartSide;
 use super::pocket_hsm::components;
 use super::ring_links::{RingLinks, edge_route};
 use super::ring::dist;
@@ -46,10 +46,6 @@ pub(super) struct Piece {
 pub(super) struct LevelPlan {
     pub(super) passes: Vec<Vec<Point2>>,
     pub(super) notes: Vec<String>,
-    /// #3567: the starts of the Outside passes after ring 0 that no
-    /// lead-in reaches (a dead end on a wall): each enters by a ramp
-    /// along its own pass (`level_ramp_entry`).
-    pub(super) ramp_starts: Vec<Point2>,
 }
 
 /// A walk already cut and its bounding box.
@@ -113,7 +109,6 @@ pub(super) fn order(pieces: Vec<Piece>, center: &Region, tool_r: f64, side: &Sta
     let mut cur: Vec<Point2> = Vec::new();
     let mut wall_first = false;
     let mut narrow: Option<(usize, Point2)> = None;
-    let mut ramp_starts: Vec<Point2> = Vec::new();
     for p in &seq {
         if p.core {
         } else if p.level == 0 {
@@ -157,13 +152,9 @@ pub(super) fn order(pieces: Vec<Piece>, center: &Region, tool_r: f64, side: &Sta
                     cur = vec![q];
                     cur.extend(p.pts.iter().copied());
                 } else {
-                    // #3744: round a part, Outside walks Inside's ring set,
-                    // whose pieces end on no part wall: it enters as Inside
-                    // does, with no dead-end ramp (#3748 retires the rest).
-                    let dead_end = side.start == PassStart::Outside && !side.around_part;
-                    if let Some(&s) = p.pts.first().filter(|_| p.level > 0 && !p.core && dead_end) {
-                        ramp_starts.push(s);
-                    }
+                    // #3748: a later pass that no lead-in reaches takes the
+                    // pass link's own entry - the user's - and no automatic
+                    // ramp (the #3567 dead-end ramp is retired).
                     cur = p.pts.clone();
                 }
             }
@@ -183,7 +174,7 @@ pub(super) fn order(pieces: Vec<Piece>, center: &Region, tool_r: f64, side: &Sta
     if let Some((n, at)) = narrow {
         notes.push(side.narrow_note(n, at.x, at.y));
     }
-    Ok(LevelPlan { passes, notes, ramp_starts })
+    Ok(LevelPlan { passes, notes })
 }
 
 /// The component of `center` a piece belongs to: the one that holds (or

@@ -106,6 +106,13 @@ fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Option<Region> {
 }
 
 impl Motion {
+    /// #3316: prove keep-down pass links through cut material too (the
+    /// start-side plan's link law).
+    pub(super) fn with_cleared_links(mut self, on: bool) -> Self {
+        self.cleared_links = on;
+        self
+    }
+
     /// #3746: the start side's air room; `None` keeps the old entry.
     pub(super) fn with_air(mut self, air: Option<AirRoom>) -> Self {
         self.air = air;
