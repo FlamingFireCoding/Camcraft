@@ -209,7 +209,7 @@ fn find_clear_helix_for(prior: &[Move], l: &Lvl, from: f64, z: f64, m: &Motion, 
 /// or refused by name. Never a plunge.
 pub(super) fn restart(b: &PathBuilder, l: &Lvl, leg: Point2, z: f64, from: f64, plane: f64, m: &Motion) -> Descent {
     let e = l.pass.first().copied().unwrap_or(leg);
-    if let Some(d) = super::entry_warn::outside_arc_restart(b, l, e, z, plane, m) {
+    if let Some(d) = super::entry_warn::outside_arc_restart(b, l, leg, e, z, plane, m) {
         return d;
     }
     let site = format!("the pass start ({:.3}, {:.3})", e.x, e.y);
@@ -239,7 +239,7 @@ pub(super) fn restart(b: &PathBuilder, l: &Lvl, leg: Point2, z: f64, from: f64, 
 /// is never silent.
 pub(super) fn entry_restart(b: &PathBuilder, l: &Lvl, leg: Point2, z: f64, from: f64, plane: f64, m: &Motion) -> Descent {
     let e = l.pass.first().copied().unwrap_or(leg);
-    if let Some(d) = super::entry_warn::outside_arc_restart(b, l, e, z, plane, m) {
+    if let Some(d) = super::entry_warn::outside_arc_restart(b, l, leg, e, z, plane, m) {
         return d;
     }
     let d = plan_arm(m.entry, false, l, leg, z, from, m);

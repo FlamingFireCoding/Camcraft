@@ -278,13 +278,14 @@ fn outside_first_entry_without_an_air_lead_is_refused() {
     assert!(inside.is_ok_and(|t| t.notes.iter().any(|n| n.starts_with("entry: Inside pass - no air entry"))), "Inside lost its stand-in");
 }
 
-/// #3884 pin (re-entry after a lift): a pass start in material that no air
-/// lead reaches - a ring of the level encloses it - is refused by name on
-/// an Outside pass with the Arc entry: no ramp along the pass, no helix.
-#[test]
-fn outside_reentry_without_an_air_lead_is_refused() {
-    use super::super::descent::{Descent, Lvl};
-    use super::super::levels::Cert;
+/// The re-entry case of the #3884 pins: a pass start at (0, 0) in
+/// material on an Outside pass with the Arc entry, which a ring of the
+/// level encloses, so no air lead reaches it; `cut`: the floor already cut
+/// at the level's depth (feeds from `(x, y0)` to `(x, y1)`), `leg` where the
+/// tool lifted.
+fn reentry(cut: &[(f64, f64, f64)], leg: Point2) -> super::super::descent::Descent {
+    use super::super::descent::Lvl;
+    use super::super::levels::{Cert, Motion};
     use crate::cl::PathBuilder;
     use crate::geometry::Point3;
     let stock = region(vec![rect(-40.0, -25.0, 40.0, 25.0)]);
@@ -296,17 +297,50 @@ fn outside_reentry_without_an_air_lead_is_refused() {
     let passes = vec![ring(-36.0, -21.0, 36.0, 21.0), ring(0.0, 0.0, 4.0, 4.0)];
     let cert = Cert::Region(&center);
     let l = Lvl { cen: &cert, passes: &passes, pass: &passes[1], walk: None, mat_top: TOP };
-    let m = super::super::levels::Motion::new(30.0, None, 1200.0, 300.0)
+    let m = Motion::new(30.0, None, 1200.0, 300.0)
         .with_entry(Entry3D::Arc, 2.0)
         .with_arc_radius(2.0 * R)
         .with_links(crate::links::Links::PLANAR, 2.0)
         .with_cleared_links(true)
         .with_air(Some(air));
-    let b = PathBuilder::approached(Point3::new(0.0, 0.0, 30.0));
-    let d = super::super::descent_dive::entry_restart(&b, &l, Point2::new(0.0, 0.0), BOTTOM, TOP + 2.0, 30.0, &m);
-    match d {
+    let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, 30.0));
+    for &(x, y0, y1) in cut {
+        b.push(MoveKind::Rapid, Point3::new(x, y0, 30.0), None);
+        b.push(MoveKind::Plunge, Point3::new(x, y0, BOTTOM), Some(300.0));
+        b.push(MoveKind::Feed, Point3::new(x, y1, BOTTOM), Some(1200.0));
+        b.push(MoveKind::Rapid, Point3::new(x, y1, 30.0), None);
+    }
+    b.push(MoveKind::Rapid, Point3::new(leg.x, leg.y, 30.0), None);
+    super::super::descent_dive::entry_restart(&b, &l, leg, BOTTOM, TOP + 2.0, 30.0, &m)
+}
+
+/// #3884 pin (re-entry after a lift): a pass start in material that no air
+/// lead and no cut floor reach is refused by name on an Outside pass with
+/// the Arc entry: no ramp along the pass, no helix, no plunge into stock.
+#[test]
+fn outside_reentry_without_an_air_lead_is_refused() {
+    use super::super::descent::Descent;
+    match reentry(&[], Point2::new(0.0, -7.0)) {
         Descent::Refused(r) => assert!(r.starts_with(crate::approach::OUTSIDE_AIR_REFUSAL), "{r}"),
         Descent::Named(_, note) => panic!("a stand-in re-entry, not a refusal: {note}"),
         _ => panic!("not refused"),
+    }
+}
+
+/// #3884 pin (option C, as #3855): the same re-entry beside the floor
+/// already cut at that depth (feeds 2 mm apart, parallel to the link, so
+/// the link crosses none) comes down on that floor - a plunge whose tool
+/// disc is all on cut floor - and links at depth to the start.
+#[test]
+fn outside_reentry_onto_cut_floor_is_accepted() {
+    use super::super::descent::Descent;
+    let cut: Vec<(f64, f64, f64)> = (0..6).map(|k| (-5.0 + 2.0 * f64::from(k), -14.0, -3.0)).collect();
+    match reentry(&cut, Point2::new(0.0, -7.0)) {
+        Descent::Named(inner, note) => {
+            assert!(note.contains("entered on the floor already cut"), "{note}");
+            assert!(matches!(*inner, Descent::Plunge(p) if (p.y + 7.0).abs() < 1e-9 && p.x.abs() < 1e-9), "{note}");
+        }
+        Descent::Refused(r) => panic!("the re-entry onto cut floor was refused: {r}"),
+        _ => panic!("not named"),
     }
 }

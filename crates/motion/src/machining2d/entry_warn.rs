@@ -30,31 +30,82 @@ pub const PLUNGE_INTO_STOCK_NOTE: &str =
 /// #3884: the one Outside-air check of every Outside entry path - the
 /// plan (no air room at all), the first entry of a level (no air lead
 /// fits, `air_entry::stand_in`) and the re-entry after a lift
-/// (`descent_dive::entry_restart`). A selected Arc on an Outside ring pass
-/// goes down in air outside the stock (`in_air`), or it is refused by name
-/// with `why`: never an automatic helix, ramp or dive. A selected Helix,
-/// Ramp or Plunge runs, with its one warning.
-pub(super) fn outside_air_check(outside: bool, entry: Entry3D, in_air: bool, why: &str) -> Result<(), String> {
-    if outside && entry == Entry3D::Arc && !in_air {
+/// (`descent_dive::entry_restart`, `descent_dive::restart`). A selected
+/// Arc on an Outside ring pass goes down where it is `clear` - in air
+/// outside the stock, or (a re-entry) on the floor already cut at that
+/// depth (#3855) - or it is refused by name with `why`: never an automatic
+/// helix, ramp or dive into uncut stock. A selected Helix, Ramp or Plunge
+/// runs, with its one warning.
+pub(super) fn outside_air_check(outside: bool, entry: Entry3D, clear: bool, why: &str) -> Result<(), String> {
+    if outside && entry == Entry3D::Arc && !clear {
         return Err(format!("{OUTSIDE_AIR_REFUSAL} ({why})"));
     }
     Ok(())
 }
 
 /// #3884: the selected Arc on an Outside pass re-enters a pass start in
-/// material in air outside the stock, or the op is refused by name - never
-/// a ramp or a helix. `None`: not that case.
-pub(super) fn outside_arc_restart(b: &PathBuilder, l: &Lvl, e: Point2, z: f64, plane: f64, m: &Motion) -> Option<Descent> {
+/// material from the air outside the stock, or from the floor already cut
+/// at that depth (a plunge whose tool disc is all on cut floor, then the
+/// link at depth through cut floor to the start), or the op is refused by
+/// name - never a ramp, a helix or a plunge into uncut stock. `leg`: where
+/// the tool lifted. `None`: not that case.
+pub(super) fn outside_arc_restart(b: &PathBuilder, l: &Lvl, leg: Point2, e: Point2, z: f64, plane: f64, m: &Motion) -> Option<Descent> {
     let air = m.air.as_ref().filter(|a| a.outside() && m.entry == Entry3D::Arc)?;
     let site = format!("the pass start ({:.3}, {:.3}) at Z {z:.3} is in material", e.x, e.y);
-    if let Some(a) = super::air_entry::restart(l, m).filter(|d| super::descent_dive::moves_clear(b, d, l, z, plane, m)) {
+    let clear = |d: &Descent| super::descent_dive::moves_clear(b, d, l, z, plane, m);
+    if let Some(a) = super::air_entry::restart(l, m).filter(|d| clear(d)) {
         return Some(Descent::Named(Box::new(a), format!("entry: {site} - entered from the air outside the stock box instead")));
     }
-    let why = format!("{site} and no air lead reaches it");
-    Some(Descent::Refused(match outside_air_check(air.outside(), m.entry, false, &why) {
-        Err(r) => r,
-        Ok(()) => format!("{AIR_ENTRY_REFUSAL} - {why}"),
-    }))
+    let floor = cut_floor_point(b, l, leg, e, z, m.tool_r()).map(Descent::Plunge).filter(|d| clear(d));
+    let why = format!("{site}, and no air lead and no cut floor reach it");
+    match (floor, outside_air_check(air.outside(), m.entry, false, &why)) {
+        (Some(d @ Descent::Plunge(p)), _) => {
+            let note = format!("entry: {site} - no air lead reaches it; entered on the floor already cut at ({:.3}, {:.3})", p.x, p.y);
+            Some(Descent::Named(Box::new(d), note))
+        }
+        (_, Err(r)) => Some(Descent::Refused(r)),
+        (_, Ok(())) => Some(Descent::Refused(format!("{AIR_ENTRY_REFUSAL} - {why}"))),
+    }
+}
+
+/// Is the disc of radius `r` round `p` on the floor already cut at `z`?
+/// The centre and sixteen points half a radius off it each lie within the
+/// cleared core (`plunge_law::column_cleared`) of an earlier cut, so the
+/// disc lies within about the cut's own swept width.
+fn disc_on_cut_floor(moves: &[crate::cl::Move], p: Point2, z: f64, r: f64) -> bool {
+    let ring = (0..16).map(|k| {
+        let a = std::f64::consts::TAU * f64::from(k) / 16.0;
+        Point2::new(p.x + 0.5 * r * a.cos(), p.y + 0.5 * r * a.sin())
+    });
+    std::iter::once(p).chain(ring).all(|q| crate::plunge_law::column_cleared(moves, q, z, r))
+}
+
+/// #3855: a plunge point for a re-entry onto `e` at `z` on the floor
+/// already cut - the lift point `leg` first, then rings round `e` from one
+/// tool radius out - whose disc is on cut floor and whose link to `e` runs
+/// through cut floor up to one radius short of `e`, inside the area.
+fn cut_floor_point(b: &PathBuilder, l: &Lvl, leg: Point2, e: Point2, z: f64, r: f64) -> Option<Point2> {
+    if !(r.is_finite() && r > 0.0 && z.is_finite()) {
+        return None;
+    }
+    let moves = b.moves();
+    let linked = |p: Point2| {
+        let len = (e.x - p.x).hypot(e.y - p.y);
+        let run = (len - r).max(0.0);
+        let n = (run / (0.25 * r)).ceil().clamp(1.0, 1e4) as usize;
+        (0..=n).all(|k| {
+            let t = run * k as f64 / n as f64 / len.max(1e-12);
+            crate::plunge_law::column_cleared(moves, Point2::new(p.x + t * (e.x - p.x), p.y + t * (e.y - p.y)), z, r)
+        })
+    };
+    let ok = |p: Point2| l.cen.chord_ok(p, e) && disc_on_cut_floor(moves, p, z, r) && linked(p);
+    let rings = [1.0, 1.5, 2.0, 3.0, 4.0, 6.0].into_iter().flat_map(move |k| {
+        (0..24).map(move |i| {
+            let a = std::f64::consts::TAU * f64::from(i) / 24.0;
+            Point2::new(e.x + k * r * a.cos(), e.y + k * r * a.sin())
+        })
+    });
+    std::iter::once(leg).chain(rings).find(|&p| ok(p))
 }
 
 /// The plan's call of [`outside_air_check`]: an Outside ring pass
