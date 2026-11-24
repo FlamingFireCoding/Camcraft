@@ -90,6 +90,21 @@ pub(crate) fn agie_sketch_job(
     Ok((job, shape))
 }
 
+/// The work quality that the condition of `op` requests (#2966). The job
+/// check refuses any other condition first.
+pub(crate) fn agie_quality(world: &World, op: &Operation) -> Result<agie::Quality, String> {
+    let OpParams::WireContour(wire) = &op.params else {
+        return Err("The native wire EDM job requires a Wire Contour".into());
+    };
+    let condition = super::wire_op::condition_of(world, op.setup.as_deref(), &op.tool, wire)?;
+    agie::quality_of(&condition.id).ok_or_else(|| {
+        format!(
+            "The machine condition {} requests no native work quality",
+            condition.id
+        )
+    })
+}
+
 /// Check the operation, its machine condition, setup and stock for a native
 /// job. `None` for `source` is the selected DXF chain of a punch (#2022).
 fn checked(world: &World, op: &Operation, name: &str, source: Option<&str>) -> Result<Checked, String> {
@@ -140,11 +155,11 @@ fn checked(world: &World, op: &Operation, name: &str, source: Option<&str>) -> R
     }
     let setup = op.setup.as_deref();
     let condition = super::wire_op::condition_of(world, setup, &op.tool, wire)?;
-    if condition.id != agie::CONDITION
+    if agie::quality_of(&condition.id).is_none()
         || (condition.wire_diameter - 0.25).abs() > 1e-9
         || (condition.gap - agie::PREVIEW_GAP).abs() > 1e-9
     {
-        return Err("Select AGIE_QN2 with its unmodified preview gap to request Fine Ra 0.30 µm for cold die steel 0001 and Berco Cut 0.25 mm".into());
+        return Err("Select AGIE_QN2 (Fine Ra 0.30 µm) or AGIE_BERCO_RA035 (Fine+ Ra 0.35 µm, one 20 mm punch) with its unmodified preview gap for cold die steel 0001 and Berco Cut 0.25 mm".into());
     }
     if crate::stock_material::in_force(world, setup).is_some() {
         return Err("The stated stock material conflicts with AGIE_QN2 cold die steel 0001".into());
@@ -155,7 +170,10 @@ fn checked(world: &World, op: &Operation, name: &str, source: Option<&str>) -> R
         .ok_or("The native wire EDM job requires a mounted wire EDM profile")?;
     let row = edm.condition(&condition.machine, &condition.id, &[])?;
     if row.role != "rough" || !row.wire_diameter.is_some_and(|d| (d - 0.25).abs() <= 1e-9) {
-        return Err("The native wire EDM job requires the AGIE_QN2 machine condition to state role rough and wire diameter 0.25 mm".into());
+        return Err(format!(
+            "The native wire EDM job requires the {} machine condition to state role rough and wire diameter 0.25 mm",
+            condition.id
+        ));
     }
     if edm.flushing.is_some() || edm.skim_flushing.is_some() || edm.tank.is_some() {
         return Err("The AGIE_QN2 condition controls the dielectric settings; explicit tank or flushing modes are unsupported".into());

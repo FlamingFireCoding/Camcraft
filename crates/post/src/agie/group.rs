@@ -6,7 +6,7 @@ use std::path::Path;
 use super::{
     AgieJob, AgieSide, ExportedJob, contour, export_with_review, iso, publish, valid_name,
 };
-use crate::agie_setup::{GROUP_HEIGHT_UM, GroupPunch, PunchGroup20};
+use crate::agie_setup::{GROUP_HEIGHT_UM, GroupPunch, PunchGroup20, Quality};
 
 /// The 3 mm lead from the threading hole to the contour (`ID_COMMPOINTENTRY`).
 const LEAD_MM: f64 = 3.0;
@@ -75,7 +75,8 @@ pub fn export_group_with_review(
     let mut works = Vec::with_capacity(jobs.len());
     let mut stock = None;
     for (job, geometry) in jobs.iter().zip(&names) {
-        let (mut points, setup, reach) = contour::prepare_with_reach(job, geometry)?;
+        let (mut points, setup, reach) =
+            contour::prepare_with_reach(job, geometry, Quality::Ccb030)?;
         let seam = *points.first().ok_or("The job requires a closed contour")?;
         points.push(seam);
         let entry = job
