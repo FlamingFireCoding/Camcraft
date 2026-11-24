@@ -110,9 +110,18 @@ fn ra035_refuses_unmeasured_heights_without_a_directory() {
     }
 }
 
+/// Script name, script, assets, job directory and the expected refusal text.
+type Case = (
+    &'static str,
+    &'static str,
+    &'static [(&'static str, &'static str)],
+    &'static str,
+    &'static str,
+);
+
 #[test]
 fn ra035_refuses_a_group_an_arc_punch_a_die_and_a_cutoff() {
-    let cases: [(&str, &str, &[(&str, &str)], &str, &str); 4] = [
+    let cases: [Case; 4] = [
         (
             "punch-pair.camscript",
             include_str!("../../../examples/agie/punch-pair.camscript"),
