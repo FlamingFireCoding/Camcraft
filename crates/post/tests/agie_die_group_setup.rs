@@ -98,7 +98,12 @@ fn a_single_die_keeps_its_zero_step_setup() {
 
 #[test]
 fn a_die_group_refuses_other_heights_counts_and_repeated_stems() {
-    let three = [OPENINGS[0], OPENINGS[1], OPENINGS[1]];
+    // Three distinct openings: the control checked die groups of two only.
+    let third = GroupPunch {
+        iso_stem: "DUODI203",
+        ..OPENINGS[1]
+    };
+    let three = [OPENINGS[0], OPENINGS[1], third];
     let repeated = [OPENINGS[0], OPENINGS[0]];
     for (group, expected) in [
         (plate(&OPENINGS[..1]), SetupError::GroupWorks),

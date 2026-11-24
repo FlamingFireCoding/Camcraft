@@ -1,4 +1,5 @@
-// Original 20 mm steel layout. Each retained rectangle has a separate threading hole.
+// Original CAMCraft example. Run from the project root with a fresh output name.
+// Each retained rectangle on the 20 mm plate has its own model and threading hole.
 cam.call("load_machine", {builtin: "AGIECUT Classic 2S (template)"});
 cam.call("edit_machine", {patch: {edm: {conditions: [{
   id: "AGIE_QN2", role: "rough", gap: 0.005, wire_diameter: 0.25
@@ -26,4 +27,4 @@ for (const [i, center] of centers.entries()) {
   });
 }
 cam.generate();
-cam.post({to: "NINE20", cps: "Agie native wire EDM", options: {separationLengthMm: 1.0}});
+cam.post({to: "NINE20", cps: "Native wire EDM job files", options: {separationLengthMm: 1.0}});

@@ -1,5 +1,5 @@
-//! The modeled workpiece of each operation of a native wire EDM job: one work, a group of
-//! independently captured punches (#2961), or two openings of one die plate (#2977).
+//! The modeled workpiece of each operation of a native wire EDM job: one work, a group of two to
+//! nine independently captured punches (#2961, #2980), or two openings of one die plate (#2977).
 //! Provenance: CAMCraft's Wire Contour workflow.
 
 use flecs_ecs::prelude::World;
@@ -12,7 +12,8 @@ use crate::{model, schema::Operation};
 ///
 /// One operation needs exactly one modeled workpiece. A group needs one
 /// complete modeled punch for each operation, a different model for each,
-/// and no other model, so that no unowned part can meet a controller path.
+/// and no other model or placed drawing, so that no unowned part can meet a
+/// controller path.
 /// A die group needs one retained plate, with one through-opening for each
 /// operation, as the only model and no placed drawing.
 pub(super) fn jobs(
@@ -47,6 +48,10 @@ pub(super) fn jobs(
     {
         return Err("Each modeled workpiece of a punch group must be the punch of one work; additional parts or fixture models can intersect the controller path".into());
     }
+    let setup = operations.first().and_then(|(_, op)| op.setup.as_deref());
+    if !crate::sketch::placed_in(world, setup).is_empty() {
+        return Err("The modeled punches of a punch group must be the only workpieces; remove the placed drawing".into());
+    }
     operations
         .iter()
         .zip(owners)
@@ -63,6 +68,9 @@ fn die_group(
     operations: &[(&str, Operation)],
     models: &[(String, flecs_ecs::prelude::Entity)],
 ) -> Result<Vec<AgieJob>, String> {
+    if operations.len() != 2 {
+        return Err("A die group holds two openings of one plate. The control checked die groups of two openings only".into());
+    }
     let [(plate, _)] = models else {
         return Err("The operations of a die group must select through-openings of the same retained plate, with no other model".into());
     };
