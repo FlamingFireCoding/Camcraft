@@ -14,7 +14,7 @@
 use camcraft_motion::cl::{Move, MoveKind, Toolpath};
 use camcraft_motion::entry::Entry3D;
 use camcraft_motion::geo2d::{Loop, Point2, Region};
-use camcraft_motion::links::{DEFAULT_RAMP_ANGLE, Links};
+use camcraft_motion::links::{DEFAULT_RAMP_ANGLE, Link, Links};
 use camcraft_motion::machining2d::{ContourParams, Lead, Side, contour};
 
 const FEED: f64 = 500.0;
@@ -186,3 +186,62 @@ fn a_single_ring_bore_still_ramps_without_an_axial_dive() {
     assert_eq!(descents(&t).1, 0);
 }
 
+/// The Z of every rapid that crosses from one bore to its neighbour (the
+/// rings stand 30 mm apart): the plane of the ring-to-ring traverse. The
+/// 60 mm jump back to the first bore at the next level is the level link's,
+/// and the first rapid is the approach from the start point.
+fn crossing_planes(t: &Toolpath) -> Vec<f64> {
+    t.moves
+        .iter()
+        .filter(|m| m.kind == MoveKind::Rapid && (20.0..40.0).contains(&xy_len(m)))
+        .skip(1)
+        .map(|m| {
+            assert!((m.from.z - m.to.z).abs() < 1e-9, "a crossing stays on one plane: {m:?}");
+            m.to.z
+        })
+        .collect()
+}
+
+/// The traverse between rings is the PASS link's plane, whatever the level
+/// link says: clearance for pass Clearance, the retract plane for pass
+/// Retract, and for a keep-down link that failed its proof (review of
+/// #3834, as `ring_link` did before the entry reached the rings).
+#[test]
+fn the_ring_to_ring_traverse_of_a_ramped_bore_rides_the_pass_link_plane() {
+    let planes = |level: Link, pass: Link, max_stay_down: Option<f64>| {
+        let mut p = params(true);
+        p.links.approach.ramp_angle = 5.0;
+        p.links.level = level;
+        p.links.pass = pass;
+        if let Some(d) = max_stay_down {
+            p.links.max_stay_down = d;
+        }
+        let t = contour(&three_bores(), &p).expect("ramped bores");
+        assert!(descents(&t).1 == 0, "still no axial dive: {:?}", t.notes);
+        crossing_planes(&t)
+    };
+    for level in [Link::Retract, Link::Clearance] {
+        let clear = planes(level, Link::Clearance, None);
+        assert!(clear.len() == 6 && clear.iter().all(|z| (z - 5.0).abs() < 1e-9), "pass Clearance, level {level:?}: {clear:?}");
+        let retract = planes(level, Link::Retract, None);
+        assert!(retract.len() == 6 && retract.iter().all(|z| (z - 2.0).abs() < 1e-9), "pass Retract, level {level:?}: {retract:?}");
+    }
+    // Keep down whose straight link is too long to prove: the retract plane.
+    let failed = planes(Link::Clearance, Link::KeepDown, Some(1.0));
+    assert!(failed.len() == 6 && failed.iter().all(|z| (z - 2.0).abs() < 1e-9), "keep down, proof failed: {failed:?}");
+}
+
+
+/// A ring after another one is entered from its OWN lead-in: the traverse
+/// rapid brings the tool there first, so the ramp's chord is certified
+/// from the lead-in and not from the end of the earlier ring (a chord
+/// across the plate, always blocked). Without it every ring of the Auto
+/// ramp fell back to an axial dive; now only the path's first ring does,
+/// once a level, as before the entry reached the rings.
+#[test]
+fn a_ring_after_another_is_ramped_from_its_own_lead_in_not_from_the_last_ring() {
+    let t = contour(&three_bores(), &params(true)).expect("auto ramp bores");
+    let (_, axial) = descents(&t);
+    assert_eq!(axial, 3, "only the first ring dives, one per level: {:?}", t.notes);
+    assert!(t.notes.iter().all(|n| n.contains("(25.500")), "the blocked chords are the first ring's alone: {:?}", t.notes);
+}
