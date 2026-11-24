@@ -356,13 +356,11 @@ pub enum Warning {
         gouge_mm: f64,
         rest_mm: f64,
     },
-    /// A 3-D finish's envelope verdict could not judge the material
-    /// hidden under overhangs (M13.1): the hidden-rest scan stopped at
-    /// its budget (`cells` the lattice, `claims` the plane claims
-    /// binned when it stopped), so whatever rest the verdict reports
-    /// speaks for the ridge law alone. "Not judged", never a zero -
-    /// reported at the first cutting move, and like every cached
-    /// warning it holds the post.
+    /// The envelope could not judge rest. For ball scans the hidden-rest
+    /// scan stopped at its budget (`cells` in the lattice, `claims` plane
+    /// claims binned), so the reported rest covers only the ridge law.
+    /// Zero cells and claims mark the bull-nose sweep, which measures no
+    /// rest. Reported at the first cutting move; holds the post.
     RestUnjudged { at: usize, cells: usize, claims: usize },
     /// A 3-D finish's spacing left a scallop past tolerance (M13.9,
     /// the ridge flank law): `mm` standing outside every ball at a
@@ -544,6 +542,7 @@ impl core::fmt::Display for Warning {
                 f,
                 "finish envelope near move {at}: {gouge_mm:.4} mm gouge, {rest_mm:.4} mm rest"
             ),
+            Warning::RestUnjudged { at, cells: 0, claims: 0 } => write!(f, "bull-nose rest unmeasured from move {at}"),
             Warning::RestUnjudged { at, cells, claims } => write!(
                 f,
                 "finish envelope from move {at}: hidden rest NOT JUDGED - the scan's budget ran out ({cells} cells, {claims} plane claims); material under an overhang may stand unreported"
