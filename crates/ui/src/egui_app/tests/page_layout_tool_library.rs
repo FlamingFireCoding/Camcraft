@@ -106,6 +106,11 @@ fn layout_window_tool_editor() {
         }
         last = Some((a, r.top()));
     }
+    // #3895: the assembly group follows the geometry rows in the Tool tab
+    // (it may stand below the fold of the scroll area).
+    let group = rect(crate::egui_app::tool_library_dialog::assembly_group::HEADING);
+    assert!(group.top() > rect("Diameter").top(), "the assembly group {group:?} stands under the geometry rows");
+    assert!(group.left() >= win.left() - 1.0 && group.right() <= win.right() + 1.0, "the group {group:?} keeps to the window's width");
     let rail = rect("All tools");
     let row = rect(&name);
     assert!(rail.right() < rect("Diameter").left() && row.right() < rect(&heading).left(), "the rail {rail:?} stands left of the editor");
