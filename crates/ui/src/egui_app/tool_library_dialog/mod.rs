@@ -11,10 +11,14 @@
 //! #3894 (U3): the editor shows the tool above its tabs - an orbitable 3D
 //! model (the default) or a to-scale side view with dimension lines
 //! (`preview`). Display only.
+//! #3895 (U4): the Tool tab's assembly group sets the holder, the gauge
+//! length and the stick-out from the window's own holder draft; Apply
+//! holder is the one undoable `SetToolBody::library`.
 //! Provenance: our own window, after the tool shape window pattern
 //! (`pages::tool_shape_editor_window`) and the egui `Window` docs; no
 //! HSMWorks material involved.
 
+pub(crate) mod assembly_group;
 mod details_tab;
 mod list;
 pub(crate) mod model;
@@ -102,6 +106,11 @@ fn editor(ui: &mut Ui, state: &mut State) {
                 return After::Gone;
             }
             let name = state.tool_ui.name.clone();
+            // #3895: the holder draft follows the tool before the preview
+            // draws it (a turning tool has none).
+            if crate::state::is_spun_kind(state.tool_ui.tool_kind()) {
+                state.sync_tool_profile_ui();
+            }
             ui.heading(format!("Tool: {name}"));
             preview::draw(ui, state, face);
             let tab = &mut face.tab;
