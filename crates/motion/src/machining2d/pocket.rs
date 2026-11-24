@@ -333,6 +333,15 @@ pub(super) fn pocket_over_with_relief(
         }
     }
     let hold_crossings = hold_crossings || zigzag;
+    // #3746: a start-side ring plan round a part enters from the air
+    // outside the stock box.
+    let air = match (&side.stock, side.start) {
+        (Some(stock), PassStart::Inside | PassStart::Outside) if side.around_part && !zigzag && strategy != PocketStrategy::Adaptive => {
+            let r = p.tool_diameter * 0.5;
+            super::air_entry::AirRoom::new(stock, center, r, p.links.approach.approach_distance, side.start == PassStart::Inside)
+        }
+        _ => None,
+    };
     emit_pocket_passes(
         b,
         p,
@@ -348,6 +357,7 @@ pub(super) fn pocket_over_with_relief(
             corner_reliefs,
             cleared_links: side.start != PassStart::Auto,
             ramp_starts,
+            air,
         },
     )
 }

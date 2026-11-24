@@ -240,6 +240,7 @@ pub(super) fn emit_rest_avoid(
             corner_reliefs: &corner_reliefs,
             cleared_links: false,
             ramp_starts: Vec::new(),
+            air: None,
         },
     )
 }

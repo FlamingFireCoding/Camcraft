@@ -173,6 +173,9 @@ pub(super) struct Motion {
     pub(super) cleared_links: bool,
     /// #3567: the plan's dead-end starts, entered by a ramp along the pass.
     pub(super) ramp_starts: Vec<Point2>,
+    /// #3746: a start-side ladder's air round the stock box; its Arc
+    /// entry plunges there and arcs onto the first ring.
+    pub(super) air: Option<super::air_entry::AirRoom>,
 }
 
 impl Motion {
@@ -202,6 +205,7 @@ impl Motion {
             solid_restart: false,
             cleared_links: false,
             ramp_starts: Vec::new(),
+            air: None,
         }
     }
 
