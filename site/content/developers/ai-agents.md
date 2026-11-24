@@ -17,7 +17,7 @@ Questions and coordination happen on the
 ## Your first hour
 
 1. **Say hello** on the [CamCraft Discord](https://discord.gg/bBWjkAgX5): what
-   machine you have (CNC or computer), and what you would like to work on.
+   CNC machine you have, and what you would like to work on.
 2. **What you need:**
    - a GitHub account, and the [GitHub CLI](https://cli.github.com/) logged
      in (`gh auth login`) - agents use it to read issues and open PRs;
@@ -54,7 +54,6 @@ Questions and coordination happen on the
    - `/work-issue` - claim one issue, branch from the latest `main`, fix it
      with a pinning test, run the quick gate, open a draft PR.
    - `/gh-issues` - read, file and update issues the way the project expects.
-   - `/review-prs` - review an open PR (collaborators).
    - `/gate` - run a test gate tier.
 3. Optional: CamCraft has an MCP server (`camcraft-cli mcp`), so an agent can
    drive a CAM document headlessly to reproduce a bug or check a result
@@ -91,15 +90,14 @@ A good first task is a `P3` or `P7` issue with `effort:low` or
    - a reason for any new top-level test binary (or add the test to an
      existing suite).
 6. **Mark it ready** when the gate is green and the body is complete.
-7. **Review.** A collaborator's agent reviews it: a trial merge with `main`,
-   the touched suites, clippy and the project laws. Changes that can affect
-   posted G-code, collisions, simulation or geometry get the safety tier
-   (stronger model, mutation checks). Findings come back as a PR comment;
-   fix them on the same branch with a plain push (never force-push).
-8. **Merge.** A clean review sets `merge-ready`, and the PR is merged by a
-   maintainer or the merge bot. If `main` moved and your PR conflicts, merge
-   `main` into your branch when asked - the project refreshes at merge time
-   rather than continuously, so you do not have to chase every merge.
+7. **Review.** The project's reviewers check it: they build it merged with
+   `main`, run the tests it touches and read it against the project rules.
+   Changes that can affect posted G-code, collisions, simulation or geometry
+   get a deeper safety review. Findings come back as a PR comment; fix them
+   on the same branch with a plain push (never force-push).
+8. **Merge.** Once the review is clean, the maintainers merge it. If `main`
+   moved and your PR conflicts, merge `main` into your branch when asked -
+   you do not have to chase every merge.
 
 **A series starts with its shape.** If a feature needs several stacked PRs,
 open the first one first and say it starts a series. When it sets a shape
@@ -192,7 +190,7 @@ Test parts are valuable: real shapes find real bugs. If you design parts
 - Do not upload vendor CAD or downloaded models whose license forbids
   sharing; describe the shape instead.
 
-## I have machine X - how do I get it working?
+## I have a CNC machine - how do I get it working in CamCraft?
 
 1. **Check what exists.** CamCraft ships machine files in
    [`assets/machines/`](https://github.com/NeoTech/Camcraft/tree/main/assets/machines)
@@ -200,9 +198,10 @@ Test parts are valuable: real shapes find real bugs. If you design parts
    [`assets/posts/`](https://github.com/NeoTech/Camcraft/tree/main/assets/posts):
    Mach3, Mach4, LinuxCNC, grbl/grblHAL, Tormach PathPilot, Fanuc, Haas,
    Heidenhain, Sinumerik, Mazak and more. If your controller's dialect is
-   there, pick a similar machine and set your travel - you can start today.
-2. **If it is missing**, open an issue (or ask on Discord) titled
-   `Machine: <make model>` with:
+   there, pick a similar machine file and set your travel - you can start
+   today.
+2. **If your CNC machine is missing**, open an issue (or ask on Discord)
+   titled `Machine: <make model>` with:
    - the controller and its version (for example "Mach3", "LinuxCNC 2.9",
      "Fanuc 0i-MF");
    - travel in X, Y and Z, and inch or mm;
@@ -265,9 +264,9 @@ worktrees after their PRs merge. Testing and reporting help just as much
 as code.
 
 **I have a CNC machine but no development setup.**
-Machine owners are some of the most useful helpers: real controllers catch
-what tests cannot. See "I have machine X" above, and say what you have on
-Discord; we send small programs to check (always air-cut or dry-run first).
+CNC machine owners are some of the most useful helpers: real controllers
+catch what tests cannot. See "I have a CNC machine" above, and say what you
+have on Discord; we send small programs to check (always air-cut or dry-run first).
 
 **I'm overwhelmed. Where do I even start?**
 Say hello on Discord and tell us what you have and what you enjoy. Someone
@@ -278,8 +277,9 @@ small issue.
 
 - [CamCraft Discord](https://discord.gg/bBWjkAgX5) - questions, test
   machines, coordination.
-- Process changes are announced on the pinned issue
-  [#681](https://github.com/NeoTech/Camcraft/issues/681).
+- [craftydevs.org](https://www.craftydevs.org/) - CamCraft and SolidCraft,
+  the open-source CAM and CAD pair, with links to each project's site,
+  GitHub and status dashboard.
 
 Thanks to SolidCraft's contributor guide, whose "look at what is open
 first", "running in minutes" and "first PR of a series" ideas we adapted
