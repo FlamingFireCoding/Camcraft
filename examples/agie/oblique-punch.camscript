@@ -1,6 +1,6 @@
 // Original CAMCraft example. Run from the project root with a fresh output name.
 cam.call("load_machine", {builtin: "AGIECUT Classic 2S (template)"});
-// This synthetic job explicitly selects the resident recipe and its preview gap.
+// Request the qualified process. The operator reviews and assigns it on the control.
 cam.call("edit_machine", {patch: {edm: {conditions: [{
   id: "AGIE_QN2", role: "rough", gap: 0.005, wire_diameter: 0.25
 }]}}});
@@ -16,4 +16,4 @@ cam.call("add_operation", {
   }
 });
 cam.generate();
-cam.post({to: "POLY20", cps: "Agie native wire EDM", options: {separationLengthMm: 1.0}});
+cam.post({to: "POLY20", cps: "Native wire EDM job files", options: {separationLengthMm: 1.0}});

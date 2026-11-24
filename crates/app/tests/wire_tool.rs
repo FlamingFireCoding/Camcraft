@@ -53,6 +53,7 @@ fn wire_op(condition: &str) -> WireContourOp {
         burnout: None,
         clearance: operation::DEFAULT_CLEARANCE,
         skims: Vec::new(),
+        sharp_corners: false,
     }
 }
 

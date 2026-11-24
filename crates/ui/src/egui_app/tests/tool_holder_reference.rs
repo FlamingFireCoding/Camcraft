@@ -108,3 +108,37 @@ fn the_profile_tab_names_the_entry_and_the_picker_shows_it() {
     assert_eq!((d.library.as_deref(), d.gauge, d.projection), (Some("BT30 ER20"), 60.0, 55.0), "the picker shows the tool's holder");
     assert!(!h.get_by_label("Apply holder").accesskit_node().is_disabled());
 }
+
+/// #2007: the shape window's holder library controls align label-left on
+/// one row, matching the property grid.
+#[test]
+fn holder_picker_uses_label_left_rows() {
+    let mut h = properties();
+    set_bt30(&mut h);
+    crate::actions::open_tool_shape_editor(&mut h.state_mut().state, TOOL);
+    h.run_steps(3);
+    let win = h
+        .query_all_by_role(egui::accesskit::Role::Window)
+        .find(|n| n.accesskit_node().label().as_deref() == Some("Tool shape: EM-0600-4FL"))
+        .expect("the shape window");
+    let texts = super::structural::painted(&h);
+    let lib_l = super::structural::at(&texts, "Library holder");
+    let lib_c = win
+        .query_all_by_role(egui::accesskit::Role::ComboBox)
+        .find(|n| n.value().as_deref() == Some("BT30 ER20"))
+        .expect("Library holder combo")
+        .rect();
+    assert!(lib_l.x < lib_c.center().x, "Library holder label sits left of combo: {lib_l:?} vs {lib_c:?}");
+    assert!((lib_l.y - lib_c.center().y).abs() < 15.0, "Library holder shares a row: {lib_l:?} vs {lib_c:?}");
+
+    for (label, value) in [("Gauge length", "60.0 mm"), ("Projection", "55.0 mm")] {
+        let l = super::structural::at(&texts, label);
+        let input = win
+            .query_all_by_role(egui::accesskit::Role::SpinButton)
+            .find(|n| n.value().as_deref() == Some(value))
+            .unwrap_or_else(|| panic!("{label:?} shows {value:?}"))
+            .rect();
+        assert!(l.x < input.center().x, "{label:?} label sits left of input: {l:?} vs {input:?}");
+        assert!((l.y - input.center().y).abs() < 15.0, "{label:?} shares a row: {l:?} vs {input:?}");
+    }
+}

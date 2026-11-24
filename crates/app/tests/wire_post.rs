@@ -118,6 +118,7 @@ fn punch_doc_with(machine_text: &str, skims: Vec<WireSkim>) -> World {
         burnout: None,
         clearance: operation::DEFAULT_CLEARANCE,
         skims,
+        sharp_corners: false,
     };
     let c = CreateOperation::new(&world, "Punch1", "EDM-W025", SrcRef::Entity("slug".into()), OpParams::WireContour(op)).expect("op");
     h.execute(&world, c);
@@ -155,6 +156,7 @@ fn gouging_die() -> World {
         burnout: None,
         clearance: operation::DEFAULT_CLEARANCE,
         skims: Vec::new(),
+        sharp_corners: false,
     };
     let c = CreateOperation::new(&world, "Die1", "EDM-W025", SrcRef::Entity("opening".into()), OpParams::WireContour(op)).expect("op");
     h.execute(&world, c);
@@ -192,7 +194,7 @@ fn the_punch_contour_posts_its_golden_through_the_gate() {
     let lines: Vec<&str> = text.lines().collect();
     let at = |w: &str| lines.iter().position(|l| *l == w).unwrap_or_else(|| panic!("no {w} in\n{text}"));
     let (g0, th, cond, comp, cut, tip) =
-        (at("G0 X-30 Y0"), at("FX-THREAD"), at("FX-COND C110"), at("FX-COMP-OFF"), at("FX-CUT"), at("FX-TIP-OUT"));
+        (at("G0 X-30. Y0."), at("FX-THREAD"), at("FX-COND C110"), at("FX-COMP-OFF"), at("FX-CUT"), at("FX-TIP-OUT"));
     assert!(g0 < th && th < cond && cond < comp && comp < cut && cut < tip, "{text}");
     let cuts: Vec<&&str> = lines[comp + 1..cut].iter().collect();
     assert!(!cuts.is_empty() && cuts.iter().all(|l| l.starts_with("G1 X") && !l.contains('Z') && !l.contains('F')), "{text}");
@@ -280,6 +282,12 @@ fn a_mill_machine_and_a_cutting_post_are_refused_by_name() {
     let w = warnings(cps(WIRE), &mill, &stream);
     assert!(w.iter().any(|m| m.contains("is not declared kind wire_edm")), "{w:?}");
     for (n, s) in camcraft_app::posting::shipped_posts().expect("the shipped posts read").iter().filter(|(n, _)| !WIRE_POSTS.contains(n)) {
+        if *n == "Heidenhain Klartext" {
+            let machine = post::machine::mirror(&parse_mch(FIXTURE).expect("wire machine"));
+            let why = post::engine::run(s, &machine, &stream).expect_err("a Klartext controller is required");
+            assert!(why.to_string().contains("controller profile"), "{why}");
+            continue;
+        }
         let w = warnings(s, FIXTURE, &stream);
         assert!(w.iter().any(|m| m.contains("Punch1") && m.contains("does not declare wireEdm")), "{n}: {w:?}");
     }
@@ -337,7 +345,7 @@ fn a_rough_and_two_skims_post_three_offsets_and_condition_selects() {
     // the gap 0.04, 0.02, 0.01 - the punch's left side at X = -20 - k.
     for (i, x) in ["-20.165", "-20.145", "-20.135"].iter().enumerate() {
         let lead = lines[selects[i] + 2];
-        assert_eq!(lead, format!("G1 X{x} Y0"), "pass {i}: {text}");
+        assert_eq!(lead, format!("G1 X{x} Y0."), "pass {i}: {text}");
     }
     // The first skim keeps the rough's direction (down the left side),
     // the reversed second one goes up it.
@@ -455,6 +463,7 @@ fn cutoff_doc(wrong: bool) -> World {
         clearance: operation::DEFAULT_CLEARANCE,
         skims: Vec::new(),
         four_axis: None,
+        sharp_corners: false,
     };
     let src = SrcRef::Selection(vec![GeoSel { entity: "part".into(), feature: FeatureSel::Chain(chain) }]);
     h.execute(&world, CreateOperation::new(&world, "Cutoff1", "EDM-W025", src, OpParams::WireContour(op)).expect("op"));

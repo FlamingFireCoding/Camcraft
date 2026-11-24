@@ -120,6 +120,7 @@ fn a_recorded_coarse_chord_is_never_vouched_away() {
     h.execute(&world, ImportModel::from_mesh("coarse", brick()).with_fidelity(Some(TOO_COARSE)));
     let said = refusal(&world, "coarse", "A");
     assert!(said.contains("'coarse' has a recorded fidelity") && said.contains("0.030 mm") && said.contains("re-import"), "{said}");
+    assert!(said.contains("larger STEP facet budget, or export the file again with a tighter tolerance"), "{said}");
     assert_eq!(chord(&world, "coarse"), Some(TOO_COARSE));
 
     // A stock copied from the unknown model that carries a RECORDED chord
