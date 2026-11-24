@@ -33,3 +33,5 @@ pub(crate) use {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod transport_http_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod transport_discovery_tests;

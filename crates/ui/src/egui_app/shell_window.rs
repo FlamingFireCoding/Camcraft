@@ -33,7 +33,7 @@ mod start;
 
 /// The windowed shell (the `--ui egui` entry without `--headless`); returns
 /// the process exit code.
-pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>, files: &[String], start: crate::cli_options::StartMode) -> i32 {
+pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>, files: &[String], start: crate::cli_options::StartMode, read_only: bool) -> i32 {
     let event_loop = match EventLoop::new() {
         Ok(el) => el,
         Err(err) => {
@@ -49,7 +49,7 @@ pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: O
     shell.start = start;
     // #2462: a file named on the command line goes through the same
     // import / open command as the dialogs, on the first frame.
-    crate::launch_file::queue(&mut shell.state, files);
+    crate::launch_file::queue(&mut shell.state, files, read_only);
     // #2384: with no file named, the start page lists the recent projects.
     super::home::at_start(&mut shell.state, files);
     // #1946: wake the Wait event loop whenever the AI chat worker queues

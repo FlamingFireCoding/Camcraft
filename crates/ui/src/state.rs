@@ -120,6 +120,8 @@ mod tool_cutter_ui;
 pub use tool_cutter_ui::ToolCutterUi;
 #[path = "state_recent.rs"]
 mod recent_ui;
+#[path = "state_read_only.rs"]
+mod read_only_ui;
 #[path = "state_wcs.rs"]
 mod wcs_ui;
 #[path = "state_view.rs"]
@@ -149,6 +151,9 @@ pub enum CommandKind {
     NewDocument,
     OpenProjectDialog,
     OpenProjectFile(PathBuf),
+    /// `camcraft-ui --read-only job.camproj` (#3609): the same open, then a
+    /// save over the file is refused until Save As writes another file.
+    OpenProjectReadOnly(PathBuf),
     /// A model or project the browser's async picker read (#31): its
     /// name and bytes, landed through the same import / open laws.
     OpenPicked(crate::file_pick::PickedFile),
@@ -1688,6 +1693,9 @@ pub struct State {
     pub status: String,
     /// Last successfully opened or saved project in this window.
     pub project_path: Option<PathBuf>,
+    /// `project_path` is open read-only (`--read-only`, #3609): a save
+    /// over it is refused, and a save to another file ends it.
+    pub project_read_only: bool,
     /// #1431: the browser build - Save, Save As and Post download, and
     /// the file commands a page cannot run are refused by name. Set from
     /// the target; the tests turn it on to drive the browser's law.
@@ -2339,6 +2347,7 @@ impl State {
             history: History::default(),
             status,
             project_path: None,
+            project_read_only: false,
             browser_build: cfg!(target_arch = "wasm32"),
             debug_info_open: false,
             report_open: false,
@@ -3433,6 +3442,7 @@ impl State {
                 self.reset_ai_document();
                 self.abandon_imports();
                 self.project_path = None;
+                self.project_read_only = false;
                 self.hidden_stocks.clear();
                 self.hidden_offsets.clear();
                 self.shown_setups.clear();
@@ -3470,6 +3480,7 @@ impl State {
             }
             CommandKind::OpenProjectDialog => self.open_project_dialog(),
             CommandKind::OpenProjectFile(path) => self.open_project_path(path),
+            CommandKind::OpenProjectReadOnly(path) => self.open_project_read_only(path),
             CommandKind::OpenPicked(file) => self.open_picked(file),
             CommandKind::SaveProjectDialog if self.browser_build => {
                 self.download_project(false);
@@ -3478,7 +3489,7 @@ impl State {
                 self.download_project(true);
             }
             CommandKind::SaveProjectDialog => {
-                if let Some(path) = self.project_path.clone().or_else(|| save_project_dialog(None)) {
+                if let Some(path) = self.save_target() {
                     self.save_project_path(path);
                 }
             }
@@ -4771,6 +4782,7 @@ impl State {
         self.reset_ai_document();
         self.abandon_imports();
         self.project_path = None;
+        self.project_read_only = false;
         self.hidden_stocks.clear();
         self.hidden_offsets.clear();
         self.shown_setups.clear();
@@ -4798,6 +4810,9 @@ impl State {
     }
 
     pub(crate) fn save_project_path(&mut self, path: PathBuf) {
+        if self.refuse_read_only_save(&path) {
+            return;
+        }
         // #3608: when the file on disk changed after the open or the last
         // save, the save waits for the Overwrite prompt; nothing is written.
         if !self.may_save_over(&path) {
@@ -4811,6 +4826,7 @@ impl State {
                 self.status = format!("saved {}", path.display());
                 self.note_recent(camcraft_app::recent::RecentKind::Project, &path);
                 self.project_path = Some(path);
+                self.project_read_only = false;
             }
             Err(err) => self.status = format!("save failed: {err}"),
         }
@@ -4821,8 +4837,10 @@ impl State {
         let filename = self.project_path.as_ref().and_then(|path| path.file_name());
         // A leading '*' while the document has unsaved changes (#107).
         let mark = if self.history.is_dirty() { "*" } else { "" };
+        // #3609: a project open read-only says so.
+        let read_only = if self.project_read_only { " (read-only)" } else { "" };
         match filename {
-            Some(name) => format!("{mark}CamCraft - {}", name.to_string_lossy()),
+            Some(name) => format!("{mark}CamCraft - {}{read_only}", name.to_string_lossy()),
             None => format!("{mark}CamCraft - Untitled"),
         }
     }

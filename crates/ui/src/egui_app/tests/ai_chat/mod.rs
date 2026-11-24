@@ -4,6 +4,7 @@
 mod basic;
 mod budget;
 mod delete_confirmation;
+mod model_defaults;
 mod regressions;
 mod safety;
 mod settings;

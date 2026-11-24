@@ -17,6 +17,7 @@ use crate::plunge_law;
 use super::face::GenError;
 use super::levels::{Cert, Motion};
 use super::pass_start::StartSide;
+use super::PocketStrategy;
 
 /// How far (in tool radii) outside the stock a centre stands in air: its
 /// disc then cuts at most [`SWATH`] radii into the stock, as a centre
@@ -79,16 +80,27 @@ impl RingLinks {
 }
 
 /// The ring law of a start side (Inside or Outside; Auto once resolved):
-/// only an area round a part links by it, a pocket keeps its own links.
+/// only the rings of an area round a part link by it. A pocket keeps its
+/// own links, and so do the passes that are not rings (#3822: the Adaptive
+/// spiral, the Zigzag rows), whatever the side.
 pub(super) fn for_side(
     side: &StartSide,
+    strategy: PocketStrategy,
     tool_r: f64,
     fixtures: Option<Region>,
 ) -> Result<Option<RingLinks>, GenError> {
-    if !side.around_part {
+    if !side.around_part || !rings(strategy) {
         return Ok(None);
     }
     RingLinks::new(side.stock.as_ref(), tool_r, fixtures).map(Some)
+}
+
+/// #3822: the strategies whose passes are the rings of one ring set, the
+/// only passes the ring law links. Read on the strategy of the passes
+/// posted: an Adaptive plan that falls back to Offset rings posts rings,
+/// and the planner joined them by the same law (`level_order`).
+pub(super) fn rings(strategy: PocketStrategy) -> bool {
+    matches!(strategy, PocketStrategy::Waterline | PocketStrategy::OffsetRings)
 }
 
 impl Motion {

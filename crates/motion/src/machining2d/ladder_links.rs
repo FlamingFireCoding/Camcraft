@@ -11,7 +11,7 @@ use crate::cl::{MoveKind, PathBuilder};
 use crate::entry::{Entry3D, chord_hits_plan};
 use crate::geo2d::{Point2, Region};
 use crate::geometry::Point3;
-use crate::links::{Link, LinkTally, Links, NOT_PROVED, TOO_LONG};
+use crate::links::{CLEARANCE_PLANE, Link, LinkTally, Links, NOT_PROVED, TOO_LONG};
 
 use super::arcs::Seg;
 use super::descent::{Cuts, Lvl, entry_restart, feed_down, plan, push, restart, start};
@@ -173,6 +173,12 @@ pub(super) fn pass_link(b: &mut PathBuilder, lv: &LevelWalk, m: &Motion, cert: O
         (Some(Ok(())), _) => {
             st.level.push(vec![at, e]);
             return;
+        }
+        // #3822: a failed ring link lifts to the plane the user chose for
+        // the pass link: Clearance to the clearance height, else retract.
+        (Some(Err(why)), Link::Clearance) => {
+            st.tally.lift_to(why, CLEARANCE_PLANE, at, z);
+            m.clearance_z
         }
         (Some(Err(why)), _) => {
             st.tally.lift(why, at, z);
