@@ -1,10 +1,10 @@
-//! Gate map: covers app::posting::agie quality dispatch (#2966) - a saved Wire Contour condition
+//! The quality dispatch of app::posting::agie (#2966): a saved Wire Contour condition
 //! selects the CCB035 work quality after a project reload, and only for one 20 mm polygon punch.
 //! Provenance: CAMCraft's original synthetic examples in examples/agie.
 use std::{fs, path::Path, process::Command};
 
-const FINE: &str = include_str!("../../../examples/agie/fine-punch.camscript");
-const PUNCH_OBJ: &str = include_str!("../../../examples/agie/punch.obj");
+const FINE: &str = include_str!("../../../../examples/agie/fine-punch.camscript");
+const PUNCH_OBJ: &str = include_str!("../../../../examples/agie/punch.obj");
 
 /// Copy `assets` into `examples/agie` of `dir`, write `script` there and run it.
 fn run(dir: &Path, name: &str, script: &str, assets: &[(&str, &str)]) -> std::process::Output {
@@ -51,15 +51,15 @@ fn the_saved_condition_selects_the_exact_requested_quality() {
     for (name, golden) in [
         (
             "FINE20.ISO",
-            include_str!("golden/nc/agie-native/FINE20.ISO"),
+            include_str!("../golden/nc/agie-native/FINE20.ISO"),
         ),
         (
             "FINE20.SBR",
-            include_str!("golden/nc/agie-native/FINE20.SBR"),
+            include_str!("../golden/nc/agie-native/FINE20.SBR"),
         ),
         (
             "FINE20.SBL",
-            include_str!("golden/nc/agie-native/FINE20.SBL"),
+            include_str!("../golden/nc/agie-native/FINE20.SBL"),
         ),
     ] {
         assert_eq!(
@@ -68,16 +68,20 @@ fn the_saved_condition_selects_the_exact_requested_quality() {
             "{name}"
         );
     }
-    // Only the one quality line differs from the control-checked CCB030 punch.
-    let base = include_str!("golden/nc/agie-native/CCSEP20.SBL").replace("CCSEP20", "FINE20");
+    // Only the one quality line differs from the control-checked CCB030 punch: CCB035 and
+    // the speed flag that preselects technology estbca25nsn060b035020 (#2966).
+    let base = include_str!("../golden/nc/agie-native/CCSEP20.SBL").replace("CCSEP20", "FINE20");
     assert_eq!(
-        include_str!("golden/nc/agie-native/FINE20.SBL"),
-        base.replace("\"CCB030\",\"0.30,", "\"CCB035\",\"0.35,")
+        include_str!("../golden/nc/agie-native/FINE20.SBL"),
+        base.replace(
+            "\"CCB030\",\"0.30,1.50,1.00,F,F,F\"",
+            "\"CCB035\",\"0.35,1.50,1.00,T,F,F\""
+        )
     );
     for ext in ["ISO", "SBR"] {
         let base = match ext {
-            "ISO" => include_str!("golden/nc/agie-native/CCSEP20.ISO"),
-            _ => include_str!("golden/nc/agie-native/CCSEP20.SBR"),
+            "ISO" => include_str!("../golden/nc/agie-native/CCSEP20.ISO"),
+            _ => include_str!("../golden/nc/agie-native/CCSEP20.SBR"),
         };
         assert_eq!(
             fs::read_to_string(dir.join(format!("FINE20.{ext}"))).unwrap(),
@@ -124,15 +128,15 @@ fn ra035_refuses_a_group_an_arc_punch_a_die_and_a_cutoff() {
     let cases: [Case; 4] = [
         (
             "punch-pair.camscript",
-            include_str!("../../../examples/agie/punch-pair.camscript"),
+            include_str!("../../../../examples/agie/punch-pair.camscript"),
             &[
                 (
                     "pair-left.obj",
-                    include_str!("../../../examples/agie/pair-left.obj"),
+                    include_str!("../../../../examples/agie/pair-left.obj"),
                 ),
                 (
                     "pair-right.obj",
-                    include_str!("../../../examples/agie/pair-right.obj"),
+                    include_str!("../../../../examples/agie/pair-right.obj"),
                 ),
             ],
             "PAIR20",
@@ -140,30 +144,30 @@ fn ra035_refuses_a_group_an_arc_punch_a_die_and_a_cutoff() {
         ),
         (
             "circle-punch.camscript",
-            include_str!("../../../examples/agie/circle-punch.camscript"),
+            include_str!("../../../../examples/agie/circle-punch.camscript"),
             &[(
                 "circle-punch.dxf",
-                include_str!("../../../examples/agie/circle-punch.dxf"),
+                include_str!("../../../../examples/agie/circle-punch.dxf"),
             )],
             "CIRCLE20",
             "Select AGIE_QN2 for a punch group or a DXF arc punch",
         ),
         (
             "die-plate.camscript",
-            include_str!("../../../examples/agie/die-plate.camscript"),
+            include_str!("../../../../examples/agie/die-plate.camscript"),
             &[(
                 "die-plate.obj",
-                include_str!("../../../examples/agie/die-plate.obj"),
+                include_str!("../../../../examples/agie/die-plate.obj"),
             )],
             "DIE20",
             "qualified for one closed punch only",
         ),
         (
             "cutoff-lower.camscript",
-            include_str!("../../../examples/agie/cutoff-lower.camscript"),
+            include_str!("../../../../examples/agie/cutoff-lower.camscript"),
             &[(
                 "cutoff-lower.obj",
-                include_str!("../../../examples/agie/cutoff-lower.obj"),
+                include_str!("../../../../examples/agie/cutoff-lower.obj"),
             )],
             "LOWER20",
             "qualified for one closed punch only",
