@@ -60,3 +60,30 @@ refusal names the three fixes a user can make.
 (the refusal, the note markers, the stand-in tails and
 `entry_warnings`). The tails match the note texts of `descent_dive`,
 `descent` and `air_entry`; a new stand-in note adds its tail there.
+
+### Maintainer decision (owner's standing word 2026-11-23: choose the recommended option while he sleeps)
+
+- **Chosen rule.** An Outside Arc re-entry after a lift comes down in air
+  outside the stock, or on floor that is already cut at that depth. It
+  never ramps, never takes a helix and never plunges into uncut stock.
+  Else the op is refused by name (`OUTSIDE_AIR_REFUSAL`).
+  `entry_warn::outside_air_check` decides it for every Outside entry path;
+  `entry_warn::outside_arc_restart` finds the cut floor.
+- **"Already cut"** means cut earlier in the program order (the moves
+  posted before the re-entry), at or below that depth, by the whole tool
+  disc: the centre, a ring at half a radius and the rim of the disc round
+  the plunge point each lie within one tool radius of an earlier cut's
+  centre path. A cut that comes later in the order, or one that covers
+  only part of the disc, does not count. The link at depth from that
+  point to the pass start runs through cut floor up to one tool radius
+  short of the start, and crosses no earlier cut (the Crossing law). Pins:
+  `outside_reentry_onto_cut_floor_is_accepted`,
+  `outside_reentry_onto_a_partly_cut_disc_is_refused`,
+  `outside_reentry_onto_floor_cut_later_is_refused`,
+  `outside_reentry_without_an_air_lead_is_refused`.
+- **Reason.** Without the cut floor, fig8 2D Offset Outside with Arc is
+  refused completely: four pass links (#3825) lift to pass starts inside
+  ring 0 that no air lead reaches. That is the main Outside case of the
+  maintainer.
+- **Option dropped.** Refuse every Outside re-entry that is not in air
+  outside the stock.
