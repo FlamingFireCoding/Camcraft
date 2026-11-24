@@ -94,6 +94,19 @@ fn draw_header(ui: &mut Ui, state: &mut State, pal: &theme::Tokens) {
         );
     });
 
+    let preset = state.ai_chat.selected_preset();
+    let preset_id = preset.id.clone();
+    // Test reads the Model field like Send: trimmed, and empty uses the default.
+    let model =
+        super::settings_text::resolve_model(&state.ai_chat.model_input, &preset.default_model);
+    super::settings_panel::draw(
+        ui,
+        &mut state.ai_chat.settings,
+        &preset_id,
+        &model,
+        state.ai_chat.offline_only,
+    );
+
     ui.label("Viewport screenshot capture is unavailable.");
 
     let preset = state.ai_chat.selected_preset();

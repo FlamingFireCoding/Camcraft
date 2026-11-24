@@ -3,6 +3,13 @@
 
 pub(crate) mod budget;
 mod panel;
+pub(crate) mod settings;
+#[cfg(not(target_arch = "wasm32"))]
+// Structural tests use a fake backend, so they never read the real OS keychain.
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) mod settings_native;
+mod settings_panel;
+pub(crate) mod settings_text;
 mod state;
 mod transport;
 #[cfg(not(target_arch = "wasm32"))]

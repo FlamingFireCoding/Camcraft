@@ -150,10 +150,11 @@ impl Client {
                 }
             });
             return Err(format!(
-                "{} answered HTTP {}: {}",
+                "{} answered HTTP {}: {} (endpoint: POST {})",
                 ep.host,
                 status.as_u16(),
-                provider_message(&text, secret)
+                provider_message(&text, secret),
+                ep.url(path)
             ));
         }
         serde_json::from_str(&text).map_err(|e| format!("{} answer is not JSON ({e})", ep.host))
@@ -177,16 +178,25 @@ impl reqwest::dns::Resolve for CheckedResolver {
     }
 }
 
-/// Redact before truncating, including keys that cross the text limit.
+/// The provider's error text: `error.message`, then the short `error.type`,
+/// `error.code` and `error.status` fields when present. Redact before
+/// truncating, including keys that cross the text limit.
 fn provider_message(text: &str, secret: Option<&str>) -> String {
     let parsed: Option<Value> = serde_json::from_str(text).ok();
     let msg = parsed
         .as_ref()
         .and_then(|v| {
-            v["error"]["message"]
-                .as_str()
-                .or_else(|| v["error"].as_str())
-                .map(str::to_owned)
+            let error = &v["error"];
+            let message = error["message"].as_str().or_else(|| error.as_str())?;
+            let fields: Vec<String> = ["type", "code", "status"]
+                .iter()
+                .filter_map(|name| error_field(&error[*name]).map(|f| format!("{name}: {f}")))
+                .collect();
+            Some(if fields.is_empty() {
+                message.to_owned()
+            } else {
+                format!("{message} [{}]", fields.join(", "))
+            })
         })
         .unwrap_or_else(|| text.to_owned());
     let redacted = match secret.filter(|key| !key.is_empty()) {
@@ -194,6 +204,16 @@ fn provider_message(text: &str, secret: Option<&str>) -> String {
         None => msg,
     };
     redacted.chars().take(ERROR_TEXT).collect()
+}
+
+/// A scalar error field (a string or a number); other shapes are dropped.
+/// It is not cut here: the caller redacts the whole text, then truncates it.
+fn error_field(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) if !s.trim().is_empty() => Some(s.trim().to_owned()),
+        Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
 }
 
 /// The auth header for `provider`, per its documentation.
