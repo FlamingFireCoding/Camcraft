@@ -329,6 +329,7 @@ pub(super) fn finding(op: &str, w: &Warning) -> Value {
         Warning::UndercutLift { at } => ("undercut_lift", *at),
         Warning::StrategyFallback { at, .. } => ("strategy_fallback", *at),
         Warning::FluteShort { at, .. } => ("flute_short", *at),
+        Warning::EntryNotRecommended { at, .. } => ("entry_not_recommended", *at),
     };
     json!({
         "op": op,

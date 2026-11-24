@@ -230,3 +230,81 @@ fn an_arc_lead_under_control_is_refused_at_generation_by_name() {
     let e = model::find_by_name(&world, "Contour1").expect("op");
     assert!(model::toolpath_of(&world, &e).is_none(), "no path under a refused generation");
 }
+
+/// #3888: the box contour of `world_with` on `side` with `entry`, three
+/// levels deep, generated; `Err` carries the generation's refusal.
+fn ramped_world(comp: Compensation, side: Side, entry: camcraft_app::machining3d::Entry3D) -> (World, Result<(), String>) {
+    let world = camcraft_app::world::new_world();
+    let mut history = History::default();
+    let cmd = SetStock::new(&world, StockShape::Box { dx: 100.0, dy: 100.0, dz: 5.0 }, Default::default());
+    history.execute(&world, cmd.expect("box stock"));
+    let tool = catalog().into_iter().find(|(n, _)| *n == "EM-0600-4FL").map(|(_, t)| t).expect("catalog");
+    history.execute(&world, AddTool::new(&world, "EM-0600-4FL", tool).expect("tool"));
+    history.execute(&world, ImportModel::from_mesh("part", cube(Point3::ZERO, Point3::new(40.0, 40.0, 5.0))));
+    let mut params = contour_params(comp);
+    if let OpParams::Contour { side: s, entry: e, links, .. } = &mut params {
+        *s = side;
+        *e = entry;
+        links.approach.ramp_angle = 5.0;
+    }
+    let cmd = CreateOperation::new(&world, "Contour1", "EM-0600-4FL", SrcRef::Entity("part".into()), params);
+    history.execute(&world, cmd.expect("create contour"));
+    match GenerateOperation::new(&world, "Contour1") {
+        Ok(cmd) => {
+            history.execute(&world, cmd);
+            (world, Ok(()))
+        }
+        Err(e) => (world, Err(format!("{e:?}"))),
+    }
+}
+
+#[test]
+fn a_ramp_or_helix_before_g41_under_control_or_wear_is_refused_and_posts_nothing() {
+    use camcraft_app::machining3d::Entry3D;
+    // #3888: the ramp ran on the ring under G40, before the lead-in that
+    // engages G41/G42 - a register over the nominal radius, or a positive
+    // wear value, cut the wall. The generation now refuses it by name, and
+    // the post gate writes no compensated program. The door reads only the
+    // parameters, before any geometry: the motion pin
+    // `a_ramp_or_helix_under_control_or_wear_is_refused_by_name_on_both_sides`
+    // holds the bore side (Side::Inside), which a whole-model source refuses.
+    for comp in [Compensation::Control, Compensation::Wear] {
+        for side in [Side::Outside, Side::Auto] {
+            for (entry, name) in [(Entry3D::Ramp, "Ramp"), (Entry3D::Helix, "Helix")] {
+                let (world, made) = ramped_world(comp, side, entry);
+                let why = made.expect_err("a ramp before G41/G42 must refuse");
+                let want = format!("{} compensation does not ride a {name} entry", comp.label());
+                assert!(why.contains(&want), "{comp:?} {side:?} {name}: {why}");
+                let e = model::find_by_name(&world, "Contour1").expect("op");
+                assert!(model::toolpath_of(&world, &e).is_none(), "no path under a refused generation");
+                let mut path = std::env::temp_dir();
+                path.push(format!("camcraft_3888_{}_{comp:?}_{side:?}_{name}.nc", std::process::id()));
+                if let Ok(posted) = posting::post_setup(&world, &path) {
+                    assert!(
+                        !posted.program.contains("G41") && !posted.program.contains("G42"),
+                        "no compensated program from a refused op: {}",
+                        posted.program
+                    );
+                }
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+    }
+}
+
+#[test]
+fn a_wall_side_ramp_in_computer_posts_its_ramp_without_comp_words() {
+    use camcraft_app::machining3d::Entry3D;
+    // #3888 leaves computer compensation as it was: the ramp stands, no span.
+    let (world, made) = ramped_world(Compensation::Computer, Side::Outside, Entry3D::Ramp);
+    made.expect("computer ramp generates");
+    let e = model::find_by_name(&world, "Contour1").expect("op");
+    let cache = model::toolpath_of(&world, &e).expect("cache");
+    assert!(cache.path.comps.is_empty());
+    let ramps = cache.path.moves.iter().filter(|m| {
+        m.kind == camcraft_app::cl::MoveKind::Feed && m.to.z < m.from.z && (m.to.x != m.from.x || m.to.y != m.from.y)
+    });
+    assert!(ramps.count() >= 2, "the zig-zag ramp stands: {:?}", cache.path.notes);
+    let out = engine::run(&post_text("fanuc"), &posting::machine_value(&world), &stream(&world)).unwrap();
+    assert!(!out.program.contains("G41") && !out.program.contains("G42"), "{}", out.program);
+}
