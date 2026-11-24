@@ -237,7 +237,7 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
         .and_then(|t| model::tool_of(&state.world, t))
         .map(|t| t.diameter);
     let draft_src = state.op_ui.src();
-    let picks = if matches!(state.op_ui.params, OpParams::Deburr { .. }) { state.op_ui.geo.clone() } else { Vec::new() };
+    let picks = if matches!(state.op_ui.params, OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. }) { state.op_ui.geo.clone() } else { Vec::new() };
     let mut cx = Cx {
         u,
         tab,
@@ -270,6 +270,7 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
     super::undercut_page::fields(ui, world, params, &mut cx);
     super::mill3d_page::fields(ui, world, params, &mut cx);
     super::multiaxis_page::fields(ui, world, params, &mut cx);
+    super::multiaxis_deburr_page::fields(ui, world, params, &mut cx);
     super::rotary_page::fields(ui, world, params, &mut cx);
     super::turning_page::fields(ui, world, params, &mut cx);
     super::turning_more_page::fields(ui, world, params, &mut cx);

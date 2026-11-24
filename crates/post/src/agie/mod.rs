@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 mod contour;
+mod spacing;
 pub use crate::agie_setup::valid_stem as valid_name;
 
 /// Nominal geometry in setup coordinates (millimetres, stock top at zero).
@@ -17,7 +18,7 @@ pub struct AgieJob {
 #[derive(Debug)]
 pub struct ExportedJob {
     pub files: Vec<PathBuf>,
-    pub controller_review: &'static str,
+    pub controller_review: String,
 }
 
 /// Write a complete controller job to a new directory.
@@ -175,5 +176,7 @@ fn publish(_: &Path, _: &[(String, String)]) -> Result<Vec<PathBuf>, String> {
     Err("Job bundle output requires a local filesystem".into())
 }
 
+#[cfg(test)]
+mod reentrant_tests;
 #[cfg(test)]
 mod tests;

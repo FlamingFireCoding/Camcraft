@@ -37,7 +37,7 @@ pub(super) struct LevelWalk<'a> {
 /// dive link cut at the level last entered - a planar feed a keep-down
 /// link on that plane must not cross (until the next level begins, it is
 /// the level the tool stands on).
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct LinkState {
     pub tally: LinkTally,
     level: Vec<Vec<Point2>>,
@@ -168,6 +168,7 @@ pub(super) fn pass_link(b: &mut PathBuilder, lv: &LevelWalk, m: &Motion, cert: O
             match proof {
                 Ok(()) => {
                     b.push(MoveKind::Feed, Point3::new(e.x, e.y, z), Some(m.feed));
+                    st.level.push(vec![at, e]);
                     return;
                 }
                 Err(why) => {
@@ -180,6 +181,15 @@ pub(super) fn pass_link(b: &mut PathBuilder, lv: &LevelWalk, m: &Motion, cert: O
     // The climb-and-dive every planar ladder has posted between passes:
     // the floor its neighbours already cleared, crossed in air.
     b.push(MoveKind::Rapid, Point3::new(at.x, at.y, plane), None);
+    // #3567: a dead end of the Outside plan (a later pass no lead-in
+    // reaches, marked by the plan) enters by the ramp along its own pass,
+    // never by a plunge or helix into the stock in front of it. The ramp
+    // cuts nearly the full tool width at the ramp angle; the first entry
+    // of a level and every other pass start keep the links below.
+    if let Some(cuts) = super::level_ramp_entry::dead_end_ramp(b, lv, m, cert, plane) {
+        st.level.extend(cuts);
+        return;
+    }
     // M11.3 (the centre-cutting law between passes): a tool that may not
     // plunge into solid enters a pass start its neighbours have not
     // cleared like a level - the helix onto it, else the ramp along the
@@ -196,7 +206,7 @@ pub(super) fn pass_link(b: &mut PathBuilder, lv: &LevelWalk, m: &Motion, cert: O
     {
         let l = Lvl { cen, passes, pass: lv.pass, walk: lv.walk, mat_top };
         let from = (mat_top + m.links.approach.plunge_height).min(plane);
-        let d = if cc { entry_restart(&l, at, z, from, m) } else { restart(b, &l, at, z, from, plane, m) };
+        let d = if cc { entry_restart(b, &l, at, z, from, plane, m) } else { restart(b, &l, at, z, from, plane, m) };
         st.level.extend(push(b, &d, &l, z, plane, m));
         return;
     }

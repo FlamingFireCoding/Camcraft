@@ -114,6 +114,10 @@ pub enum OpParams {
         /// (`machining2d::face`); `false` is the sharp serpentine every
         /// pre-M11.1 file holds.
         blend_turns: bool,
+        /// The row-end arc's radius (#1759), read only with
+        /// `blend_turns`; `None` is the half row spacing every earlier
+        /// file turns on.
+        blend_radius: Option<f64>,
         /// How the rows meet a hole in the region (M13.11): lifted over
         /// at the clearance plane (the default - safe for a bore and a
         /// boss alike), cut straight across where the hole is air with
@@ -160,6 +164,10 @@ pub enum OpParams {
         /// it (`machining2d::fillet_corners`); `false` is the sharp
         /// walk every pre-M11.1 file holds.
         blend_turns: bool,
+        /// The corner arc's radius (#1759), read only with
+        /// `blend_turns`; `None` is the tool radius every earlier file
+        /// blends at.
+        blend_radius: Option<f64>,
         /// Level transitions and links (M11.2 C/D, the Lead in / Lead
         /// out choice): the descent between levels, and clearance /
         /// retract / keep-down between levels and between rings. The
@@ -269,6 +277,12 @@ pub enum OpParams {
         blend_turns: bool,
         /// The corner arc's radius, mm; `None` is the tool radius.
         blend_radius: Option<f64>,
+        /// Rest machining (#1446): cut only what the previous operations
+        /// of the setup left, read from the stock they leave
+        /// (`machining2d::rest_adaptive_previous`). `None` is off - every
+        /// earlier file. Only `RestSource::PreviousOperations` is taken:
+        /// an entered previous tool is refused by name (`rest_op`).
+        rest: Option<crate::machining2d::RestParams>,
         /// Corner relief (#2400): dogbone or T-bone inside-corner relief.
         corner_relief: crate::machining2d::CornerRelief,
         /// 3+2 index; see [`OpParams::Face`]'s field.
@@ -446,6 +460,13 @@ pub enum OpParams {
         /// Helix, certified per level against the stadium (a
         /// full-width channel has no room for an orbit and says so).
         helix_radius: f64,
+        /// Arc turns at the row ends (#1759): each corner of the
+        /// serpentine rides one tangent arc inside the cutter-center
+        /// stadium (`machining2d::slot`); `false` is every earlier file.
+        blend_turns: bool,
+        /// The corner arc's radius, read only with `blend_turns`;
+        /// `None` is the tool radius.
+        blend_radius: Option<f64>,
         links: Links,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
@@ -692,6 +713,11 @@ pub enum OpParams {
         /// own diagonal certifies the break.
         /// See [`crate::finishing3d::GapLink`].
         gap_link: finishing3d::GapLink,
+        /// Run the waterline ring pass on steep flanks after the
+        /// shallow pass (#2811). `true` (default) preserves every
+        /// older operation; `false` cuts the shallow pass only and
+        /// notes any steep flanks left uncut.
+        waterlines: bool,
         /// Where the nested offset loops start (#3362, the shared
         /// parameter of #3316): read by Contour and Flat only. `Auto`
         /// is every earlier file, byte for byte.
@@ -744,6 +770,37 @@ pub enum OpParams {
         /// #1890: the break mode (Constant Width or Constant Depth and
         /// its depth), the profile, and the passes.
         sizing: finishing3d::DeburrBreak,
+    },
+    /// Multi-axis Deburr (#1894): every field of [`Self::Deburr`] with
+    /// the same meaning, and the tool axis tilted onto each break - one
+    /// cone flank on the chamfer plane - so steep and vertical edges
+    /// break too. `axis_mode` says how the axis moves (`Axis5` leans
+    /// freely, `Axis4` stays square to the A axis); `lead_deg` and
+    /// `lag_deg` lean it along the travel; `max_tilt_deg` caps how far
+    /// it may turn off the edge's natural pose, for the lean and for
+    /// the escape from the holder that `shank_avoid` asks for. The
+    /// window bounds the EDGES here, not the tip: a tilted tip stands
+    /// beside the edge, not under it.
+    MultiAxisDeburr {
+        width: f64,
+        clearance_z: Height,
+        top_z: Height,
+        bottom_z: Height,
+        feed: f64,
+        plunge_feed: f64,
+        exclude_edges: Vec<GeoSel>,
+        min_edge_angle_deg: f64,
+        exclude_holes: bool,
+        hole_min_diameter: f64,
+        hole_max_diameter: f64,
+        unreachable: finishing3d::UnreachableEdges,
+        sizing: finishing3d::DeburrBreak,
+        axis_mode: crate::multiaxis::DeburrAxisMode,
+        lead_deg: f64,
+        lag_deg: f64,
+        max_tilt_deg: f64,
+        /// Tilt the axis off the shank and holder; off tests nothing.
+        shank_avoid: bool,
     },
     /// Simultaneous 5-axis level finishing (M5.1 stage C): the waterline
     /// ring ladder a [`Self::Finish3D`] Waterline cuts, with a tool-axis
@@ -1143,7 +1200,9 @@ pub enum OpParams {
     ///   blades leave, so a rough's promise is only silent once a
     ///   finish answers for it). The verdict as a re-run decision,
     ///   not a report tail. 0 is silence, like every signal's off
-    ///   state.
+    ///   state. `kerf` (#3469) names the piece kept (the cut-off piece
+    ///   by default, or the piece in the chuck) and the back stock the
+    ///   whole kerf stands off the plane, into the scrap side.
     Part {
         tolerance: f64,
         clearance_z: Height,
@@ -1157,6 +1216,7 @@ pub enum OpParams {
         bar_unload: bool,
         bar_transfer: bool,
         inspect_tol: f64,
+        kerf: crate::turning::PartKerf,
     },
     /// Threading (M5.2 stage D): the helical ladder on a MODELED
     /// thread. `pitch` is that thread's lead - the lattice of V's
@@ -1422,6 +1482,7 @@ impl OpParams {
             OpParams::Pocket3D { .. } => OpType::Pocket3D,
             OpParams::Finish3D { .. } => OpType::Finish3D,
             OpParams::Deburr { .. } => OpType::Deburr,
+            OpParams::MultiAxisDeburr { .. } => OpType::MultiAxisDeburr,
             OpParams::Contour5D { .. } => OpType::Contour5D,
             OpParams::Parallel5D { .. } => OpType::Parallel5D,
             OpParams::Swarf { .. } => OpType::Swarf,
@@ -1499,7 +1560,7 @@ impl OpParams {
             // not by a machine index: the axis stands vertical over
             // the edge point and the generatrix does the breaking -
             // a 3+2 index would fight the one fact the ride is (M2.5 E B).
-            | OpParams::Deburr { .. }
+            | OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. }
             | OpParams::Contour5D { .. }
             | OpParams::Parallel5D { .. }
             | OpParams::Swarf { .. }
@@ -1579,7 +1640,7 @@ impl OpParams {
             | OpParams::Drill { clearance_z, .. }
             | OpParams::Pocket3D { clearance_z, .. }
             | OpParams::Finish3D { clearance_z, .. }
-            | OpParams::Deburr { clearance_z, .. }
+            | OpParams::Deburr { clearance_z, .. } | OpParams::MultiAxisDeburr { clearance_z, .. }
             | OpParams::Contour5D { clearance_z, .. }
             | OpParams::Parallel5D { clearance_z, .. }
             | OpParams::Swarf { clearance_z, .. }
@@ -1642,7 +1703,7 @@ impl OpParams {
             | OpParams::Pocket3D { top_z, .. }
             | OpParams::Finish3D { top_z, .. }
             // The window's top: the highest TIP the ride may stand at.
-            | OpParams::Deburr { top_z, .. }
+            | OpParams::Deburr { top_z, .. } | OpParams::MultiAxisDeburr { top_z, .. }
             | OpParams::Contour5D { top_z, .. }
             | OpParams::Parallel5D { top_z, .. }
             | OpParams::Swarf { top_z, .. }
@@ -1820,7 +1881,7 @@ impl OpParams {
             // The deburr ride visits the trio (M2.5 E B): the kernel
             // hops every run to `clearance_z` itself, so no retract
             // exists to visit - the facing law's shape, on a mill.
-            OpParams::Deburr { clearance_z, top_z, bottom_z, .. } => {
+            OpParams::Deburr { clearance_z, top_z, bottom_z, .. } | OpParams::MultiAxisDeburr { clearance_z, top_z, bottom_z, .. } => {
                 f(*clearance_z);
                 f(*top_z);
                 f(*bottom_z);

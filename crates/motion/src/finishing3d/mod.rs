@@ -84,10 +84,11 @@
 //! structure only - behaviour is byte-identical to the flat file it replaces.
 
 mod center_cut;
-mod crease;
+pub(crate) mod crease;
 mod deburr;
-mod deburr_filter;
-mod deburr_size;
+pub(crate) mod deburr_filter;
+pub(crate) mod deburr_scan;
+pub(crate) mod deburr_size;
 mod deburr_contact;
 mod drape;
 mod edge;
@@ -115,9 +116,11 @@ mod scan;
 mod shadow;
 mod support;
 mod swarf;
+mod validate;
 
 pub use params::{
     scallop_stepdown, scallop_stepover, Finish3DParams, FinishPattern, GapLink,
+    WATERLINES_OFF_NOTE,
 };
 pub use center_cut::guard as center_cut_guard;
 pub use center_cut::guard_as as center_cut_guard_as;

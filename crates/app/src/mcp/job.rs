@@ -312,6 +312,7 @@ pub(super) fn finding(op: &str, w: &Warning) -> Value {
         Warning::HolderHit { at, .. } => ("holder_hit", *at),
         Warning::SweepHit { at, .. } => ("sweep_hit", *at),
         Warning::RapidInStock { at } => ("rapid_in_stock", *at),
+        Warning::RapidInPart { at } => ("rapid_in_part", *at),
         Warning::FirstTraverseLow { at, .. } => ("first_traverse_low", *at),
         Warning::FirstTraverseUnderTable { at, .. } => ("first_traverse_under_table", *at),
         Warning::FixtureHit { at, .. } => ("fixture_hit", *at),
@@ -367,6 +368,20 @@ pub(super) fn verify(env: &mut Env, a: &Map<String, Value>) -> Result<Value, Str
 mod tests {
     use super::{Warning, finding};
     use crate::verify::FallbackCause;
+
+    #[test]
+    fn part_and_stock_rapids_keep_their_kind_message_and_blocking_state() {
+        for (warning, kind, message) in [
+            (Warning::RapidInPart { at: 7 }, "rapid_in_part", "tool meets the part on rapid move 7"),
+            (Warning::RapidInStock { at: 7 }, "rapid_in_stock", "rapid move 7 travels through stock (below the clearance plane, or at it below the stock top)"),
+        ] {
+            let f = finding("op", &warning);
+            assert_eq!(f["kind"], kind, "{f}");
+            assert_eq!(f["message"], message, "{f}");
+            assert_eq!(f["move"], 7, "{f}");
+            assert_eq!(f["blocks_post"], true, "{f}");
+        }
+    }
 
     /// #3542: the pass-start cause keeps the MCP kind `strategy_fallback`
     /// and stays advisory; only its message names the other cause.

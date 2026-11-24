@@ -12,6 +12,9 @@ mod asset_tests;
 mod assets;
 mod braces;
 mod budget;
+mod build_stop;
+#[cfg(test)]
+mod build_stop_tests;
 #[cfg(test)]
 mod budget_tests;
 mod catalog;
@@ -40,6 +43,9 @@ mod heavy;
 mod heavy_covers;
 #[cfg(test)]
 mod heavy_covers_tests;
+mod heavy_files;
+#[cfg(test)]
+mod heavy_files_tests;
 mod lanes;
 mod light;
 #[cfg(test)]

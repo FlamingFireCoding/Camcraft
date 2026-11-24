@@ -121,13 +121,27 @@ impl StartSide {
         )
     }
 
+    /// The warning when a pass after the first ring starts at a dead end
+    /// at `(x, y)` (no lead-in from cut stock) and is too short for the
+    /// ramp along it (#3567): the area is cut in the Auto order instead,
+    /// never entered by a plunge into that stock. It carries
+    /// [`RINGS_FALLBACK`], as [`StartSide::fallback_note`] does.
+    #[must_use]
+    pub fn ramp_fallback_note(&self, x: f64, y: f64) -> String {
+        format!(
+            "{PASS_START_NOTE} {}: a pass at X {x:.3}, Y {y:.3} starts in uncut stock and is too short for a ramp entry along it{RINGS_FALLBACK}this area in the Auto order instead",
+            self.start.label()
+        )
+    }
+
     /// The warning for cuts after the first ring that still take the
-    /// full tool width (#3316): `n` of them, the first at `(x, y)`.
+    /// full tool width (#3316), by the flanks law (#3788): `n` of them,
+    /// the first at `(x, y)`.
     #[must_use]
     pub fn narrow_note(&self, n: usize, x: f64, y: f64) -> String {
         format!(
             "{PASS_START_NOTE} {}: {n} cut(s) take the full tool width where the area is narrower than the \
-             tool plus one stepover, or where a wall hides the start side; the first is at X {x:.3}, Y {y:.3}",
+             tool plus one stepover, where a wall hides the start side, or where two rings meet at a corner; the first is at X {x:.3}, Y {y:.3}",
             self.start.label()
         )
     }

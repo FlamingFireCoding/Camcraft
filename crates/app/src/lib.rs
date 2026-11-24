@@ -8,6 +8,8 @@ pub use camcraft_cl::cl;
 pub mod cli;
 pub mod clock;
 pub mod commands;
+// #3073: saved cut recipes - an operation's settings under a name.
+pub mod cut_recipe;
 pub mod cutting;
 // #890: which row of a tool's per-material cutting data the document picks.
 pub mod cutting_rows;
@@ -96,6 +98,9 @@ pub mod recognize;
 pub mod raster;
 // #877: the theme and colour-vision mode, kept per user (not per project).
 pub mod prefs;
+mod prefs_setups;
+// #2428: startup update check against GitHub Releases (native only for HTTP).
+pub mod update_check;
 pub mod recent;
 pub mod rest;
 pub mod ribbon;
@@ -163,6 +168,7 @@ pub mod tool_list;
 pub mod tool_list_export;
 // #221: the number a tool posts as, and the clash law.
 pub mod tool_numbers;
+mod tool_reservations;
 pub use camcraft_tools::tools;
 // #894: the thread mills' form constants, sanity law and pitch door.
 pub use camcraft_tools::thread_mill;
