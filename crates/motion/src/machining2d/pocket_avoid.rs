@@ -249,8 +249,8 @@ pub(super) fn pocket_avoid_over(
                 let room = room.and_then(|r| r.without(&ko.union(&ko_entry).ok()?));
                 // #3748: the user's Inside or Outside with a lead-in other
                 // than Arc, where the Arc entry from the air applies.
-                if room.is_some() && let Some(n) = super::pass_start::entry_advice(side.start, p.entry) {
-                    b.note_once(n);
+                if room.is_some() && let Some(n) = super::pass_start::entry_advice_note(side.start, p.entry) {
+                    b.note_once(&n);
                 }
                 room
             }

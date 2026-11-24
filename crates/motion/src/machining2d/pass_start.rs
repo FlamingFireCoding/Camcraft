@@ -53,6 +53,14 @@ pub fn entry_advice(start: PassStart, entry: Entry3D) -> Option<&'static str> {
     Some(crate::verify::entry_advice(kind, inside))
 }
 
+/// The ladder's note of [`entry_advice`]: an `entry:` note, so that the op
+/// page does not show it as a "Pass start" warning line next to the one
+/// `Warning::EntryNotRecommended` that it posts.
+#[must_use]
+pub fn entry_advice_note(start: PassStart, entry: Entry3D) -> Option<String> {
+    entry_advice(start, entry).map(|a| format!("entry: {a}"))
+}
+
 /// The selected type and the side that [`entry_advice`] names.
 #[must_use]
 pub fn advised(start: PassStart, entry: Entry3D) -> Option<(AdvisedEntry, bool)> {
