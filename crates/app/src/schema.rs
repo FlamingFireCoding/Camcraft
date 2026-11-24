@@ -101,6 +101,8 @@ pub struct FeatureNamesMemo {
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub struct ReducedFidelity {
     pub chord_mm: f64,
+    /// File tolerance alone caused this chord; false keeps the strict law.
+    pub file_tolerance: bool,
 }
 
 /// A person vouched for this model's mesh while it was of unknown fidelity
@@ -388,6 +390,15 @@ impl ToolBody {
 /// or collet the setup holds the work in; `None`, the default and every
 /// earlier file, states none. Read through [`crate::setup_workholding`];
 /// written only by `SetSetupWorkholdingRpm` and the project loader.
+/// `sheet_job` (#3070) is the guided sheet job's answers (size, Z zero,
+/// through-cut allowance, XY zero, clamp clearance); `None`, the default
+/// and every earlier file, states none. Read through [`crate::sheet_job`];
+/// written only by `SetSheetJob` and the project loader.
+/// `order` (#3447) is the setup's place in the program: `CreateSetup`
+/// writes the next number, so a setup added later posts later whatever
+/// its name. `None`, every earlier file, sorts first and by name
+/// ([`crate::setup::setups`]). Written only by `CreateSetup` and the
+/// project loader.
 #[derive(Component, Debug, Clone, PartialEq)]
 pub struct SetupDef {
     pub stock: String,
@@ -403,6 +414,8 @@ pub struct SetupDef {
     pub post_properties: Option<PostScriptOptions>,
     pub nose_to_axis: Option<f64>,
     pub workholding_max_rpm: Option<f64>,
+    pub sheet_job: Option<crate::sheet_job::SheetJob>,
+    pub order: Option<u32>,
 }
 
 /// The M3.2 stage B marker turning a model entity into a FIXTURE: the
@@ -622,9 +635,22 @@ impl PostScriptOptions {
         }
     }
 
-    /// Remove empty per-post maps.
+    /// Remove empty per-post maps, and move a hidden alias key to the key
+    /// of the registry name it selects (#3537); an entry already under
+    /// the registry name wins.
     pub fn normalize(&mut self) {
         self.by_post.retain(|_, v| !v.is_empty());
+        let aliased: Vec<String> = self
+            .by_post
+            .keys()
+            .filter(|k| crate::posting::agie::current_key(k) != **k)
+            .cloned()
+            .collect();
+        for old in aliased {
+            if let Some(v) = self.by_post.remove(&old) {
+                self.by_post.entry(crate::posting::agie::current_key(&old)).or_insert(v);
+            }
+        }
     }
 }
 

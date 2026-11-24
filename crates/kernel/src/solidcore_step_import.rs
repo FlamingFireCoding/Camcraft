@@ -9,7 +9,8 @@ use solidcore::kernel::CancelToken;
 
 use crate::KernelError;
 use crate::solidcore_impl::SolidcoreKernel;
-use crate::solidcore_step::{NAME, SHEET, StepRead, StepRefusal, StepSolid, read_step};
+use crate::solidcore_step::{NAME, SHEET, StepRead, StepRefusal, StepSolid, read_step, read_step_assuming};
+use crate::step_edge_gap::EdgeGap;
 
 /// A surface model of a STEP file (`SHELL_BASED_SURFACE_MODEL` of open
 /// shells), in millimetres: a record to mesh with open sides
@@ -35,6 +36,8 @@ pub struct StepImport {
     pub length_units_mm: Vec<f64>,
     /// File-level diagnostics.
     pub notes: Vec<String>,
+    /// See [`StepRead::edge_gap`].
+    pub edge_gap: EdgeGap,
 }
 
 /// A STEP model imported whole: its solids and its surface models.
@@ -46,8 +49,12 @@ pub struct StepModel {
     pub sheets: Vec<StepSheet>,
     /// See [`StepRead::length_units_mm`].
     pub length_units_mm: Vec<f64>,
+    /// See [`StepRead::assumed_mm`].
+    pub assumed_mm: Option<f64>,
     /// File-level diagnostics.
     pub notes: Vec<String>,
+    /// See [`StepRead::edge_gap`].
+    pub edge_gap: EdgeGap,
 }
 
 fn refused(op: &'static str, read: &StepRead, kept: usize) -> Option<KernelError> {
@@ -95,6 +102,7 @@ pub fn import_step(
         solids: read.solids,
         length_units_mm: read.length_units_mm,
         notes: read.notes,
+        edge_gap: read.edge_gap,
     })
 }
 
@@ -106,7 +114,18 @@ pub fn import_step_model(
     bytes: &[u8],
     stop: &CancelToken,
 ) -> Result<StepModel, KernelError> {
-    let read = read_step(k, bytes, stop)?;
+    import_step_model_assuming(k, bytes, stop, None)
+}
+
+/// [`import_step_model`] with the caller's length unit for a file that
+/// states none (#1874, [`read_step_assuming`]).
+pub fn import_step_model_assuming(
+    k: &mut SolidcoreKernel,
+    bytes: &[u8],
+    stop: &CancelToken,
+    assume_mm: Option<f64>,
+) -> Result<StepModel, KernelError> {
+    let read = read_step_assuming(k, bytes, stop, assume_mm)?;
     let kept = read.solids.len().saturating_add(read.sheets.len());
     if let Some(e) = refused("import_step", &read, kept) {
         return Err(e);
@@ -122,6 +141,8 @@ pub fn import_step_model(
         solids: read.solids,
         sheets: read.sheets,
         length_units_mm: read.length_units_mm,
+        assumed_mm: read.assumed_mm,
         notes: read.notes,
+        edge_gap: read.edge_gap,
     })
 }

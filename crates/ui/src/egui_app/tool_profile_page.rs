@@ -80,6 +80,7 @@ pub(super) fn preview_inputs(state: &mut State, exists: bool) -> PreviewInputs {
 pub(super) fn editor(ui: &mut Ui, state: &mut State, exists: bool, u: Unit) {
     let milling = is_spun_kind(state.tool_ui.tool_kind());
     if milling {
+        state.sync_tool_profile_ui();
         super::tool_holder_picker::holder_picker(ui, state, u);
         ui.separator();
         // #2007: the tab row wraps in a narrow pane.

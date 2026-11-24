@@ -1,5 +1,7 @@
-//! Convex tangent DXF chains, using the turning-angle theorem and supporting tangents of a circle.
-use super::{FIT, SAG, distance};
+//! Convex tangent DXF chains of lines and arcs for a wire punch (#2983).
+//! Provenance: the turning-angle theorem of a closed C1 curve and the support function of a
+//! circular arc (classical plane geometry).
+use super::{FIT, PREVIEW_SAG, distance};
 use crate::{
     dxf::Primitive,
     geo2d::{Loop, Point2},
@@ -7,8 +9,14 @@ use crate::{
 };
 use std::f64::consts::{PI, TAU};
 
-/// One nominal directed line or CCW arc. Coordinates are in the same frame as the profile.
-#[derive(Clone, Copy, Debug)]
+/// The largest number of chain segments of a tangent profile.
+pub const MAX_SEGMENTS: usize = 128;
+/// The largest number of vertices of the circumscribed tangent preview.
+const MAX_PREVIEW: usize = 2048;
+
+/// One nominal directed line, or one counter-clockwise arc of at most a half turn.
+/// The coordinates are in the frame of the profile.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TangentSegment {
     pub start: Point2,
     pub end: Point2,
@@ -26,7 +34,7 @@ impl TangentSegment {
         [x / len, y / len]
     }
 
-    /// Greatest projection of an exact segment in the unit normal direction.
+    /// The greatest projection of the exact segment on the unit `normal`.
     pub fn support(&self, normal: [f64; 2]) -> f64 {
         let project = |p: Point2| normal[0] * p.x + normal[1] * p.y;
         let ends = project(self.start).max(project(self.end));
@@ -41,7 +49,8 @@ impl TangentSegment {
     }
 }
 
-#[derive(Clone, Debug)]
+/// A convex closed loop of tangent lines and counter-clockwise arcs, in walk order.
+#[derive(Clone, Debug, PartialEq)]
 pub struct TangentProfile {
     segments: Vec<TangentSegment>,
 }
@@ -51,8 +60,18 @@ impl TangentProfile {
         &self.segments
     }
 
+    /// Prove that the chain is one convex loop of tangent lines and arcs.
+    ///
+    /// # Errors
+    /// Refuses a fold, a corner, a clockwise or long arc, and an arc radius
+    /// outside 0.5 to 20 mm.
     pub(super) fn from_chain(chain: &ClosedChain) -> Result<Self, String> {
-        let invalid = "The DXF punch needs a single convex loop of tangent lines and CCW arcs";
+        let invalid = "A wire DXF punch with arcs needs one CIRCLE, a racetrack, or one convex loop of tangent lines and counter-clockwise arcs from 0.5 to 20 mm radius";
+        if chain.segments.len() > MAX_SEGMENTS {
+            return Err(format!(
+                "The wire DXF punch has more than {MAX_SEGMENTS} segments"
+            ));
+        }
         let mut segments = Vec::with_capacity(chain.segments.len());
         let mut turn = 0.0;
         let mut lines = 0;
@@ -87,11 +106,8 @@ impl TangentProfile {
                     }
                     let alpha = (start.y - center.y).atan2(start.x - center.x);
                     let (s, c) = (alpha + sweep_angle).sin_cos();
-                    if distance(
-                        Point2::new(center.x + radius * c, center.y + radius * s),
-                        end,
-                    ) > FIT
-                    {
+                    let on = Point2::new(center.x + radius * c, center.y + radius * s);
+                    if distance(on, end) > FIT {
                         return Err(invalid.into());
                     }
                     turn += sweep_angle;
@@ -106,7 +122,7 @@ impl TangentProfile {
                 sweep,
             });
         }
-        // For one simple C1 closed walk, positive arc turns totaling one
+        // For one simple C1 closed walk, positive arc turns that total one
         // revolution make every tangent a supporting line of a convex body.
         if lines == 0 || (turn - TAU).abs() > 1e-9 {
             return Err(invalid.into());
@@ -121,6 +137,7 @@ impl TangentProfile {
         Ok(Self { segments })
     }
 
+    /// Move the joints and centres with a rigid transform. Radii and sweeps do not change.
     pub(super) fn place(&mut self, transform: impl Fn(Point2) -> Point2) {
         for segment in &mut self.segments {
             segment.start = transform(segment.start);
@@ -129,6 +146,7 @@ impl TangentProfile {
         }
     }
 
+    /// The greatest projection of the exact profile on the unit `normal`.
     pub fn support(&self, normal: [f64; 2]) -> f64 {
         self.segments
             .iter()
@@ -136,18 +154,30 @@ impl TangentProfile {
             .fold(f64::NEG_INFINITY, f64::max)
     }
 
+    /// The exact axis-aligned bounds of the lines and arcs.
+    pub fn bounds(&self) -> [Point2; 2] {
+        [
+            Point2::new(-self.support([-1., 0.]), -self.support([0., -1.])),
+            Point2::new(self.support([1., 0.]), self.support([0., 1.])),
+        ]
+    }
+
+    /// A circumscribed preview polygon: the intersections of tangents to the
+    /// arcs. Each edge is checked against the analytic support of the profile.
     pub(super) fn preview(&self) -> Result<Loop, String> {
-        // Adjacent tangent intersections enclose every arc. The small pad
-        // covers joint arithmetic and the downstream 0.000001 mm clipping grid.
+        // The small pad covers the joint arithmetic and the downstream
+        // 0.000001 mm clipping grid, inside the radial bound.
         const PAD: f64 = 0.000002;
         let mut vertices = Vec::new();
         for segment in &self.segments {
             let Some(c) = segment.center else { continue };
             let radius = distance(c, segment.start);
-            let half_step = ((radius + PAD) / (radius + SAG - PAD)).acos();
+            let half_step = ((radius + PAD) / (radius + PREVIEW_SAG - PAD)).acos();
             let count = (segment.sweep / (2.0 * half_step)).ceil().max(1.);
-            if !count.is_finite() || count > (2048 - vertices.len()) as f64 {
-                return Err("The DXF wire preview exceeds 2048 tangent vertices".into());
+            if !count.is_finite() || count > (MAX_PREVIEW - vertices.len()) as f64 {
+                return Err(format!(
+                    "The DXF wire preview exceeds {MAX_PREVIEW} tangent vertices"
+                ));
             }
             let step = segment.sweep / count;
             let start = (segment.start.y - c.y).atan2(segment.start.x - c.x);
@@ -166,7 +196,7 @@ impl TangentProfile {
             let len = distance(a, b);
             let outward = [(b.y - a.y) / len, (a.x - b.x) / len];
             let allowance = a.x * outward[0] + a.y * outward[1] - self.support(outward);
-            if !(PAD * 0.5..=SAG).contains(&allowance) {
+            if !(PAD * 0.5..=PREVIEW_SAG).contains(&allowance) {
                 return Err(
                     "The tangent preview could not enclose the complete DXF profile".into(),
                 );
@@ -179,6 +209,7 @@ impl TangentProfile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn an_oblique_arc_has_its_true_extremum_between_the_joins() {
         // This 143 degree arc starts at the bottom and ends at the 3:4 radius.

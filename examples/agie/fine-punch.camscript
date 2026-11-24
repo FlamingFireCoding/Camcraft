@@ -1,6 +1,7 @@
 // Original CAMCraft example. Run from the project root with a fresh output name.
 cam.call("load_machine", {builtin: "AGIECUT Classic 2S (template)"});
-// Request Ra 0.35 µm on 20 mm cold die steel with Berco Cut 0.25 mm wire.
+// Request Ra 0.35 µm (CCB035) on 20 mm cold die steel with Berco Cut 0.25 mm wire.
+// The operator reviews and assigns it on the control.
 cam.call("edit_machine", {patch: {edm: {conditions: [{
   id: "AGIE_BERCO_RA035", role: "rough", gap: 0.005, wire_diameter: 0.25
 }]}}});
@@ -16,4 +17,4 @@ cam.call("add_operation", {
   }
 });
 cam.generate();
-cam.post({to: "FINE20", cps: "Agie native wire EDM", options: {separationLengthMm: 1.0}});
+cam.post({to: "FINE20", cps: "Native wire EDM job files", options: {separationLengthMm: 1.0}});

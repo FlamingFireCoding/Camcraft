@@ -10,15 +10,16 @@
 //! consulted.
 //!
 //! Nothing is accepted unchecked (Prime Directive): an edge farther off its
-//! surface than [`MAX_EDGE_GAP_MM`], an edge interval the kernel moved past
+//! surface than the file's cap ([`EdgeGapCap`]: [`MAX_EDGE_GAP_MM`], or
+//! twice the tolerance the file states, at most 0.02 mm, #2976), an edge interval the kernel moved past
 //! the edge's tolerance, and a made pcurve whose lift onto the surface
 //! misses its 3D edge by more than the edge's tolerance (never more than
-//! [`MAX_EDGE_GAP_MM`]) are each refused by name, and so is a tolerance or a
+//! the cap) are each refused by name, and so is a tolerance or a
 //! lift sample that is not a finite number. The reader then refuses the
 //! solid. The reader checks the record
 //! again after this (`record_check::agreement`).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use solidcore::Kernel;
 use solidcore::geom::tol::{SmallTopoType, context_xsect_tol_3d};
@@ -33,11 +34,7 @@ mod checks;
 
 use checks::{above, finite_tolerances, lifts_onto, on_our_interval};
 
-/// The farthest an edge may lie off its face's surface (mm). The reader's
-/// 1 mm reach keeps edges a visible step off their faces (0.25 mm on a 1 mm
-/// part reads as a solid of the wrong shape, #917). Set from data: the
-/// largest gap on the fixtures that read is 1.2e-6 mm (decision 917).
-pub const MAX_EDGE_GAP_MM: f64 = 0.01;
+pub use crate::step_edge_gap::{EdgeGapCap, MAX_EDGE_GAP_MM};
 
 /// A use of the sheet: `(face, loop, position)`.
 type UseAt = (u32, u32, u32);
@@ -49,12 +46,29 @@ const GAP_SAMPLES: usize = 20;
 /// on, so its tolerances, opt-in fixes and time bound hold here too.
 pub struct KernelTrims<'k> {
     k: RefCell<&'k mut Kernel>,
+    cap: EdgeGapCap,
+    widest: Cell<f64>,
 }
 
 impl<'k> KernelTrims<'k> {
-    /// Trims made on `k`.
+    /// Trims made on `k`, at the cap of a file that states no tolerance.
     pub fn new(k: &'k mut Kernel) -> Self {
-        Self { k: RefCell::new(k) }
+        Self::with_cap(k, EdgeGapCap::default())
+    }
+
+    /// Trims made on `k`, each edge held to `cap`.
+    pub fn with_cap(k: &'k mut Kernel, cap: EdgeGapCap) -> Self {
+        Self {
+            k: RefCell::new(k),
+            cap,
+            widest: Cell::new(0.0),
+        }
+    }
+
+    /// The largest gap of an edge to its surface (mm) measured and kept so
+    /// far, or 0.
+    pub fn widest_gap_mm(&self) -> f64 {
+        self.widest.get()
     }
 }
 
@@ -64,11 +78,21 @@ impl Trims for KernelTrims<'_> {
             .k
             .try_borrow_mut()
             .map_err(|_| "kernel pcurves: the kernel is already in use".to_string())?;
-        trims(&mut k, face).map_err(|e| format!("kernel pcurves: {e}"))
+        let held = Held {
+            cap: &self.cap,
+            widest: &self.widest,
+        };
+        trims(&mut k, face, &held).map_err(|e| format!("kernel pcurves: {e}"))
     }
 }
 
-fn trims(k: &mut Kernel, face: &TrimFace<'_>) -> Result<Vec<Vec<Curve2>>, String> {
+/// The file's cap, and the widest gap kept so far.
+struct Held<'a> {
+    cap: &'a EdgeGapCap,
+    widest: &'a Cell<f64>,
+}
+
+fn trims(k: &mut Kernel, face: &TrimFace<'_>, held_to: &Held<'_>) -> Result<Vec<Vec<Curve2>>, String> {
     // Each `.max` on a tolerance below takes finite values only.
     finite_tolerances(face)?;
     let (mut record, bare) = sheet(face)?;
@@ -76,7 +100,7 @@ fn trims(k: &mut Kernel, face: &TrimFace<'_>) -> Result<Vec<Vec<Curve2>>, String
         to_kernel_with_bare_uses(k, r, true, &bare).map_err(|e| e.to_string())
     };
     let (mut body, mut order) = build(k, &record)?;
-    if cover_gaps(k, &body, &order, face, &bare, &mut record)? {
+    if cover_gaps(k, &body, &order, face, &bare, &mut record, held_to)? {
         (body, order) = build(k, &record)?;
     }
     let (out, back) = to_record(k, &mut body).map_err(|e| e.to_string())?;
@@ -148,7 +172,7 @@ fn trims(k: &mut Kernel, face: &TrimFace<'_>) -> Result<Vec<Vec<Curve2>>, String
             // The lift is held to the edge's tolerance, but never looser
             // than the cap on an edge's gap: a loose file tolerance (or one
             // raised by the margin) does not pass a pcurve that misses.
-            lifts_onto(face, ours, &pc, held.min(MAX_EDGE_GAP_MM))?;
+            lifts_onto(face, ours, &pc, held.min(held_to.cap.cap_mm))?;
             pcs.push(pc);
         }
         result.push(pcs);
@@ -161,8 +185,8 @@ fn trims(k: &mut Kernel, face: &TrimFace<'_>) -> Result<Vec<Vec<Curve2>>, String
 /// `record` raised to cover that gap with [`SURFACE_GAP_MARGIN`]: the kernel
 /// keeps an edge whole when it makes its trim only when its tolerance covers
 /// the gap, and otherwise trims the edge back to the patch. Whether any was
-/// raised; an edge farther off than [`MAX_EDGE_GAP_MM`] is refused with how
-/// far, whatever its own tolerance.
+/// raised; an edge farther off than the file's cap is refused with how far,
+/// the cap and where the cap came from, whatever its own tolerance.
 fn cover_gaps(
     k: &Kernel,
     body: &solidcore::Brep,
@@ -170,6 +194,7 @@ fn cover_gaps(
     face: &TrimFace<'_>,
     bare: &[UseAt],
     record: &mut b::Brep,
+    held_to: &Held<'_>,
 ) -> Result<bool, String> {
     let mut edges: Vec<usize> = Vec::new();
     for (li, l) in face.loops.iter().enumerate() {
@@ -202,12 +227,12 @@ fn cover_gaps(
         if !gap.is_finite() {
             return Err("an edge whose gap to the surface is not finite".into());
         }
-        // A loose tolerance in the file does not make a stepped edge true.
-        if gap > MAX_EDGE_GAP_MM {
-            return Err(format!(
-                "edge {e} lies {gap:.4} mm off the face's surface, over the cap of {MAX_EDGE_GAP_MM} mm"
-            ));
+        // A loose tolerance in the file does not make a stepped edge true:
+        // the cap follows the stated tolerance only up to its limit.
+        if gap > held_to.cap.cap_mm {
+            return Err(held_to.cap.refusal(e, gap));
         }
+        held_to.widest.set(held_to.widest.get().max(gap));
         let need = SURFACE_GAP_MARGIN * gap;
         let given = record.edges.get_mut(e).ok_or("edge reference")?;
         if need <= given.tolerance {

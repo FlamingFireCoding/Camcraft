@@ -35,6 +35,7 @@ mod boss;
 mod cylinder;
 mod cross;
 mod cycle;
+mod fine_bore;
 mod hole;
 mod merge;
 mod mouth;
@@ -50,12 +51,15 @@ mod tests_cross;
 #[cfg(test)]
 mod tests_backbore;
 #[cfg(test)]
+mod tests_fine_bore;
+#[cfg(test)]
 mod tests_ream;
 
 pub use axial::{axial_doors, axial_warnings, AXIAL_TOL};
 pub use boss::recognize_bosses;
 pub use cross::{cross_drill, CrossParams};
 pub use cycle::drill;
+pub use fine_bore::FINE_BORE_MAX_SHIFT_UM;
 pub use hole::{
     auto_kind, drill_point_length, through_tip_run, BreakThroughFrom, CrossHole, CycleChoice,
     CycleParams, Hole, CHIP_BREAK, SPOT_DEPTH, THROUGH_CLEAR,
@@ -66,3 +70,5 @@ pub use recognize::{recognize, recognize_cross};
 mod tests_opposite;
 #[cfg(test)]
 mod tests_punched_bar;
+#[cfg(test)]
+mod tests_tilted;

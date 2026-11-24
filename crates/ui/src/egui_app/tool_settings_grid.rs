@@ -17,7 +17,7 @@ use super::fields::{check_row, combo, int_range_row, num_feed, num_plain_row, nu
 use super::layout::{CTRL_W, group_open, prop_row, prop_row_hint, text_row};
 
 /// Tool kind labels, same order as `ToolKind` (mirrors `ToolUi::from_tool`).
-const TOOL_KINDS: [(tools::ToolKind, &str); 18] = [
+const TOOL_KINDS: [(tools::ToolKind, &str); 22] = [
     (tools::ToolKind::EndMill, "End mill"),
     (tools::ToolKind::BallNose, "Ball nose"),
     (tools::ToolKind::BullNose, "Bull nose"),
@@ -40,6 +40,12 @@ const TOOL_KINDS: [(tools::ToolKind, &str); 18] = [
     (tools::ToolKind::Waterjet, "Waterjet nozzle"),
     // #2011: diameter = wire diameter in mm; it turns no spindle.
     (tools::ToolKind::Wire, "EDM wire"),
+    // #1444: the undercut cutters - a head on a narrower neck (the
+    // shank fields); the dovetail's tip angle is its flank angle.
+    (tools::ToolKind::TSlot, "T-slot cutter"),
+    (tools::ToolKind::Keyseat, "Keyseat cutter"),
+    (tools::ToolKind::Dovetail, "Dovetail cutter"),
+    (tools::ToolKind::Lollipop, "Lollipop cutter"),
 ];
 
 /// The settings grid: the groups, in the order the tool reads.
@@ -111,6 +117,8 @@ fn geometry(ui: &mut Ui, state: &mut State) {
     super::tool_orientation_row::orientation_row(ui, state);
     // #894: a thread mill's pitch (range) and form angle.
     super::tool_thread_mill_row::thread_mill_rows(ui, state);
+    // #1444: a dovetail cutter's flank angle.
+    super::tool_undercut_row::dovetail_row(ui, state);
     if state.tool_ui.tool_kind() == tools::ToolKind::BallNose {
         // #263: a ball's corner IS its ball, half the diameter - shown,
         // never edited, since no reader takes any other number.
@@ -126,6 +134,10 @@ fn geometry(ui: &mut Ui, state: &mut State) {
             | tools::ToolKind::Wire
             | tools::ToolKind::ThreadMill
             | tools::ToolKind::ThreadMillSingle
+            | tools::ToolKind::TSlot
+            | tools::ToolKind::Keyseat
+            | tools::ToolKind::Dovetail
+            | tools::ToolKind::Lollipop
     ) {
         prop_row(ui, "Corner radius", |ui| num_row(ui, u, &mut state.tool_ui.corner_r));
     }
@@ -209,8 +221,18 @@ fn holder(ui: &mut Ui, state: &mut State) {
             ui.label(from);
         });
     } else {
-        prop_row(ui, "Holder diameter", |ui| num_row(ui, u, &mut state.tool_ui.holder_d));
-        prop_row(ui, "Holder length", |ui| num_row(ui, u, &mut state.tool_ui.holder_len));
+        prop_row_hint(
+            ui,
+            "Holder diameter",
+            "holder cylinder diameter used when no library holder or custom profile is set",
+            |ui| num_row(ui, u, &mut state.tool_ui.holder_d),
+        );
+        prop_row_hint(
+            ui,
+            "Holder length",
+            "holder cylinder length used when no library holder or custom profile is set",
+            |ui| num_row(ui, u, &mut state.tool_ui.holder_len),
+        );
     }
 }
 
@@ -237,12 +259,17 @@ fn cutting(ui: &mut Ui, state: &mut State) {
 /// The catalog facts, the workpiece material and the tool-table number.
 fn catalog(ui: &mut Ui, state: &mut State) {
     text_row(ui, "Material group", &mut state.tool_ui.material_group, "tool_material_group", CTRL_W * 1.3);
+    super::layout::hint(ui, "workpiece material these base speeds and feeds are set for");
     super::tool_catalog_rows::catalog_rows(ui, &mut state.tool_ui);
     // #221 / #2442: the machine's tool-table number - the post's T and H
     // words. New tools take the lowest unused number when 0.
     let min = if state.tool_ui.exists { 1 } else { 0 };
-    let label = if state.tool_ui.exists { "Tool number" } else { "Tool number (0 = next free)" };
-    prop_row(ui, label, |ui| {
+    let help = if state.tool_ui.exists {
+        "controller tool number (T and H words)"
+    } else {
+        "controller tool number (T and H words); leave at 0 to assign the next unused number"
+    };
+    prop_row_hint(ui, "Tool number", help, |ui| {
         int_range_row(ui, &mut state.tool_ui.number, min..=camcraft_app::tool_numbers::MAX)
     });
 }
