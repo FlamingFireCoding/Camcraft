@@ -59,6 +59,7 @@ mod contour_run_side;
 mod contour_run_stock;
 mod contour_start;
 mod contour_step;
+mod contour_wall_ramp;
 mod contour_whole;
 mod contour_whole_fence;
 mod contour_whole_reach;
@@ -83,7 +84,6 @@ mod lead_seam;
 mod ladder_links;
 mod level_flanks;
 mod level_order;
-mod level_ramp_entry;
 mod level_rings;
 mod levels;
 mod microlift;
@@ -181,7 +181,9 @@ pub use corner_relief::{
 };
 pub use corner_relief_spur::pocket_relief_plan;
 pub use level_rings::level_ring_plan;
-pub use pass_start::{PASS_START_NOTE, PASS_START_REST_NOTE, PASS_START_ZIGZAG_NOTE, PassStart, StartSide, pass_start_fallbacks};
+pub use pass_start::{
+    PASS_START_NOTE, PASS_START_REST_NOTE, PASS_START_ZIGZAG_NOTE, PassStart, StartSide, advised, entry_advice, pass_start_fallbacks,
+};
 pub use pocket::{
     pocket, pocket_entered, pocket_entered_with_relief, pocket_started, pocket_started_on, PocketParams, PocketStrategy,
 };
@@ -202,6 +204,7 @@ pub use rest_prior_adaptive::{rest_adaptive_previous, REST_ADAPTIVE_ENTERED, RES
 pub use ring::{on_boundary, ring_is_circular};
 pub use sketch_trace::TraceStrokes;
 pub use slot_band::slot_centre_band;
+pub use pocket_plan::pocket_tool_fits;
 pub use slots::{chord_clears, slot, trace, SlotParams, TraceParams};
 pub use trace_avoid::trace_avoid;
 pub use slot_ends::extended_ends as slot_extended_ends;
