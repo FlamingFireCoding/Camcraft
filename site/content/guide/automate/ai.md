@@ -19,10 +19,54 @@ can serve, and type in **Prompt**. Select **Send** to start a turn.
 
 ### Cloud providers
 
-Make the credential available to the app before you start it.
-Set the named environment variable in the environment that launches
-CamCraft, or provision the OS keychain as described below.
-Do not put the key in a chat prompt or a project file.
+An API key is a secret that lets CamCraft use your provider account.
+Keep it secret, like a password. Do not put it in a chat prompt or a
+project file. Cloud use can cost money, separate from a chat subscription.
+
+Choose a cloud **Provider**, then select **Set API key...**. Paste the key
+into the password field and save it. CamCraft stores it in the OS keychain.
+The field clears after save, cancel, or a provider change. CamCraft never
+shows the stored key. To replace it, use **Set API key...** again.
+
+The status appears when you choose a provider. **Ready (key from keychain)**
+or **Ready (key from environment)** means that CamCraft found a key.
+It does not prove that the key works or that the account has credits.
+**No key - Set API key...** means that you must add a key.
+Select **Test** to check access with a small request to the selected model.
+The provider can bill this request. Clear **Offline only** before a cloud test.
+**Remove** deletes the keychain entry only. It does not revoke the key at
+the provider or remove an environment variable.
+
+#### Get an Anthropic key
+
+1. Sign in to the [Anthropic console](https://platform.claude.com/settings/keys), then open **Settings > API keys**.
+2. Select **Create key**. Name it, for example, **CamCraft on my Mac**. This helps you revoke only this key later.
+3. Copy the key at once. It starts with `sk-ant-`, and the console shows it only once.
+4. Paste it into **Set API key...** in CamCraft and save it.
+5. Keep it secret. Delete it on the same API keys page to revoke it.
+6. Check [billing](https://platform.claude.com/settings/billing) and [spend limits](https://platform.claude.com/settings/spend-limits) before use. Cloud requests use credits.
+
+See Anthropic's [API key instructions](https://platform.claude.com/docs/en/get-api-key).
+
+#### Get an OpenAI key
+
+1. Sign in to the [OpenAI API keys page](https://platform.openai.com/api-keys).
+2. Create a secret key. Name it, for example, **CamCraft on my Mac**.
+3. Copy it at once. Save the secret when the page shows it.
+4. Paste it into **Set API key...** in CamCraft and save it. Both OpenAI presets use the same key.
+5. Keep it secret. Delete it on the same API keys page to revoke it.
+6. Check [API billing](https://platform.openai.com/settings/organization/billing/overview) and [limits](https://platform.openai.com/settings/organization/limits) before use. A ChatGPT subscription does not supply API credits.
+
+#### Get a Gemini key
+
+1. Sign in to [Google AI Studio](https://aistudio.google.com/api-keys).
+2. Create an API key for your Google Cloud project. Give it a name that identifies this computer.
+3. Copy the key and keep it secret.
+4. Paste it into **Set API key...** in CamCraft and save it.
+5. Delete the key on the same API keys page to revoke it.
+6. Read [Gemini API billing](https://ai.google.dev/gemini-api/docs/billing). Check the project's billing and quotas before use.
+
+#### Environment keys and model selection
 
 | Provider choice | Credential | Setup |
 |---|---|---|
@@ -35,22 +79,49 @@ Clear **Offline only** to use a cloud provider. Send a read-only request:
 “Read the current job and tell me which setup is active. Change nothing.”
 Check that the returned setup matches the Browser.
 
-There is no API key entry form in the panel. The app first reads the
-nonempty environment variable, then the OS keychain. Restart the app after
-changing its launch environment. An environment key overrides a stored key.
+The app first reads the nonempty environment variable, then the OS keychain.
+An environment key overrides a stored key, including a replacement you save.
+Remove the variable from the app's launch environment to use the stored key.
+Restart the app after changing its launch environment. An app started from
+the Dock normally does not receive variables from your shell.
 
 The keychain service is **camcraft-ai**. The accounts are **anthropic**,
 **openai** and **gemini**. Native storage uses macOS Keychain, Windows
-Credential Manager, or the freedesktop Secret Service on Linux. Use your
-system's credential tooling to provision the service and account, or use
-the environment route. CamCraft reports a keychain access failure by name.
+Credential Manager, or the freedesktop Secret Service on Linux.
+CamCraft reports a keychain access failure by name.
 Keys are not stored in the CAM project or the preferences file.
+
+#### OS keychain permission prompts
+
+On the first **Send** after you store a key, macOS can say that CamCraft
+wants to use confidential information stored in **camcraft-ai**. It can
+ask for the **login** keychain password. This is normally your Mac login
+password. Enter it in the macOS prompt, never in CamCraft's key field.
+Choose **Always Allow** to permit later reads. **Allow** permits one read,
+so macOS can ask again on the next **Send**. A readiness check or **Test**
+can also cause this prompt.
+
+CamCraft is not code-signed. After an update, macOS can ask again because
+the application changed. This is expected.
+
+Windows stores the key in **Credential Manager**. Windows can ask for
+permission or account authentication, or it can allow access without a
+prompt. Linux uses **Secret Service**, such as a desktop keyring. The
+desktop can ask you to unlock the keyring or approve access. If no Secret
+Service is available, CamCraft reports that storage is unavailable.
 
 ### Ollama and offline-only mode
 
-Start Ollama on http://localhost:11434 and make the desired model
-available in that runtime. The panel uses its OpenAI-compatible endpoint
+Install Ollama from the [download page](https://ollama.com/download), then
+start it. Follow the [quickstart](https://docs.ollama.com/quickstart) to
+install a model. For example, run `ollama pull qwen2.5:14b` in Terminal.
+Choose a model that fits your computer's memory.
+
+Ollama runs on http://localhost:11434. The panel uses its OpenAI-compatible endpoint
 at http://localhost:11434/v1.
+The status names an unavailable server or an uninstalled model before you
+send a prompt. Start Ollama if the server is unavailable. Install the exact
+model named in **Model** if it is missing, then select **Test** again.
 
 1. Choose **Offline local (Ollama)**.
 2. Enter the exact installed model name in **Model**.

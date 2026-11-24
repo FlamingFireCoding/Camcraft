@@ -94,6 +94,15 @@ fn draw_header(ui: &mut Ui, state: &mut State, pal: &theme::Tokens) {
         );
     });
 
+    let preset_id = state.ai_chat.selected_preset().id.clone();
+    super::settings_panel::draw(
+        ui,
+        &mut state.ai_chat.settings,
+        &preset_id,
+        &state.ai_chat.model_input,
+        state.ai_chat.offline_only,
+    );
+
     ui.label("Viewport screenshot capture is unavailable.");
 
     let preset = state.ai_chat.selected_preset();

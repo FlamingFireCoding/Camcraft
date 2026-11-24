@@ -6,6 +6,7 @@ mod budget;
 mod delete_confirmation;
 mod regressions;
 mod safety;
+mod settings;
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
