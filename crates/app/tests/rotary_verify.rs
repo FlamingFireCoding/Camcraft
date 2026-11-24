@@ -274,7 +274,7 @@ fn a_full_turn_rotary_parallel_refuses_on_a_head_that_cannot_reach_under() {
     else {
         unreachable!("the parallel params")
     };
-    let op = OpParams::RotaryParallel { tolerance, stepover, clearance_z, retract_z, top_z, bottom_z: Height::fixed(-6.2), feed, plunge_feed, climb, lead_deg, lag_deg, max_tilt_deg };
+    let op = OpParams::RotaryParallel { tolerance, stepover, clearance_z, retract_z, top_z, bottom_z: Height::fixed(-6.2), feed, plunge_feed, climb, lead_deg, lag_deg, max_tilt_deg, stated_axis: None };
     let world = world_with(Kind::Parallel, 12.4, op);
     let report = posting::verification_report(&world);
     let text = format!("{:?}", report.problems);
