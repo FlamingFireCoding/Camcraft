@@ -304,6 +304,9 @@ pub(super) fn pocket_over_with_relief(
     };
     let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
     notes.into_iter().for_each(|n| b.note(n));
+    // #3744: Auto round a part picks Inside or Outside of the one ring
+    // set here, so the rings, the links and the entry read one side.
+    let side = &super::ring_side::resolve(center, strategy, p.tool_diameter * 0.5, side)?;
     // The HSM plan may choose where its entry stands (`pocket_hsm`).
     let (mut passes, strategy, room, joins, ramp_starts) = match strategy {
         PocketStrategy::Adaptive => {
@@ -330,6 +333,9 @@ pub(super) fn pocket_over_with_relief(
         }
     }
     let hold_crossings = hold_crossings || zigzag;
+    // #3746: a start-side ring plan round a part enters from the air
+    // outside the stock box.
+    let air = super::air_entry::AirRoom::for_side(side, strategy, center, p.tool_diameter * 0.5, p.links.approach.approach_distance);
     emit_pocket_passes(
         b,
         p,
@@ -345,6 +351,11 @@ pub(super) fn pocket_over_with_relief(
             corner_reliefs,
             cleared_links: side.start != PassStart::Auto,
             ramp_starts,
+            ring_links: match side.start {
+                PassStart::Auto => None,
+                _ => super::ring_links::for_side(side, strategy, p.tool_diameter * 0.5, None)?,
+            },
+            air,
         },
     )
 }
