@@ -16,6 +16,8 @@ use camcraft_app::stock::StockShape;
 use flecs_ecs::prelude::World;
 use std::{collections::BTreeMap, fs};
 
+#[path = "agie_native/cutoff.rs"]
+mod cutoff;
 #[path = "agie_native/die.rs"]
 mod die;
 #[path = "agie_native/reentrant.rs"]
@@ -93,6 +95,8 @@ fn punch_setup(
         side: WireSide::Punch,
         start: Some(start),
         capture: true,
+        both_pieces_restrained: false,
+        stock_centered_in_xy_travel: false,
         tabs: None,
         taper_deg: 0.0,
         burnout: None,

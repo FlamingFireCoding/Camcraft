@@ -124,6 +124,10 @@ pub(super) fn emit_pocket_passes(
         Some(e) => Cert::Stadium { a: e.seed, b: e.seed, h: e.clear, tess: &e.tess },
         None => Cert::Region(center),
     };
+    // #3249: a relief that gets no spur is named in a note, not dropped
+    // silently. The closure may run again on a crossing-free retry, so the
+    // misses go through a RefCell and are de-duplicated by corner.
+    let relief_misses = std::cell::RefCell::new(Vec::<Point2>::new());
     let post = |b: &mut PathBuilder, runs: Option<&[Vec<Seg>]>| {
         if corner_reliefs.is_empty() {
             run_level_walks(
@@ -138,7 +142,7 @@ pub(super) fn emit_pocket_passes(
         } else {
             let mut passes_r = passes.clone();
             let mut runs_r = runs.map(<[Vec<Seg>]>::to_vec);
-            inject_relief_spurs(&mut passes_r, &mut runs_r, center, corner_reliefs);
+            inject_relief_spurs(&mut passes_r, &mut runs_r, center, corner_reliefs, &mut relief_misses.borrow_mut());
             run_level_walks(
                 b,
                 &passes_r,
@@ -195,6 +199,17 @@ pub(super) fn emit_pocket_passes(
             b.finish()
         }
     };
+    let mut seen_misses = Vec::<Point2>::new();
+    for m in relief_misses.into_inner() {
+        if seen_misses.contains(&m) {
+            continue;
+        }
+        seen_misses.push(m);
+        path.notes.push(format!(
+            "corner relief at ({:.3}, {:.3}) is not cut: no pass vertex reaches the relief spur",
+            m.x, m.y
+        ));
+    }
     if let Some(n) = proof.note() {
         path.notes.push(n);
     }
@@ -213,6 +228,95 @@ mod tests {
     use crate::entry::Entry3D;
     use crate::geo2d::Loop;
     use crate::links::Links;
+
+    #[test]
+    fn missed_relief_notes_name_and_deduplicate_boundary_corners() {
+        // The pass stays in the second component. No legal detour can
+        // reach the relief starts in the first component.
+        let squares = [0.0, 20.0].map(|offset| {
+            Loop::new(vec![
+                Point2::new(offset, offset),
+                Point2::new(offset + 10.0, offset),
+                Point2::new(offset + 10.0, offset + 10.0),
+                Point2::new(offset, offset + 10.0),
+            ])
+            .expect("square loop")
+        });
+        let center = Region::new(squares.to_vec()).expect("disconnected center region");
+        let reliefs = [
+            ResolvedRelief {
+                corner: Point2::new(0.0, 0.0),
+                start: Point2::new(3.0, 3.0),
+                end: Point2::new(2.0, 3.0),
+                radius: 3.0,
+            },
+            ResolvedRelief {
+                corner: Point2::new(0.0, 0.0),
+                start: Point2::new(4.0, 3.0),
+                end: Point2::new(2.0, 3.0),
+                radius: 3.0,
+            },
+            ResolvedRelief {
+                corner: Point2::new(10.0, 0.0),
+                start: Point2::new(3.0, 3.0),
+                end: Point2::new(8.0, 3.0),
+                radius: 3.0,
+            },
+        ];
+        let pp = PocketParams {
+            tool_diameter: 6.0,
+            stepover: 3.0,
+            stock_to_leave: 0.0,
+            clearance_z: 25.0,
+            retract_z: None,
+            top_z: 20.0,
+            bottom_z: 16.0,
+            stepdown: 2.0,
+            feed: 2400.0,
+            plunge_feed: 500.0,
+            climb: true,
+            strategy: PocketStrategy::Zigzag,
+            entry: Entry3D::Helix,
+            helix_radius: 1.0,
+            optimal_load: 0.25,
+            blend_turns: false,
+            blend_radius: None,
+            links: Links::PLANAR,
+        };
+        let path = emit_pocket_passes(
+            PathBuilder::approached(Point3::new(23.0, 23.0, pp.clearance_z)),
+            &pp,
+            PocketWalks {
+                center: &center,
+                links_center: &center,
+                strategy: pp.strategy,
+                passes: vec![vec![Point2::new(23.0, 23.0), Point2::new(27.0, 23.0)]],
+                room: None,
+                joins: Vec::new(),
+                hold_crossings: false,
+                holes: &[],
+                corner_reliefs: &reliefs,
+                cleared_links: false,
+                ring_links: None,
+                air: None,
+            },
+        )
+        .expect("emit disconnected pocket passes");
+        let notes: Vec<_> = path
+            .notes
+            .iter()
+            .filter(|note| note.starts_with("corner relief at"))
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            notes,
+            [
+                "corner relief at (0.000, 0.000) is not cut: no pass vertex reaches the relief spur",
+                "corner relief at (10.000, 0.000) is not cut: no pass vertex reaches the relief spur",
+            ],
+            "each boundary corner gets one note, independent of the cutter-center starts"
+        );
+    }
 
     #[test]
     fn offset_rings_across_one_micron_vertex_step_post_crossing_free() {

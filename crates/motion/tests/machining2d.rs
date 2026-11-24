@@ -11,6 +11,7 @@
 use camcraft_motion::cl::{MoveKind, Toolpath};
 use camcraft_motion::entry::Entry3D;
 use camcraft_motion::geo2d::{Loop, Point2, Region};
+use camcraft_motion::links::Compensation;
 use camcraft_motion::machining2d::{
     ARC_FIT_TOL, chord_clears, contour, contour_along_chain, face, on_boundary, pocket,
     ring_is_circular, slot, trace, ContourParams, FaceHoles, FaceParams, GenError, Lead, PocketParams,
@@ -1008,6 +1009,55 @@ fn a_wall_side_ramp_too_short_for_its_angle_grazes_and_says_why() {
     let t = contour(&rect(0.0, 0.0, 4.0, 4.0), &outside_ramped(Entry3D::Ramp, 0.005)).expect("graze");
     assert_eq!(t.notes.iter().filter(|n| n.contains("too short for the ramp angle")).count(), 1, "{:?}", t.notes);
     assert!(t.moves.iter().any(|m| m.kind == MoveKind::Plunge), "the graze dive stands in: {:?}", t.moves);
+}
+
+/// #3888: the outside ramp's params under one compensation, with the
+/// straight lead-in that control and wear need (radius 5).
+fn ramped_comp(side: Side, entry: Entry3D, comp: Compensation) -> ContourParams {
+    let mut p = outside_ramped(entry, 5.0);
+    p.side = side;
+    p.lead = Lead::Linear { length: 6.0 };
+    p.links.approach.compensation = comp;
+    p
+}
+
+#[test]
+fn a_ramp_or_helix_under_control_or_wear_is_refused_by_name_on_both_sides() {
+    // #3888: the zig-zag (and the bore's orbit) runs on the ring before the
+    // lead-in engages G41/G42, so the register never applies to it.
+    for comp in [Compensation::Control, Compensation::Wear] {
+        for side in [Side::Outside, Side::Inside] {
+            for (entry, name) in [(Entry3D::Ramp, "Ramp"), (Entry3D::Helix, "Helix")] {
+                let err = contour(&rect(0.0, 0.0, 30.0, 30.0), &ramped_comp(side, entry, comp))
+                    .expect_err("a ramp before G41/G42 must refuse");
+                let why = format!("{err:?}");
+                let want = format!("{} compensation does not ride a {name} entry", comp.label());
+                assert!(why.contains(&want), "{comp:?} {side:?} {name}: {why}");
+            }
+            // A level transition that ramps is the same descent.
+            let mut p = ramped_comp(side, Entry3D::Plunge, comp);
+            p.links.transition = Some(Entry3D::Ramp);
+            let why = format!("{:?}", contour(&rect(0.0, 0.0, 30.0, 30.0), &p).expect_err("transition ramp"));
+            assert!(why.contains("does not ride a Ramp level transition"), "{comp:?} {side:?}: {why}");
+            // The plunge at the lead-in's start still stands, under its span.
+            let t = contour(&rect(0.0, 0.0, 30.0, 30.0), &ramped_comp(side, Entry3D::Plunge, comp)).expect("plunge");
+            assert!(!t.comps.is_empty(), "{comp:?} {side:?}: one span per level");
+        }
+    }
+}
+
+#[test]
+fn a_wall_side_ramp_in_computer_compensation_is_unchanged() {
+    // #3888 pins the computer side: no span, and the same ramp as before.
+    let comp = contour(&rect(0.0, 0.0, 30.0, 30.0), &ramped_comp(Side::Outside, Entry3D::Ramp, Compensation::Computer))
+        .expect("computer ramp");
+    assert!(comp.comps.is_empty());
+    let (worst, axial) = steepest_descent(&comp);
+    assert!(worst > 1.0 && worst <= 5.0 + 1e-3 && axial == 0, "it ramps: {worst} {axial}");
+    let mut plain = outside_ramped(Entry3D::Ramp, 5.0);
+    plain.lead = Lead::Linear { length: 6.0 };
+    let plain = contour(&rect(0.0, 0.0, 30.0, 30.0), &plain).expect("default ramp");
+    assert_eq!(comp.moves, plain.moves);
 }
 
 #[test]

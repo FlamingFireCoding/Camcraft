@@ -245,6 +245,8 @@ pub(super) fn list_operation_types(_env: &mut Env, a: &Map<String, Value>) -> Re
                         ("start", "array", Value::Null),
                         ("tabs", "object", Value::Null),
                         ("capture", "boolean", json!(false)),
+                        ("both_pieces_restrained", "boolean", json!(false)),
+                        ("stock_centered_in_xy_travel", "boolean", json!(false)),
                         ("taper_deg", "number", json!(0.0)),
                         ("burnout_clearance", "number", Value::Null),
                         ("clearance", "number", json!(crate::operation::DEFAULT_CLEARANCE)),
