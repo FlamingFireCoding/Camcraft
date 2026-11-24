@@ -148,6 +148,8 @@ mod tool_preview;
 mod tool_cutting_rows;
 mod tool_turning_row;
 mod tool_profile_page;
+// #2007/#3914: what the Properties tool preview draws, with the cutter outline memo.
+mod tool_preview_inputs;
 // #793: the built-in taper holder picker in the Profile section.
 mod tool_holder_picker;
 // #93 slice 2: the Profile tab's drawn cutter, neck and shank.

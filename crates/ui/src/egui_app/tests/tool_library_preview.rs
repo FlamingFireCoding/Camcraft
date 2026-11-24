@@ -3,9 +3,9 @@
 //! model revolved from the profile), the side view paints its dimension
 //! labels, a landed drawn cutter shows in the two views and in the
 //! Properties preview, and the model is built only when its input
-//! changes. Also the open U2 gap: "Edit tool shape" in the window opens
+//! changes (also the Properties cutter outline, #3914 review). Also the open U2 gap: "Edit tool shape" in the window opens
 //! the shape window on the window's tool while Properties shows another.
-//! Gate map: covers ui::egui_app::tool_library_dialog, ui::egui_app::tool_model_view, ui::egui_app::tool_preview, ui::egui_app::tool_profile_page, ui::state.
+//! Gate map: covers ui::egui_app::tool_library_dialog, ui::egui_app::tool_model_view, ui::egui_app::tool_preview, ui::egui_app::tool_profile_page, ui::egui_app::tool_preview_inputs, ui::state.
 //! Provenance: our own structural tests; the test holder and the neck are
 //! our own geometry. No HSMWorks material involved.
 
@@ -17,6 +17,7 @@ use super::tool_body::{TOOL, prism_stl, shank_top, temp_stl};
 use super::tool_library_editor::{H, click_window_button, draft, library_window, tool, two_tools};
 use super::*;
 use crate::egui_app::tool_library_dialog::{model as preview_model, preview};
+use crate::egui_app::tool_preview_inputs as inputs;
 use crate::state::PreviewMode;
 
 /// Open `name` in the window's editor (Properties keeps its subject).
@@ -134,7 +135,7 @@ fn a_landed_drawn_cutter_shows_in_both_views() {
     // The Properties preview shows it too, outside "Draw cutter" (#93).
     crate::actions::target(&mut h.state_mut().state, UiTarget::Tool(TOOL.into()));
     h.run_steps(3);
-    let (_, steel) = super::super::tool_profile_page::preview_inputs(&mut h.state_mut().state, true);
+    let (_, steel) = super::super::tool_preview_inputs::preview_inputs(&mut h.state_mut().state, true);
     assert_eq!(steel, Some(landed), "the Properties preview draws the landed cutter");
 }
 
@@ -195,6 +196,42 @@ fn a_changed_tool_rebuilds_the_mesh() {
     h.run_steps(2);
     let m2 = last();
     assert_eq!((m2.steel.clone(), m2.mesh.len(), m2.dims), (m0.steel.clone(), m0.mesh.len(), m0.dims), "the old input gives the old model");
+}
+
+/// Properties on `TOOL` with its landed neck cutter, settled.
+fn properties_on_neck(h: &mut H) -> Vec<(f64, f64)> {
+    let landed = land_neck(h);
+    crate::actions::target(&mut h.state_mut().state, UiTarget::Tool(TOOL.into()));
+    h.run_steps(3);
+    landed
+}
+
+/// #3914 review (Frame cost): with a landed cutter, a still Properties
+/// frame checks no cutter and flattens no outline.
+#[test]
+fn properties_still_frame_computes_no_cutter_outline() {
+    let mut h = shell_harness();
+    h.run_steps(2);
+    properties_on_neck(&mut h);
+    let c = inputs::checks();
+    h.run_steps(3);
+    assert_eq!(inputs::checks() - c, 0, "a still Properties frame computes no cutter outline");
+}
+
+/// #3914 review (Frame cost): a changed draft tool value computes the
+/// cutter outline once, and the old outline no longer shows.
+#[test]
+fn properties_changed_tool_computes_the_cutter_outline_once() {
+    let mut h = shell_harness();
+    h.run_steps(2);
+    let landed = properties_on_neck(&mut h);
+    let c = inputs::checks();
+    let d0 = h.state().state.tool_ui.diameter;
+    h.state_mut().state.tool_ui.diameter = d0 + 1.0;
+    h.run_steps(3);
+    assert_eq!(inputs::checks() - c, 1, "a changed draft computes the cutter outline once");
+    let (_, steel) = inputs::preview_inputs(&mut h.state_mut().state, true);
+    assert_ne!(steel, Some(landed), "the outline follows the draft, not the landed numbers");
 }
 
 /// The U2 gap: Properties shows tool A and the window tool B. "Edit tool
