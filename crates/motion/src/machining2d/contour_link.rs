@@ -293,11 +293,14 @@ pub(super) struct RingEntry {
 
 /// The entry of a ring after another one: the entry on the path's first
 /// level, the transition below it. `None` where the pass link keeps the
-/// ring (the plunge entry, a tabbed level, the wall side).
-pub(super) fn ring_entry(p: &ContourParams, applies: bool, first_level: bool, arm: Entry3D, hop_z: f64) -> Option<RingEntry> {
+/// ring (the plunge entry, a tabbed level, the wall side's arc - its own
+/// hop and wall arc enter that ring). On the wall side the ramp and the
+/// helix take the wall-side ramp (#3917, `contour_wall_ramp`).
+pub(super) fn ring_entry(p: &ContourParams, applies: bool, inside: bool, first_level: bool, arm: Entry3D, hop_z: f64) -> Option<RingEntry> {
     let arm = if first_level { p.entry } else { arm };
     let plane = if p.links.pass == Link::Clearance { p.clearance_z } else { hop_z };
-    (applies && arm != Entry3D::Plunge).then_some(RingEntry { arm, plane })
+    let armed = if inside { arm != Entry3D::Plunge } else { matches!(arm, Entry3D::Ramp | Entry3D::Helix) };
+    (applies && armed).then_some(RingEntry { arm, plane })
 }
 
 /// The ring-to-ring move within one level (the pass link). `Ok(true)`:
