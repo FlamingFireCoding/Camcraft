@@ -7,9 +7,7 @@
 //! Provenance: our own tool surface over this repo's command layer.
 
 use super::tools::{opt_str, req_str};
-use crate::commands::{
-    AddTool, CommandError, HolderPick, CreateOperation, DeleteOperation, EditOperationLinks, EditOperationParams,
-};
+use crate::commands::{AddTool, CommandError, CreateOperation, DeleteOperation, EditOperationLinks, EditOperationParams, HolderPick};
 use crate::model;
 use crate::operation::{self, KindInfo, OpParams, SrcRef};
 use crate::project;
@@ -305,10 +303,11 @@ pub(super) fn add_operation(env: &mut Env, a: &Map<String, Value>) -> Result<Val
         // an explicit params patch below still wins.
         crate::cutting_rows::seed_feed_for_tool(&env.world, &mut params, &t);
     }
+    let named_entry = a.get("params").and_then(Value::as_object).is_some_and(|p| p.contains_key("entry"));
     if let Some(patch) = a.get("params") {
         params = patched(&params, patch)?;
     }
-    let cmd = CreateOperation::new(&env.world, &name, tool, src, params).map_err(cmd_err)?;
+    let cmd = CreateOperation::with_named_entry(&env.world, &name, tool, src, params, named_entry).map_err(cmd_err)?;
     env.history.execute(&env.world, cmd);
     let mut out = json!({ "operation": name, "kind": label, "status": "never" });
     clearance_warning(env, &name, &mut out);
@@ -320,8 +319,9 @@ pub(super) fn edit_operation(env: &mut Env, a: &Map<String, Value>) -> Result<Va
     let patch = a.get("params").ok_or("\"params\" is required")?;
     let e = model::find_by_name(&env.world, &key).ok_or_else(|| format!("no operation named '{key}'"))?;
     let op = model::operation_of(&env.world, &e).ok_or_else(|| format!("'{key}' is not an operation"))?;
+    let named_entry = patch.as_object().is_some_and(|p| p.contains_key("entry"));
     let next = patched(&op.params, patch)?;
-    let cmd = EditOperationParams::new(&env.world, &key, next).map_err(cmd_err)?;
+    let cmd = EditOperationParams::with_named_entry(&env.world, &key, next, named_entry).map_err(cmd_err)?;
     env.history.execute(&env.world, cmd);
     let params = model::operation_of(&env.world, &e).map(|o| project::params_to_json(&o.params));
     let mut out = json!({ "operation": key, "status": "stale", "params": params });
@@ -383,18 +383,14 @@ fn history_state(env: &Env) -> Value {
 }
 
 pub(super) fn undo(env: &mut Env, _a: &Map<String, Value>) -> Result<Value, String> {
-    if !env.history.undo(&env.world) {
-        return Err("nothing to undo".into());
-    }
+    env.history.undo(&env.world).then(|| ()).ok_or_else(|| "nothing to undo".to_string())?;
     let mut out = history_state(env);
     out["undone"] = json!(true);
     Ok(out)
 }
 
 pub(super) fn redo(env: &mut Env, _a: &Map<String, Value>) -> Result<Value, String> {
-    if !env.history.redo(&env.world) {
-        return Err("nothing to redo".into());
-    }
+    env.history.redo(&env.world).then(|| ()).ok_or_else(|| "nothing to redo".to_string())?;
     let mut out = history_state(env);
     out["redone"] = json!(true);
     Ok(out)
