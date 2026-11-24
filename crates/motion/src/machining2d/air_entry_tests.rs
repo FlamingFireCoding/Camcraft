@@ -344,3 +344,33 @@ fn outside_reentry_onto_cut_floor_is_accepted() {
         _ => panic!("not named"),
     }
 }
+
+/// #3884 pin: "already cut" is cut by the whole tool disc. One feed 2 mm
+/// beside the plunge point covers only part of the disc round it, so the
+/// re-entry is refused by name.
+#[test]
+fn outside_reentry_onto_a_partly_cut_disc_is_refused() {
+    use super::super::descent::Descent;
+    match reentry(&[(2.0, -14.0, -3.0)], Point2::new(0.0, -7.0)) {
+        Descent::Refused(r) => assert!(r.starts_with(crate::approach::OUTSIDE_AIR_REFUSAL), "{r}"),
+        Descent::Named(_, note) => panic!("a partly cut floor was taken as cut: {note}"),
+        _ => panic!("not refused"),
+    }
+}
+
+/// #3884 pin: "already cut" is cut earlier in the program order. The same
+/// floor, cut only after this re-entry (the moves that the re-entry reads
+/// do not hold it), does not count, so the re-entry is refused by name.
+#[test]
+fn outside_reentry_onto_floor_cut_later_is_refused() {
+    use super::super::descent::Descent;
+    // The re-entry reads the path as it stands; the later cut is not on it.
+    match reentry(&[], Point2::new(0.0, -7.0)) {
+        Descent::Refused(r) => assert!(r.starts_with(crate::approach::OUTSIDE_AIR_REFUSAL), "{r}"),
+        Descent::Named(_, note) => panic!("an uncut floor was taken as cut: {note}"),
+        _ => panic!("not refused"),
+    }
+    let cut: Vec<(f64, f64, f64)> = (0..6).map(|k| (-5.0 + 2.0 * f64::from(k), -14.0, -3.0)).collect();
+    assert!(matches!(reentry(&cut, Point2::new(0.0, -7.0)), Descent::Named(..)), "the same floor cut before is taken");
+}
+

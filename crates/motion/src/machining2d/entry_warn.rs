@@ -68,16 +68,38 @@ pub(super) fn outside_arc_restart(b: &PathBuilder, l: &Lvl, leg: Point2, e: Poin
     }
 }
 
-/// Is the disc of radius `r` round `p` on the floor already cut at `z`?
-/// The centre and sixteen points half a radius off it each lie within the
-/// cleared core (`plunge_law::column_cleared`) of an earlier cut, so the
-/// disc lies within about the cut's own swept width.
+/// Is the whole disc of radius `r` round `p` on the floor already cut at
+/// `z`? "Already cut" is read from `moves`, the moves posted before this
+/// re-entry - so only a cut earlier in the program order counts - and from
+/// their swept width at or below `z`: every sample of the disc (the
+/// centre, a ring at half a radius and the rim) lies within one tool
+/// radius of an earlier cutting move's centre path at that depth. A disc
+/// that a cut covers only in part does not count.
 fn disc_on_cut_floor(moves: &[crate::cl::Move], p: Point2, z: f64, r: f64) -> bool {
-    let ring = (0..16).map(|k| {
-        let a = std::f64::consts::TAU * f64::from(k) / 16.0;
-        Point2::new(p.x + 0.5 * r * a.cos(), p.y + 0.5 * r * a.sin())
-    });
-    std::iter::once(p).chain(ring).all(|q| crate::plunge_law::column_cleared(moves, q, z, r))
+    const EPS: f64 = 1e-6;
+    let cut: Vec<(Point2, Point2)> = moves
+        .iter()
+        .filter(|m| m.kind != MoveKind::Rapid && m.from.z.min(m.to.z) <= z + EPS)
+        .flat_map(|m| m.segments3(0.01))
+        .filter(|(a, b)| a.z.max(b.z) <= z + EPS)
+        .map(|(a, b)| (Point2::new(a.x, a.y), Point2::new(b.x, b.y)))
+        .collect();
+    let swept = |q: Point2| cut.iter().any(|&(a, b)| seg_dist(q, a, b) <= r + EPS);
+    let ring = |k: f64, n: u32| {
+        (0..n).map(move |i| {
+            let a = std::f64::consts::TAU * f64::from(i) / f64::from(n);
+            Point2::new(p.x + k * r * a.cos(), p.y + k * r * a.sin())
+        })
+    };
+    std::iter::once(p).chain(ring(0.5, 12)).chain(ring(1.0, 24)).all(swept)
+}
+
+/// The distance from `q` to the segment `a`-`b`.
+fn seg_dist(q: Point2, a: Point2, b: Point2) -> f64 {
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let len2 = dx * dx + dy * dy;
+    let t = if len2 > 0.0 { (((q.x - a.x) * dx + (q.y - a.y) * dy) / len2).clamp(0.0, 1.0) } else { 0.0 };
+    (q.x - a.x - t * dx).hypot(q.y - a.y - t * dy)
 }
 
 /// #3855: a plunge point for a re-entry onto `e` at `z` on the floor
