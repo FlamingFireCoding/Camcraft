@@ -121,7 +121,7 @@ fn tools_ribbon_opens_the_tool_library_window_without_retargeting_properties() {
     assert_eq!(h.get_by_label("New tool…").accesskit_node().role(), egui::accesskit::Role::Button);
     // #3892: the library is its own window now, not a dock tab.
     assert!(h.query_all_by_role(egui::accesskit::Role::Window).any(|n| n.accesskit_node().label().as_deref() == Some("Tool library")), "the library opens its own window");
-    assert!(!super::layout::is_open(&h.state().dock, &Tab::Tools), "the dock gets no Tool library tab");
+    assert!(!crate::egui_app::layout::is_open(&h.state().dock, &Tab::Tools), "the dock gets no Tool library tab");
     h.get_by_role_and_label(egui::accesskit::Role::Button, "Tools").click();
     h.run_steps(3);
     assert!(h.query_by_label("Catalog").is_some(), "opening the library twice keeps it open");

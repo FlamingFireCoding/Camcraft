@@ -52,7 +52,7 @@ fn the_tool_library_window_closes_and_opens_again() {
     h.get_by_role_and_label(egui::accesskit::Role::Button, "Tools").click();
     h.run_steps(3);
     let _ = library_window(&h);
-    assert!(!super::layout::is_open(&h.state().dock, &Tab::Tools), "no dock tab");
+    assert!(!crate::egui_app::layout::is_open(&h.state().dock, &Tab::Tools), "no dock tab");
     h.state_mut().state.tool_library = None;
     h.run_steps(2);
     assert!(
