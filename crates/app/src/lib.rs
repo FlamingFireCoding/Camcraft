@@ -98,6 +98,9 @@ pub mod recognize;
 pub mod raster;
 // #877: the theme and colour-vision mode, kept per user (not per project).
 pub mod prefs;
+mod prefs_setups;
+// #2428: startup update check against GitHub Releases (native only for HTTP).
+pub mod update_check;
 pub mod recent;
 pub mod rest;
 pub mod ribbon;
