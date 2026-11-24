@@ -271,3 +271,43 @@ fn a_null_name_uses_the_background_lane_and_busy_guard() {
     assert_eq!(status_of_first(&s, 14), "ok");
     s.finish();
 }
+
+/// A queued operation can be deleted while the preceding worker runs.
+#[test]
+fn a_deleted_queued_operation_is_skipped() {
+    let s = one_face();
+    s.ok(4, "add_operation", json!({ "kind": "Face", "name": "Second", "tool": "EM-0400-2FL" }));
+    s.call(10, "generate", json!({}));
+    s.ok(11, "delete_operation", json!({ "name": "Second" }));
+    s.release();
+    let done = s.next();
+    assert_eq!(done["id"], json!(10), "{done}");
+    assert_eq!(done["result"]["isError"], json!(false), "{done}");
+    let generated = done["result"]["structuredContent"]["generated"].as_array().expect("generated operations");
+    assert_eq!(generated.len(), 1, "{done}");
+    assert_eq!(generated[0]["key"], json!("First"), "{done}");
+    let job = s.ok(12, "get_job", json!({}));
+    assert_eq!(job["operations"].as_array().expect("operations").len(), 1, "{job}");
+    assert_eq!(status_of_first(&s, 13), "ok");
+    s.finish();
+}
+
+/// Undoing a queued add must not leave an entity handle in the lane.
+#[test]
+fn an_undone_queued_add_is_skipped() {
+    let s = one_face();
+    s.ok(4, "add_operation", json!({ "kind": "Face", "name": "Second", "tool": "EM-0400-2FL" }));
+    s.call(10, "generate", json!({}));
+    s.ok(11, "undo", json!({}));
+    s.release();
+    let done = s.next();
+    assert_eq!(done["id"], json!(10), "{done}");
+    assert_eq!(done["result"]["isError"], json!(false), "{done}");
+    let generated = done["result"]["structuredContent"]["generated"].as_array().expect("generated operations");
+    assert_eq!(generated.len(), 1, "{done}");
+    assert_eq!(generated[0]["key"], json!("First"), "{done}");
+    let job = s.ok(12, "get_job", json!({}));
+    assert_eq!(job["operations"].as_array().expect("operations").len(), 1, "{job}");
+    assert_eq!(status_of_first(&s, 13), "ok");
+    s.finish();
+}

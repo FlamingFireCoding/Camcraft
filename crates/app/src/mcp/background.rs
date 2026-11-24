@@ -20,11 +20,11 @@ use std::io::{BufRead, Read, Write};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 
-use flecs_ecs::prelude::Entity;
 use serde_json::{json, Value};
 
 use super::{tool_err, tool_ok, Server, MAX_LINE_BYTES};
 use crate::commands::{CommandError, GenerateOperation, StagedGeneration};
+use crate::model;
 use crate::operation::OpStatus;
 use crate::script::api;
 
@@ -54,8 +54,8 @@ pub(super) struct Background {
 struct Running {
     id: Value,
     ticket: u64,
-    current: (String, Entity),
-    queue: VecDeque<(String, Entity)>,
+    current: String,
+    queue: VecDeque<String>,
     unnamed: bool,
     done: Vec<Value>,
     cancelled: bool,
@@ -97,7 +97,7 @@ impl Server {
     }
 
     fn running_name(&self) -> Option<String> {
-        self.bg.as_ref().and_then(|b| b.running.as_ref()).map(|r| r.current.0.clone())
+        self.bg.as_ref().and_then(|b| b.running.as_ref()).map(|r| r.current.clone())
     }
 
     /// Keep a cancelled worker in the single-worker budget until it finishes.
@@ -107,7 +107,7 @@ impl Server {
         if let Some(run) = bg.running.as_mut().filter(|r| r.id == *id) {
             run.cancelled = true;
             run.queue.clear();
-            tracing::info!(op = %run.current.0, "mcp: generate cancelled by the client; its result will be dropped");
+            tracing::info!(op = %run.current, "mcp: generate cancelled by the client; its result will be dropped");
         }
     }
 
@@ -117,20 +117,24 @@ impl Server {
             return Some(answer(&id, tool_err(&why)));
         }
         let queue = match api::generate_targets(&self.env, &names) {
-            Ok(t) => VecDeque::from(t),
+            Ok(t) => t.into_iter().map(|(name, _)| name).collect(),
             Err(e) => return Some(answer(&id, tool_err(&format!("generate: {e}")))),
         };
         let unnamed = names.is_empty();
-        let placeholder = (String::new(), Entity::null());
-        self.advance(Running { id, ticket: 0, current: placeholder, queue, unnamed, done: Vec::new(), cancelled: false })
+        self.advance(Running { id, ticket: 0, current: String::new(), queue, unnamed, done: Vec::new(), cancelled: false })
     }
 
     /// Stage the next operation and hand it to a worker; `None` while a
     /// worker runs. The answer when the queue is empty or a stage refuses.
     fn advance(&mut self, mut run: Running) -> Option<Value> {
         loop {
-            let Some((name, entity)) = run.queue.pop_front() else {
+            let Some(name) = run.queue.pop_front() else {
                 return Some(answer(&run.id, tool_ok(json!({ "generated": run.done }))));
+            };
+            // Other calls can delete or re-create operations while a worker runs.
+            // Retain names only and resolve the current entity at each use.
+            let Some(entity) = model::find_by_name(&self.env.world, &name) else {
+                continue;
             };
             if run.unnamed && crate::operation::status_of(&self.env.world, &entity) == OpStatus::Ok {
                 continue;
@@ -139,7 +143,7 @@ impl Server {
                 Ok(s) => s,
                 Err(e) => return Some(refused(&run.id, &name, &e)),
             };
-            run.current = (name, entity);
+            run.current = name;
             let Some(bg) = self.bg.as_mut() else {
                 return Some(answer(&run.id, tool_err("generate: the session has no background lane")));
             };
@@ -158,7 +162,7 @@ impl Server {
                     }
                 }
                 Err(None) => {
-                    let why = format!("generate: {} - the worker could not start", run.current.0);
+                    let why = format!("generate: {} - the worker could not start", run.current);
                     return Some(answer(&run.id, tool_err(&why)));
                 }
             }
@@ -185,13 +189,16 @@ impl Server {
     /// that refuses the call. A background result whose operation changed
     /// while it ran is discarded by name (#2257).
     fn land(&mut self, run: &mut Running, result: Result<GenerateOperation, CommandError>, background: bool) -> Result<(), Value> {
-        let (name, entity) = run.current.clone();
+        let name = run.current.clone();
         let cmd = result.map_err(|e| refused(&run.id, &name, &e))?;
         if background && !cmd.still_current(&self.env.world) {
             let why = format!("generate: {name} - discarded: the operation changed while it generated - generate it again");
             return Err(answer(&run.id, tool_err(&why)));
         }
         self.env.history.execute(&self.env.world, cmd);
+        let Some(entity) = model::find_by_name(&self.env.world, &name) else {
+            return Err(answer(&run.id, tool_err(&format!("generate: {name} - the operation no longer exists"))));
+        };
         run.done.push(api::op_view(&self.env, &name, &entity, false));
         Ok(())
     }

@@ -81,3 +81,16 @@ would leave the old worker outside the budget. An unbounded input queue
 would retain arbitrarily many permitted lines. Joining the input reader
 on an output error would wait for the client to close input. Generator
 cancellation points remain outside this fix.
+
+## PR #3860 review fix: operation references
+
+**What was decided.** The background lane keeps operation names only.
+It resolves each entity when it uses the operation. It skips a queued
+operation that was deleted or whose creation was undone. After a result
+lands through the History, a missing current operation gives a refusal.
+
+**Why.** Other calls can delete an operation while a worker runs. An entity
+handle retained across those calls can refer to a deleted entity and crash.
+
+**Dropped.** Retaining entity handles across calls. Refusing deletion or
+undo while generation runs would prevent useful edits.
