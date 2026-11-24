@@ -141,6 +141,40 @@ fn layout_window_unsaved_prompt() {
     );
 }
 
+#[test]
+fn layout_window_overwrite_prompt() {
+    // #3608: a Save held because the project file on disk changed.
+    let _g = snapshot_guard();
+    let mut h = shell_harness();
+    h.state_mut().state.save_guard.held = Some(std::path::PathBuf::from("job.camproj"));
+    h.run_steps(3);
+    assert_modal_layout(
+        &h,
+        "overwrite-prompt",
+        "Overwrite modal",
+        &[
+            "job.camproj: the file on disk changed",
+            "job.camproj on disk changed after this window opened or saved it. \
+             Overwrite puts your document in place of that file. \
+             Save As writes your document to a new file and does not change the file on disk.",
+            "Overwrite",
+        ],
+        "Cancel",
+    );
+}
+
+#[test]
+fn layout_window_dxf_units() {
+    // #1863: a drawing with no $INSUNITS opens the units prompt.
+    let _g = snapshot_guard();
+    let mut h = shell_harness();
+    let dxf = "0\nSECTION\n2\nENTITIES\n0\nLINE\n8\n0\n10\n0\n20\n0\n11\n10\n21\n5\n0\nENDSEC\n0\nEOF\n";
+    let source = crate::state::DxfSource::Bytes { name: "free.dxf".into(), data: std::sync::Arc::from(dxf.as_bytes()) };
+    h.state_mut().state.pending.push_back(CommandKind::ImportDxf { source, units: None });
+    h.run_steps(3);
+    assert_modal_layout(&h, "dxf-units-prompt", "DXF units modal", &["DXF units", "Millimeters"], "Cancel");
+}
+
 fn assert_fixture_modal(cmd: CommandKind, who: &str, anchors: &[&str]) {
     let dismiss = if matches!(cmd, CommandKind::FixtureLibraryInsertDialog(_)) { "Close" } else { "Cancel" };
     let mut h = shell_harness();
@@ -252,4 +286,46 @@ fn layout_window_panel_setups() {
             "Reset to default",
         ],
     );
+}
+
+/// #2818: the Display menu of the viewport toolbar. It opens above its
+/// button, inside the viewport, with its groups from top to bottom.
+#[test]
+fn layout_window_display_menu() {
+    let mut h = shell_harness();
+    h.run();
+    let pane = super::layout::leaf_rect(&h.state().dock, &Tab::Viewport).expect("viewport leaf");
+    let button = hud(h.state()).nav_rect(viewcube::Nav::Display);
+    let bar = crate::egui_app::viewport_bar::bar_rect(pane);
+    assert!(bar.contains_rect(button), "the Display button sits in the toolbar");
+    click_viewport(&mut h, button.center());
+    assert_stack_in(
+        &h,
+        pane,
+        "Display menu",
+        &[
+            "Display mode",
+            "Shaded, with edges",
+            "Shaded",
+            "Wireframe",
+            "Wireframe, see-through",
+            "Shaded, with hidden edges",
+            "Look at",
+            "Look at a face",
+            "Look at a work plane",
+            "Graphics",
+            "Grid",
+            "Origin axes",
+            "Perspective view",
+            "Orthographic view",
+            "Line width",
+            "Anti-aliasing",
+            "Performance",
+            "Quality",
+            "Ground shadow",
+            "Ambient occlusion",
+        ],
+    );
+    let last = h.get_by_label("Ambient occlusion").rect();
+    assert!(last.bottom() <= button.top(), "the menu stands above the Display button");
 }

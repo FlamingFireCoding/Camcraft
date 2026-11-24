@@ -132,6 +132,7 @@ fn plate_with_pocket() -> Mesh {
 
 fn pocket(bottom_z: f64, stepover: f64, rest_rough: bool) -> OpParams {
     OpParams::Pocket3D {
+        pass_start: Default::default(),
         links: camcraft_app::links::Links::ROUGH3D,
         stepover,
         stock_to_leave: 0.0,
@@ -195,6 +196,7 @@ fn contour() -> OpParams {
         helix_radius: 1.0,
         blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 

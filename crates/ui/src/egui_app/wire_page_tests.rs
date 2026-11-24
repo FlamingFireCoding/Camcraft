@@ -228,3 +228,22 @@ fn the_open_cutoff_declarations_apply_and_undo_together() {
     assert!(st.history.undo(&st.world));
     assert!(!live(&h).both_pieces_restrained && !live(&h).stock_centered_in_xy_travel);
 }
+
+/// #3207: the sharp-inside-corner option is off by default, its row is
+/// on the geometry tab, and Apply stores it as one undoable edit.
+#[test]
+fn wire_sharp_inside_corners_toggle_applies_and_undoes() {
+    let mut h = wire_page();
+    h.state_mut().op_tab = super::super::op_tabs::SEC_GEO;
+    h.run_steps(3);
+    assert!(!draft(&h).sharp_corners, "off by default");
+    press(&mut h, "Sharp inside corners at the wire radius");
+    assert!(draft(&h).sharp_corners);
+    assert!(!live(&h).sharp_corners, "edits wait for Apply");
+    press(&mut h, "Apply");
+    h.state_mut().drain_actions();
+    assert!(live(&h).sharp_corners);
+    let st = h.state_mut();
+    assert!(st.history.undo(&st.world));
+    assert!(!live(&h).sharp_corners, "one undo restores the default");
+}

@@ -181,7 +181,7 @@ fn build_demo_world() -> flecs_ecs::prelude::World {
 
     let pocket = recognize::pockets_of(&world, "router-part").expect("pockets").into_iter().next().expect("pocket");
     let pocket_src = SrcRef::Selection(vec![GeoSel { entity: "router-part".into(), feature: FeatureSel::Face(pocket.floor) }]);
-    let pocket_params = OpParams::Pocket {
+    let pocket_params = OpParams::Pocket { pass_start: Default::default(),
         rest: None,
         stepover: 3.0, stock_to_leave: 0.0, clearance_z: top_clr, retract_z: Some(top_ret),
         top_z: Height::of(HeightReference::TopOfModel, 0.0), bottom_z: Height::of(HeightReference::TopOfModel, -4.0),
@@ -201,6 +201,7 @@ fn build_demo_world() -> flecs_ecs::prelude::World {
         stepdown: 4.0, feed: 1800.0, plunge_feed: 400.0, climb: true, side: Side::Outside,
         lead: Lead::Arc { radius: 3.0 }, tolerance: 0.01, tab_count: 4, tab_width: 8.0, tab_height: 3.0,
         entry: Entry3D::Plunge, helix_radius: 1.0, blend_turns: false, tilt: None, links: Links::PLANAR,
+        chain_overrides: Vec::new(),
     };
     h.execute(&world, CreateOperation::new(&world, "2D Contour1", "EM-0600-4FL", SrcRef::Selection(contour_picks), contour_params).expect("contour op"));
     h.execute(&world, EditOperationParams::with_coolant(&world, "2D Contour1", CoolantMode::Off).expect("dry contour"));

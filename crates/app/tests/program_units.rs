@@ -108,7 +108,8 @@ fn is_motion(line: &str) -> bool {
 
 /// The inch program is the mm program in inches: the same lines and
 /// words, the unit word swapped, every length / 25.4 (to its four
-/// decimals) and every feed / 25.4 (to its two), everything else equal.
+/// decimals) and every feed / 25.4 (to its two; Haas to its four since
+/// #3694), everything else equal.
 fn same_program_in_inch(stem: &str, g: &str, mm: &str, inch: &str, (mm_word, inch_word): (&str, &str)) {
     let (a, b): (Vec<&str>, Vec<&str>) = (mm.lines().collect(), inch.lines().collect());
     assert_eq!(a.len(), b.len(), "{stem} on {g}: line count differs\nmm:\n{mm}\ninch:\n{inch}");
@@ -132,7 +133,9 @@ fn same_program_in_inch(stem: &str, g: &str, mm: &str, inch: &str, (mm_word, inc
                 }
                 (Some(('F', vx)), Some(('F', vy))) => {
                     let want = vx / 25.4;
-                    // mm/min is whole before the divide, in/min at two decimals.
+                    // mm/min is whole before the divide, in/min at two decimals
+                    // (Haas: mm/min at three, in/min at four since #3694; the bound
+                    // holds for both).
                     assert!((vy - want).abs() <= 0.5 / 25.4 + 0.005 + 1e-9, "{stem} on {g}: {x} -> {y} (want {want:.3})");
                 }
                 _ => assert_eq!(x, y, "{stem} on {g}: `{la}` vs `{lb}`"),
@@ -297,7 +300,7 @@ fn rotary_angle_words_are_degrees_in_an_inch_program() {
 /// inches word by word, on every mill golden.
 #[test]
 fn grbl_family_posts_write_the_mm_program_in_inches() {
-    for (stem, machine) in [("grblhal", "grblHAL 3-axis"), ("tinyg", "TinyG 3-axis")] {
+    for (stem, machine) in [("grblhal", "grblHAL 3-axis"), ("tinyg", "TinyG 3-axis"), ("grbl", "Grbl 3-axis")] {
         let cps = read(&format!("assets/posts/{stem}.cps"));
         let text = camcraft_app::posting::builtin_machine_text(machine)
             .unwrap_or_else(|why| panic!("the library ships {machine}: {why}"));

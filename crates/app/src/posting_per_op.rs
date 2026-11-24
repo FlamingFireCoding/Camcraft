@@ -185,7 +185,7 @@ fn post_per_op_with(
             ScriptPost::Anonymous => false,
         };
         if native {
-            return Err("Choose One program to create a native Agie job directory".into());
+            return Err("Choose One program to create a native wire EDM job directory".into());
         }
         let (label, cps) = script(&effective).ok_or_else(|| format!("{name}: no post resolved for its setup"))?;
         crate::lathe_voice::at_post(world, [name.as_str()], &cps, label.as_deref())?;
@@ -250,6 +250,7 @@ fn post_per_op_with(
             op: name.clone(),
             posted: Posted {
                 bundle_files: Vec::new(),
+                controller_review: None,
                 ops: 1,
                 lines: out.program.lines().count(),
                 program: out.program,
