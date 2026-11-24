@@ -20,7 +20,8 @@ fn ccb035_changes_only_the_quality_line_of_a_20_mm_punch() {
         assert_eq!(read(&fine, name), read(&base, name), "{name}");
     }
     let old = "JE_CreateQuality(je_piece,\"CCB030\",\"0.30,1.50,1.00,F,F,F\",je_q1)";
-    let new = "JE_CreateQuality(je_piece,\"CCB035\",\"0.35,1.50,1.00,F,F,F\",je_q1)";
+    // The speed flag makes the control preselect the Ra 0.35 technology (#2966).
+    let new = "JE_CreateQuality(je_piece,\"CCB035\",\"0.35,1.50,1.00,T,F,F\",je_q1)";
     let sbl = read(&fine, "PUNCH20.SBL");
     assert_eq!(sbl, read(&base, "PUNCH20.SBL").replace(old, new));
     // One quality object, zero steps, and no other quality name.
@@ -31,11 +32,21 @@ fn ccb035_changes_only_the_quality_line_of_a_20_mm_punch() {
         review_030
             .controller_review
             .replace("CCB030 requests Ra 0.30", "CCB035 requests Ra 0.35")
+            .replace(
+                "three disabled options",
+                "the speed option set, the other two options disabled"
+            )
+            .replace(
+                "Assign the matching TECCUT row.",
+                "TECCUT must show the header TYPE:VS and preselect technology \
+                 estbca25nsn060b035020 with 5 passes. If not, stop. Assign it."
+            )
+            .replace("245, 155, 140 and 134", "234, 189, 154, 139 and 129")
     );
     assert!(
-        review_035
+        review_030
             .controller_review
-            .contains("245, 155, 140 and 134")
+            .contains("Check offsets of 245, 155, 140 and 134 µm in order")
     );
 }
 
@@ -104,4 +115,17 @@ fn the_setup_encoder_holds_ccb035_to_20_mm() {
     let same = at(20_000).encode_quality(Quality::Ccb030).unwrap();
     assert_eq!((same.sbl, same.sbr), (base.sbl, base.sbr));
     assert!(at(20_000).encode_quality(Quality::Ccb035).is_ok());
+}
+
+#[test]
+fn ccb035_has_five_measured_passes_and_keeps_the_0_4_mm_margin() {
+    // Technology estbca25nsn060b035020 on the control (#2966, 25 Nov): main cut and four trims.
+    assert_eq!(
+        Quality::Ccb035.offsets_um(20_000),
+        Some(&[234, 189, 154, 139, 129][..])
+    );
+    assert_eq!(Quality::Ccb035.rough_um(20_000), Some(234));
+    assert_eq!(Quality::Ccb030.rough_um(20_000), Some(245));
+    // 0.234 + 0.125 and 0.245 + 0.125 both round up to 0.4 mm.
+    assert_eq!(contour::stock_margin(234), contour::stock_margin(245));
 }

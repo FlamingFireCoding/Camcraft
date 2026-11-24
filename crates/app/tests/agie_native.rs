@@ -24,6 +24,8 @@ mod die;
 mod dxf;
 #[path = "agie_native/group.rs"]
 mod group;
+#[path = "agie_native/quality.rs"]
+mod quality;
 #[path = "agie_native/reentrant.rs"]
 mod reentrant;
 #[path = "agie_native/tangent.rs"]

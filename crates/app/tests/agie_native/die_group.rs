@@ -21,7 +21,7 @@ fn run(dir: &Path, script: &str) -> std::process::Output {
 }
 
 /// The CLI job is the control-checked die pair: the setup golden of
-/// camcraft-post (agie_die_group_setup) and the two ISOs that the control read.
+/// camcraft-post (agie_safe_setup::die_group) and the two ISOs that the control read.
 #[test]
 fn two_complete_rims_on_one_plate_post_the_control_checked_die_pair() {
     let temp = tempfile::tempdir().unwrap();
