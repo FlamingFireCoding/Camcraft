@@ -228,17 +228,16 @@ fn fig8_start_sides_enter_from_the_air() {
 
 /// #3746 / #3825: on fig8 Outside with the Arc entry, no pass start is
 /// entered by a plunge into material. The level entries come from the air
-/// (pinned above). After #3747, four pass links still lift across the
-/// part to a start inside ring 0, and the re-entries plunge, named: no
-/// lead from the air (it would cross ring 0), no helix and no ramp reaches
-/// those starts clear of the cut rings. #3825 owns the links.
+/// (pinned above). After #3747, four pass links still lifted across the
+/// part to a start inside ring 0, and the re-entries plunged, named.
+/// #3825: those starts were two 0.117 mm stretches of the part wall that
+/// the side split read as ring 0 (#3824); they are now part of the wall.
 #[test]
-#[ignore = "known-fail #3825 | offset_pass_start | fig8_outside_offset_has_no_plunge_into_material | Outside: a plunge into material"]
+#[ignore = "heavy lane (#3825 fig8 Outside, Arc entry): one generation runs past the 60 s debug budget - run with --release -- --ignored"]
 fn fig8_outside_offset_has_no_plunge_into_material() {
     let (world, mut h, name, stock) = fig8_world();
     let (path, _) = offset_op_entered(&world, &mut h, &name, stock.0.z, PassStart::Outside, Entry3D::Arc);
     let plunged: Vec<&String> = path.notes.iter().filter(|n| n.contains("plunged into material")).collect();
-    // known-fail-assert
     assert!(plunged.is_empty(), "Outside: a plunge into material ({} named): {plunged:?}", plunged.len());
 }
 

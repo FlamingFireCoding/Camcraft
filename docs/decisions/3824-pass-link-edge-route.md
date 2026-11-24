@@ -16,7 +16,12 @@
      a lift across the part and entered by a plunge into material (4 per
      level, the four links of #3825).
    10 um is twice the flattening error, and still far below any length
-   that a cut can see.
+   that a cut can see. The tolerance is a distance from the start side,
+   not a length: a real wall stretch of any length that stands more than
+   10 um off the start side stays a wall. The unit pin
+   `ring_side::tests::the_side_tolerance_keeps_a_real_short_wall_and_drops_a_flat_sliver`
+   holds this: a 0.1 mm stretch 50 um off the start side stays a wall
+   piece, and a stretch 5 um off reads as the start side.
 2. **The pass link tries the edge route** (`ring_links::link`, called by
    `ladder_links::pass_link` round a part). When the straight chord to the
    next pass start fails, the link tries `ring_links::edge_route`, the walk
