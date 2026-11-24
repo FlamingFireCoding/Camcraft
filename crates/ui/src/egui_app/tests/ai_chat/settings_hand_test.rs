@@ -191,6 +191,41 @@ fn failed_test_names_the_cause_the_model_and_what_to_try() {
     assert!(test_failure("h answered HTTP 404: x", "m", "h").contains("(HTTP 404)"));
 }
 
+#[test]
+fn model_not_found_is_not_a_rejected_key() {
+    let text = test_failure(
+        "api.openai.com answered HTTP 404: The model `invalid_api_key` does not exist (endpoint: POST https://api.openai.com/v1/models/invalid_api_key)",
+        "invalid_api_key",
+        "https://api.openai.com/v1",
+    );
+    assert!(
+        !text.contains("rejected the key"),
+        "must not say key rejected: {text}"
+    );
+    assert!(
+        text.contains("the provider does not know this model (HTTP 404)"),
+        "{text}"
+    );
+    assert!(text.contains("Model tried: invalid_api_key"), "{text}");
+}
+
+#[test]
+fn service_failure_is_not_a_rejected_key() {
+    let text = test_failure(
+        "api.anthropic.com answered HTTP 503: upstream service is unauthenticated (endpoint: POST https://api.anthropic.com/v1/messages)",
+        "claude-sonnet",
+        "https://api.anthropic.com/v1",
+    );
+    assert!(
+        !text.contains("rejected the key"),
+        "must not say key rejected: {text}"
+    );
+    assert!(
+        text.contains("the provider is not available now (HTTP 503)"),
+        "{text}"
+    );
+}
+
 /// Fails the first check like a stopped server, then answers like a started one.
 struct StartsLater(AtomicUsize);
 

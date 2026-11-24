@@ -24,22 +24,47 @@ fn http_status(error: &str) -> Option<u16> {
     rest.get(..3)?.parse().ok()
 }
 
+/// Extracts the provider's error message body, omitting the host, HTTP code prefix,
+/// and trailing request endpoint (#3804).
+fn provider_message(error: &str) -> &str {
+    let payload = if let Some((_, rest)) = error.split_once("answered HTTP ") {
+        if let Some((_, msg)) = rest.split_once(": ") {
+            msg
+        } else if rest.len() > 4 {
+            &rest[4..]
+        } else {
+            rest
+        }
+    } else {
+        error
+    };
+    if let Some((msg, _)) = payload.rsplit_once(" (endpoint: ") {
+        msg
+    } else {
+        payload
+    }
+}
+
 /// Tells whether an error represents a provider authentication failure (#3804).
 /// Cloud providers reject invalid keys with HTTP 401 (Anthropic, OpenAI),
-/// HTTP 403 (Gemini / proxies), or HTTP 400 with provider error details (Gemini).
+/// HTTP 403 (Gemini / proxies), or HTTP 400 with explicit API key error details (Gemini).
+/// Non-authentication errors (HTTP 404, HTTP 503) and model names or endpoints
+/// are never classified as authentication evidence.
 #[must_use]
 pub(crate) fn is_auth_failure(error: &str) -> bool {
-    let lower = error.to_ascii_lowercase();
     let status = http_status(error);
-    matches!(status, Some(401 | 403))
-        || lower.contains("api_key_invalid")
-        || lower.contains("api key not valid")
-        || lower.contains("invalid api key")
-        || lower.contains("invalid_api_key")
-        || lower.contains("authentication_error")
-        || lower.contains("invalid x-api-key")
-        || lower.contains("incorrect api key")
-        || lower.contains("unauthenticated")
+    match status {
+        Some(401 | 403) => true,
+        Some(400) => {
+            let msg = provider_message(error).to_ascii_lowercase();
+            msg.contains("api_key_invalid")
+                || msg.contains("api key not valid")
+                || msg.contains("api key invalid")
+                || msg.contains("invalid x-api-key")
+                || msg.contains("authentication_error")
+        }
+        _ => false,
+    }
 }
 
 /// One cause and one "what to try" hint for a failed cloud Test.
