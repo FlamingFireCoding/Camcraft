@@ -1,11 +1,21 @@
 //! Law (d3), feed plunge depth (#3679): a feed descent judged against the
 //! floor that the cuts before it left under the FULL tool disc - a dive
 //! whose rim stands on stock that no level above cut convicts when its
-//! cutter reaches deeper below that stock than one stepdown of the
-//! operation. Provenance: the shop practice that a plunge into uncut
-//! stock takes at most one stepdown of material (machine-tool
+//! cutter takes more of that stock in the one move than one stepdown
+//! of the operation. Provenance: the shop practice that a plunge into
+//! uncut stock takes at most one stepdown of material (machine-tool
 //! handbooks), read on our own rest model; no vendor source was
 //! consulted.
+//!
+//! The take is the move's own bite, never the whole column below the
+//! floor: a tip that a rapid already stood inside uncut stock can pass
+//! only the material between its start and its end - the stock above
+//! the start is the rapid law's crime, named there and holding the
+//! post there - so the bite's floor is the LESSER of the move's start
+//! and the rest surface. A dive from air keeps the old reading whole
+//! (`from.z` stands above the floor, so the min is the floor), and a
+//! start no number can read falls back to the floor the same way
+//! (`f64::min` drops the NaN, a floor the rest cannot read included).
 //!
 //! Advisory by the #3525 pattern: nothing here gouges and nothing
 //! collides (the plunge IS the cut), the risk is the tool load, so the
@@ -20,11 +30,14 @@
 //! judges a dive: each sample at the height the tool's own profile
 //! stands at its radius ([`Cutter::lift_at`]), so a ball or a point
 //! whose lifted rim clears the floor is air there. One finding per
-//! move, at the worst convicting sample. A reading that cannot be compared - a
-//! non-finite floor or limit - convicts: `!(depth <= limit + z_tol)`
-//! reads NaN as no acquittal, never as a pass. `Mode::Revolve`,
-//! `Mode::Radial` and `Mode::Rotary` stand the law down with law (d)'s
-//! own words: the XY column is not those paths' geometry.
+//! move, at the worst convicting sample. A reading that cannot be
+//! compared - a non-finite limit, a NaN bite - convicts: the
+//! `partial_cmp` form of `!(depth <= limit + z_tol)` reads NaN as no
+//! acquittal, never as a pass, and a floor the rest cannot read falls
+//! back to the move's own start, an upper bound the bite cannot pass.
+//! `Mode::Revolve`, `Mode::Radial` and `Mode::Rotary` stand the law
+//! down with law (d)'s own words: the XY column is not those paths'
+//! geometry.
 
 use super::laws::xy;
 use super::probe::Cutter;
@@ -62,22 +75,27 @@ pub(super) fn plunge_depth(
         if dx * dx + dy * dy > cx.z_tol * cx.z_tol {
             continue; // a lateral or ramped feed: its engagement is the level law's
         }
-        if !(m.to.z < m.from.z - cx.z_tol) {
-            continue; // a lift, or a flat pass
+        if m.to.z.partial_cmp(&(m.from.z - cx.z_tol)).is_none_or(|o| !o.is_lt()) {
+            continue; // a lift, a flat pass, or a start no number can read
         }
         // One finding per move, at the worst CONVICTING sample: the
-        // depth below the floor the cuts before this move left under
-        // the disc, at the tool's own height there. The test itself is
-        // `!(depth <= limit + z_tol)`, so a non-finite floor, a
-        // non-finite stepdown or a NaN depth is no acquittal - the
-        // dive is named, never passed.
+        // bite the move itself takes below the floor the cuts before
+        // it left under the disc, at the tool's own height there - the
+        // lesser of the move's start and that floor, so a tip a rapid
+        // already stood inside stock answers for its own descent only
+        // (the stock above the start is law (d)'s to name), and a
+        // floor the rest cannot read falls back to the start, an
+        // upper bound the bite cannot pass. The test itself is
+        // `!(depth <= limit + z_tol)` in its fail-closed `partial_cmp`
+        // form: a non-finite stepdown or a NaN bite is no acquittal -
+        // the dive is named, never passed.
         let mut worst: Option<f64> = None;
         for (q, rho) in footprint(b, d) {
             if !rest.in_stock(q) {
                 continue;
             }
-            let depth = rest.surface_before(q, i) - (m.to.z + cutter.lift_at(rho));
-            if !(depth <= limit + cx.z_tol) {
+            let depth = m.from.z.min(rest.surface_before(q, i)) - (m.to.z + cutter.lift_at(rho));
+            if depth.partial_cmp(&(limit + cx.z_tol)).is_none_or(|o| o.is_gt()) {
                 worst = Some(match worst {
                     // The deepest convicting sample is the named one;
                     // a NaN reading stays named until a finite depth

@@ -3700,15 +3700,18 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #1091: a dive convicted against the stock's highest point is re-read under the tool.
             super::stock_top_law::acquit(&path, mode, judged_stock.filter(|_| stock_fidelity_known), &material.facets, &geom, material.excess, &mut warns);
             // The program ahead cut too (#96 review): a dive the column
-            // convicted against the raw block is re-read against what
-            // the setup's earlier operations left standing.
-            // Cut only when a rapid was convicted: the simulation is
-            // the costly half, and a clean path needs no second word.
-            if warns.iter().any(|w| matches!(w, Warning::RapidInStock { .. }))
+            // convicted against the raw block, and a feed plunge the
+            // depth law convicted against this op's own floor (#3679),
+            // are re-read against what the setup's earlier operations
+            // left standing. Cut only when one of the two laws
+            // convicted: the simulation is the costly half, and a
+            // clean path needs no second word.
+            if warns.iter().any(|w| matches!(w, Warning::RapidInStock { .. } | Warning::PlungeTooDeep { .. }))
                 && let Some(dex) = verify_prior.get()
             {
                 let prior = crate::stock_sim::Columns::of_grid(dex);
                 verify::acquit_by_prior(&path, &prior, geom.radius, Z_TOL, &mut warns);
+                verify::acquit_plunge_by_prior(&path, &prior, geom.radius, Z_TOL, &mut warns);
             }
             // #1444: an undercut answers to the part's solid with the
             // cutter's real head and neck (a stock source: the kept

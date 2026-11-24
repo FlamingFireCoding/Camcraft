@@ -201,6 +201,51 @@ fn a_pecked_dive_of_one_stepdown_per_peck_is_clean() {
     assert!(w.is_empty(), "{w:?}");
 }
 
+/// A feed that starts inside stock - a rapid broke the surface above
+/// its start - answers for its own descent only: the material above
+/// the start is the rapid law's to name (it does, and it holds the
+/// post). The bite is the lesser of the start and the floor.
+#[test]
+fn a_feed_that_a_rapid_already_stood_inside_stock_answers_for_its_own_bite_only() {
+    let w = judge(
+        vec![
+            at(MoveKind::Rapid, (0.0, 0.0, 25.0), (0.0, 0.0, -2.0)),
+            at(MoveKind::Plunge, (0.0, 0.0, -2.0), (0.0, 0.0, -4.4)),
+        ],
+        Some(STEP),
+    );
+    // The rapid's own crime is named - the fixture is the buried start.
+    assert!(w.contains(&Warning::RapidInStock { at: 0 }), "the rapid that broke the surface went unnamed: {w:?}");
+    // The feed's bite is 2.4 mm, one stepdown of its own take.
+    assert!(!w.iter().any(|x| matches!(x, Warning::PlungeTooDeep { .. })), "{w:?}");
+}
+
+#[test]
+fn a_feed_plunge_buried_deeper_than_one_stepdown_is_named_for_its_own_bite() {
+    let w = judge(
+        vec![
+            at(MoveKind::Rapid, (0.0, 0.0, 25.0), (0.0, 0.0, -2.0)),
+            at(MoveKind::Plunge, (0.0, 0.0, -2.0), (0.0, 0.0, -8.0)),
+        ],
+        Some(STEP),
+    );
+    let bites: Vec<(usize, f64, f64)> = w
+        .iter()
+        .filter_map(|x| match x {
+            Warning::PlungeTooDeep { at, mm, limit_mm } => Some((*at, *mm, *limit_mm)),
+            _ => None,
+        })
+        .collect();
+    match bites.as_slice() {
+        [(1, mm, limit_mm)] => {
+            // The bite is 6.0 mm (Z -2 to Z -8), not the 8 mm column.
+            assert!((mm - 6.0).abs() < 1e-9, "the bite reads 6.0 mm, not {mm}");
+            assert!((limit_mm - STEP).abs() < 1e-12);
+        }
+        other => panic!("one finding for the feed's own bite, not {other:?} in {w:?}"),
+    }
+}
+
 #[test]
 fn a_non_finite_stepdown_fails_closed_on_a_dive_in_stock() {
     let w = judge(

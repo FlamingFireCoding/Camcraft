@@ -107,15 +107,20 @@
 //!   else errs toward HIT.
 //! - [`Warning::PlungeTooDeep`] - a feed plunge (d3, #3679) whose disc
 //!   meets stock that the cuts before it did not clear, and whose
-//!   cutter reaches deeper below that stock's surface than one
-//!   stepdown of the operation. The floor is the rest model's own
-//!   `surface_before` under the full disc (a dive beside a tab reads
-//!   the tab's stock top, not the level its centre passed through),
-//!   each sample judged at the tool's height there, the worst sample
-//!   named once. Advisory by the #3525 pattern: the risk is the tool
-//!   load, not a gouge or a collision, so the finding names the dive
-//!   and the post is not held. [`VerifyContext::plunge_stepdown`] gates
-//!   it: `None` keeps every kind that cuts no levels silent.
+//!   cutter takes more of that stock in the one move than one
+//!   stepdown of the operation - the move's own bite, the lesser of
+//!   its start and the floor, so a tip a rapid already stood inside
+//!   stock answers for its own descent only. The floor is the rest
+//!   model's own `surface_before` under the full disc (a dive beside a
+//!   tab reads the tab's stock top, not the level its centre passed
+//!   through), each sample judged at the tool's height there, the
+//!   worst sample named once, and the program ahead's own surface
+//!   acquits a dive the same way it acquits a rapid
+//!   ([`acquit_plunge_by_prior`]). Advisory by the #3525 pattern: the
+//!   risk is the tool load, not a gouge or a collision, so the
+//!   finding names the dive and the post is not held.
+//!   [`VerifyContext::plunge_stepdown`] gates it: `None` keeps every
+//!   kind that cuts no levels silent.
 //! - [`Warning::Envelope`] - the measured verdict of a 3-D finish
 //!   (`Mode::Envelope`, law (f) below): the swept ball envelope cuts
 //!   below, or leaves above, the model surface by more than
@@ -260,7 +265,7 @@ pub use engine::{verify, verify_bodies};
 pub use flute_reach::{flute_note, flute_reach};
 pub use thread_bore::{CHORD_CREDIT, ThreadBore};
 pub use air::cuts_no_material;
-pub use prior::{acquit_by_prior, prior_surface};
+pub use prior::{acquit_by_prior, acquit_plunge_by_prior, prior_surface};
 pub use undercut::acquit_undercut_by_prior;
 pub use prior_traverse::{acquit_traverses_by_prior, Traverse};
 pub use traverse_solids::acquit_traverses_by_solids;
