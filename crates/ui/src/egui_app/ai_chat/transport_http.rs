@@ -131,7 +131,14 @@ impl HttpTransport {
             tools: &tools,
             max_tokens: DEFAULT_MAX_TOKENS,
         };
-        let envelope = send_chat(&client, ep, &chat, key, cancel)?;
+        // The person did not type the automatic model: a failure names it.
+        let envelope = send_chat(&client, ep, &chat, key, cancel).map_err(|e| {
+            if automatic && !cancel.load(Ordering::Relaxed) {
+                format!("automatic model '{model}': {e}")
+            } else {
+                e
+            }
+        })?;
         let text = extract_assistant_text(req.preset.provider, &envelope, "");
         Ok(TransportOutput::AssistantResponse {
             text,

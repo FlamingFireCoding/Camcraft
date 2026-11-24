@@ -285,12 +285,68 @@ pub fn discover_ollama_cancellable(
     ep: &Endpoint,
     cancel: &AtomicBool,
 ) -> Result<String, String> {
-    let answer = client.get_json_cancellable(&ep.with_base_path(""), "/api/tags", cancel)?;
-    for model in probe::parse_tags(&answer)? {
-        if probe_ollama_cancellable(client, ep, &model, cancel)?.tools {
-            return Ok(model);
+    discover_ollama_within(client, ep, cancel, DISCOVERY_TOTAL)
+}
+
+/// One discovery request (the list, or one `/api/show`) may take this long.
+const DISCOVERY_STEP: Duration = Duration::from_secs(5);
+/// The whole selection over all installed models may take this long.
+const DISCOVERY_TOTAL: Duration = Duration::from_secs(20);
+
+/// As `discover_ollama_cancellable`, with the time limit of the whole selection.
+/// Each cause has its own message: the server does not answer, no installed
+/// model can call tools, the probe of a named model failed, the time ended.
+/// A failed probe of one model does not stop the selection.
+pub fn discover_ollama_within(
+    client: &Client,
+    ep: &Endpoint,
+    cancel: &AtomicBool,
+    total: Duration,
+) -> Result<String, String> {
+    const ADVICE: &str = "Run `ollama pull ornith-1.5:35b`, then send again. \
+                          Get models at https://ollama.com/library";
+    let start = crate::clock::Instant::now();
+    let step = Client {
+        offline_only: client.offline_only,
+        timeouts: Timeouts {
+            connect: client.timeouts.connect.min(DISCOVERY_STEP),
+            total: client.timeouts.total.min(DISCOVERY_STEP),
+        },
+    };
+    let answer = step
+        .get_json_cancellable(&ep.with_base_path(""), "/api/tags", cancel)
+        .map_err(|e| {
+            if cancel.load(Ordering::Relaxed) {
+                e
+            } else {
+                format!("Ollama server did not answer its model list ({e}). \
+                         Start the Ollama app or run `ollama serve`, then send again.")
+            }
+        })?;
+    let models = probe::parse_tags(&answer)?;
+    let mut failed: Vec<(String, String)> = Vec::new();
+    for (checked, model) in models.iter().enumerate() {
+        if start.elapsed() >= total {
+            return Err(format!(
+                "Ollama model selection stopped after {} s: {checked} of {} installed models \
+                 checked, and none can call tools. Enter a model name in Model.",
+                total.as_secs(),
+                models.len()
+            ));
+        }
+        match probe_ollama_cancellable(&step, ep, model, cancel) {
+            Ok(caps) if caps.tools => return Ok(model.clone()),
+            Ok(_) => {}
+            Err(e) if cancel.load(Ordering::Relaxed) => return Err(e),
+            Err(e) => failed.push((model.clone(), e)),
         }
     }
-    Err("Ollama has no installed model that can call tools. Run `ollama pull ornith-1.5:35b`, \
-         then send again. Get models at https://ollama.com/library".into())
+    match failed.first() {
+        None => Err(format!("Ollama has no installed model that can call tools. {ADVICE}")),
+        Some((model, reason)) => Err(format!(
+            "Ollama capability probe failed for {} ({model}: {reason}), and no other installed \
+             model can call tools. Enter a model name in Model. {ADVICE}",
+            failed.iter().map(|(m, _)| format!("'{m}'")).collect::<Vec<_>>().join(", ")
+        )),
+    }
 }

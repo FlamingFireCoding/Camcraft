@@ -40,7 +40,7 @@ fn read_request(s: &mut TcpStream) -> String {
     }
 }
 
-fn recorded_ollama(
+pub(super) fn recorded_ollama(
     steps: Vec<(&'static str, Option<&'static str>, Value)>,
 ) -> (Endpoint, std::thread::JoinHandle<Vec<String>>) {
     let (listener, ep) = listener();
@@ -61,6 +61,8 @@ fn recorded_ollama(
                     Err(e) => panic!("fixture accept: {e}"),
                 }
             };
+            // On macOS an accepted socket inherits the listener's nonblocking mode.
+            stream.set_nonblocking(false).expect("blocking stream");
             let request = read_request(&mut stream);
             let matches_line = request.lines().next() == Some(request_line);
             let matches_model = model.is_none_or(|model| {
@@ -87,7 +89,7 @@ fn recorded_ollama(
     (ep, server)
 }
 
-fn local_request(id: &str) -> TransportRequest {
+pub(super) fn local_request(id: &str) -> TransportRequest {
     let preset = default_presets().into_iter().find(|p| p.id == id).expect("local preset");
     TransportRequest {
         model: preset.default_model.clone(),
@@ -243,7 +245,7 @@ impl ChatTransport for LoopbackTransport {
     }
 }
 
-fn listener() -> (TcpListener, Endpoint) {
+pub(super) fn listener() -> (TcpListener, Endpoint) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("loopback");
     let ep = Endpoint::parse(&format!(
         "http://{}/v1",
