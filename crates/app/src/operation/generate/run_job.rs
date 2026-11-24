@@ -32,10 +32,12 @@ pub fn run_job(mut job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         .as_ref()
         .and_then(|r| r.as_ref().ok())
         .and_then(AreaCtx::outside_clearing_stock);
+    let stock_band = StockBandRefusal::of(&job);
     let _span = tracing::info_span!("generate", op = %job.op_name).entered();
     let started = crate::clock::Instant::now();
     tracing::debug!(kind = %kind, "generation started");
     let (mut path, warns) = pocket_reach(&job).and_then(|()| run_job_arms(job))
+        .map_err(|e| match stock_band { Some(band) => band.name(e), None => e })
         .map_err(|e| name_outside_entry_refusal(e, outside_clearing))
         .map_err(|e| crate::operation::body_judged::name_enclosure(e, &judged_tool, body.as_ref()))
         .map_err(|e| e.map_location(|p| frame.map_or(p, |f| f.to_world(p))))
@@ -61,6 +63,86 @@ pub fn run_job(mut job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         }
     }
     Ok((path, warns))
+}
+
+/// #3791: document context for a refused stock-source clearing job.
+/// Keep the generator's verdict and error location; only name its area.
+struct StockBandRefusal {
+    region: Region,
+    area: Option<AreaCtx>,
+    diameter: f64,
+    leave: f64,
+    unit: crate::units::Unit,
+}
+
+impl StockBandRefusal {
+    fn of(job: &GenJob) -> Option<Self> {
+        if !matches!(job.src, SrcRef::Stock) || job.keep_parts.is_empty() {
+            return None;
+        }
+        let leave = match &job.params {
+            OpParams::Pocket { stock_to_leave, .. }
+            | OpParams::Adaptive2D { stock_to_leave, .. }
+            | OpParams::Offset2D { stock_to_leave, .. } => *stock_to_leave,
+            _ => return None,
+        };
+        Some(Self {
+            region: job.picked_region.as_ref()?.as_ref().ok()?.clone(),
+            area: job.area.as_ref().and_then(|a| a.as_ref().ok()).cloned(),
+            diameter: job.tool.diameter,
+            leave,
+            unit: job.unit,
+        })
+    }
+
+    fn name(self, e: GenError) -> GenError {
+        e.map_msg(|m| {
+            if m != "pocket is narrower than the tool" {
+                return m;
+            }
+            let Ok(region) = apply_area_controls(self.region, self.area.as_ref()) else {
+                return m;
+            };
+            // The existing band check must agree: avoid/rest refusals may
+            // describe an area smaller than the document's stock band.
+            if !region.offset(-(self.diameter * 0.5 + self.leave)).is_ok_and(|r| r.is_empty()) {
+                return m;
+            }
+            let Ok(pieces) = machining2d::unreached_pieces(&region, self.diameter * 0.5 + self.leave) else {
+                return m;
+            };
+            if pieces.is_empty() {
+                return m;
+            }
+            let len = |v| format!("{} {}", crate::units::len(v, self.unit, 3), self.unit.suffix());
+            let width = rectangular_band_width(&region)
+                .map(|w| format!(" (minimum side width {})", len(w)))
+                .unwrap_or_default();
+            format!(
+                "the stock band around the part{width} is narrower than the tool ({} diameter, {} stock to leave per wall): no cutter position fits. Use a smaller tool or a wider stock margin, or cut the outside with a 2D Contour.",
+                len(self.diameter), len(self.leave),
+            )
+        })
+    }
+}
+
+/// Only quote a side margin for a rectangular stock/part ring. Bounds
+/// alone cannot measure curved, concave or multiple-island bands.
+fn rectangular_band_width(region: &Region) -> Option<f64> {
+    if region.loops().len() != 2 {
+        return None;
+    }
+    let bounds = |ccw| {
+        let ring = region.loops().iter().find(|l| l.is_ccw() == ccw)?;
+        let (lo, hi) = Region::new(vec![ring.clone()]).ok()?.bounds()?;
+        let area = (hi.x - lo.x) * (hi.y - lo.y);
+        ((ring.area().abs() - area).abs() < 1e-6).then_some((lo, hi))
+    };
+    let (lo, hi) = bounds(true)?;
+    let (inner_lo, inner_hi) = bounds(false)?;
+    let width = (inner_lo.x - lo.x).min(inner_lo.y - lo.y)
+        .min(hi.x - inner_hi.x).min(hi.y - inner_hi.y);
+    (width.is_finite() && width > 0.0).then_some(width)
 }
 
 /// The ladder proves only cutter-radius clearance. Until it can widen
