@@ -78,7 +78,7 @@ fn face() -> OpParams {
     OpParams::Face {
         holes: Default::default(),
         tilt: None,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         stepover: 3.0,
         clearance_z: Height::fixed(CLEAR),
         cut_z: Height::fixed(10.0),
@@ -93,6 +93,8 @@ fn face() -> OpParams {
 fn finish() -> OpParams {
     OpParams::Finish3D {
         pattern: FinishPattern::Parallel,
+        direction_angle: 0.0,
+        pass_start: camcraft_app::machining2d::PassStart::Auto,
         stepover: Some(2.0),
         tolerance: 0.05,
         clearance_z: Height::fixed(CLEAR),
@@ -110,6 +112,7 @@ fn finish() -> OpParams {
         steep_stepover: None,
         pencil_reference: None,
         fill_openings: None,
+        waterlines: true,
     }
 }
 
@@ -277,7 +280,7 @@ fn a_clamp_on_the_old_origin_to_entry_line_is_judged_by_the_first_traverse_law_o
     let op = model::find_by_name(&world, "Face1").expect("op");
     assert_eq!(camcraft_app::operation::status_of(&world, &op), OpStatus::Ok);
     let cached = model::toolpath_of(&world, &op).expect("cached path");
-    let first = Warning::FirstTraverseLow { at: 0, height_mm: CLEAR, top_mm: 40.0, fixture: true };
+    let first = Warning::FirstTraverseLow { at: 0, height_mm: CLEAR, top_mm: 40.0, fixture: true, tilted: false };
     assert_eq!(cached.warnings, vec![first], "no fixture verdict on a move the machine never makes");
     assert_eq!(cached.path.moves, t.moves, "the clamp routed a link");
     let err = posting::post_setup_unwritten(&world).expect_err("the clamp over the plane holds the post");

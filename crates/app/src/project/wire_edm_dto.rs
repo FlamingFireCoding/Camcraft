@@ -77,6 +77,10 @@ pub struct WireContourDto {
     /// file written before it reads unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub four_axis: Option<WireFourAxisDto>,
+    /// Sharp inside corners at the wire's radius (#3207); absent is
+    /// off, so every file written before it reads unchanged.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sharp_corners: bool,
 }
 
 /// One skim: its condition id (stated - no default) and whether it
@@ -195,6 +199,7 @@ impl WireContourDto {
             burnout_clearance: p.burnout,
             clearance: p.clearance,
             skims: p.skims.iter().map(|s| WireSkimDto { condition: s.condition.clone(), reverse: s.reverse }).collect(),
+            sharp_corners: p.sharp_corners,
         }
     }
 
@@ -236,6 +241,7 @@ impl WireContourDto {
             burnout: self.burnout_clearance,
             clearance: self.clearance,
             skims: self.skims.iter().map(|s| WireSkim { condition: s.condition.clone(), reverse: s.reverse }).collect(),
+            sharp_corners: self.sharp_corners,
         })
     }
 }
@@ -261,6 +267,7 @@ mod tests {
             burnout: None,
             clearance: crate::operation::DEFAULT_CLEARANCE,
             skims: Vec::new(),
+            sharp_corners: false,
         }
     }
 

@@ -56,8 +56,9 @@ fn contour(clearance: f64, retract: f64) -> OpParams {
         tab_height: 0.0,
         entry: camcraft_app::machining3d::Entry3D::Plunge,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 
@@ -79,7 +80,7 @@ fn slot(clearance: f64) -> OpParams {
         plunge_feed: 200.0,
         climb: true,
         entry: camcraft_app::machining3d::Entry3D::Plunge,
-        helix_radius: 1.0,
+        helix_radius: 1.0, blend_turns: false, blend_radius: None,
         tilt: None,
         extend_start: 0.0,
         extend_end: 0.0,
@@ -89,7 +90,7 @@ fn slot(clearance: f64) -> OpParams {
 fn face(cut: f64) -> OpParams {
     OpParams::Face {
         holes: Default::default(),
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         tilt: None,
         stepover: 4.0,
         clearance_z: Height::fixed(20.0),
@@ -142,7 +143,7 @@ fn traverses_convicted(tp: &camcraft_app::schema::Toolpath, plane: f64) -> Vec<u
 
 /// #2901: the first-traverse verdict for the plane `LOW` under the
 /// stock top: the first rapid comes from an unknown X/Y at that plane.
-const FIRST_LOW: Warning = Warning::FirstTraverseLow { at: 0, height_mm: LOW, top_mm: STOCK_TOP, fixture: false };
+const FIRST_LOW: Warning = Warning::FirstTraverseLow { at: 0, height_mm: LOW, top_mm: STOCK_TOP, fixture: false, tilted: false };
 
 fn first_traverse_refused(tp: &camcraft_app::schema::Toolpath) -> bool {
     tp.warnings.contains(&FIRST_LOW)
@@ -200,8 +201,15 @@ fn a_slot_traverse_at_a_clearance_plane_inside_the_stock_is_convicted_and_holds_
     let (world, mut history) = bench();
     add(&world, &mut history, "Op2Slot", SrcRef::Stock, slot(LOW));
     let tp = cache(&world, "Op2Slot");
-    assert!(!traverses_convicted(&tp, LOW).is_empty(), "{:?}", tp.warnings);
-    assert!(clearance_note(&tp).is_some(), "{:?}", tp.path.notes);
+    // #2906: the slot cuts its whole channel, round ends included, so its
+    // one lateral traverse (between the levels, inside the channel) rides
+    // over its own cut and is acquitted; before, the uncut crescents of
+    // the round ends stood in its way. The plane is still convicted: the
+    // first traverse (#2901) and the rapid from the plane down into the
+    // stock (move 1), and the post is held.
+    assert!(traverses_convicted(&tp, LOW).is_empty(), "{:?}", tp.warnings);
+    assert!(first_traverse_refused(&tp), "{:?}", tp.warnings);
+    assert!(tp.warnings.contains(&Warning::RapidInStock { at: 1 }), "{:?}", tp.warnings);
     post_is_held(&world, "slot", THROUGH);
 }
 

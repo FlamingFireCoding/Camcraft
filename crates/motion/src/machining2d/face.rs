@@ -6,8 +6,10 @@ use crate::cl::{MoveKind, PathBuilder, Toolpath};
 use crate::geo2d::{Point2, Region};
 use crate::geometry::Point3;
 
-use super::blend::plan_reversals;
+use super::blend::{Turn, plan_reversals};
 use super::face_holes::{self, FaceHoles};
+use super::face_keep;
+pub use super::face_keep::FaceKeep;
 use super::levels::cut_levels_under;
 // The enum moved to its own module (#261 part 2); every
 // `super::face::GenError` path keeps working through this re-export.
@@ -49,6 +51,12 @@ pub struct FaceParams {
     /// in the path's notes. `false` - every pre-M11.1 file - is the
     /// sharp serpentine, unchanged to the byte.
     pub blend_turns: bool,
+    /// The turn's arc radius (#1759), read only with `blend_turns`:
+    /// `None` is the semicircle of half the row spacing every earlier
+    /// file turns on. A smaller radius turns on two quarter arcs joined
+    /// by a straight step (`blend.rs`); a radius is held to
+    /// `corner_arc_radius`'s door.
+    pub blend_radius: Option<f64>,
     /// How a row meets a hole in the region (M13.11): lifted over at
     /// the clearance plane (the default), cut across when the hole is
     /// air, or ignored - the pre-M13.11 band serpentine. A region with
@@ -101,6 +109,9 @@ impl FaceParams {
         if self.feed <= 0.0 || self.plunge_feed <= 0.0 {
             return Err(GenError::Invalid("feeds must be positive".into()));
         }
+        if self.blend_turns {
+            super::fillet_tally::corner_arc_radius(self.blend_radius, self.tool_diameter).map_err(GenError::Invalid)?;
+        }
         Ok(())
     }
 }
@@ -149,6 +160,22 @@ pub fn face_over(
     lead: f64,
     solid: Option<&Region>,
 ) -> Result<Toolpath, GenError> {
+    face_over_kept(region, p, lead, solid, None)
+}
+
+/// [`face_over`] that keeps the whole tool clear of protected items
+/// (#3343): at each level the rows are cut short at the [`FaceKeep`]
+/// keep-out and the facer links over it at the clearance plane. A level
+/// with no row piece left would leave the face above Cut Z, so the cut is
+/// refused by name with the depth reached (#3526). `None` is
+/// [`face_over`] to the byte.
+pub fn face_over_kept(
+    region: &Region,
+    p: &FaceParams,
+    lead: f64,
+    solid: Option<&Region>,
+    keep: Option<&FaceKeep<'_>>,
+) -> Result<Toolpath, GenError> {
     p.validate()?;
     if !(lead.is_finite() && lead >= 0.0) {
         return Err(GenError::Invalid("the facing lead-in must be finite and not negative".into()));
@@ -167,7 +194,7 @@ pub fn face_over(
 
     // Rows are the same at every level, so the reversal plan is too:
     // decided once, its refusals stated once.
-    let (turns, blend_notes) = plan_reversals(&ys, r, p.blend_turns);
+    let (turns, blend_notes) = plan_reversals(&ys, r, p.blend_turns, p.blend_radius);
 
     let start_x = if p.climb { x_in - lead } else { x_out + lead };
     // The rows' extents and their pieces around the bridged holes,
@@ -212,7 +239,6 @@ pub fn face_over(
     // call is a G00 there - never a feed from wherever the tool change
     // left the spindle. Facing starts the cursor where the others do.
     let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
-    b.push(MoveKind::Rapid, Point3::new(entry, ys[0], p.clearance_z), None);
     for n in blend_notes {
         b.note(n);
     }
@@ -225,15 +251,22 @@ pub fn face_over(
         ));
     }
     let mut lifted = false;
-    for (k, &z) in zs.iter().enumerate() {
-        if k > 0 {
+    let mut tally = face_keep::Tally::default();
+    for &z in &zs {
+        // #3343: the rows of this level, cut short at the protected keep-out.
+        let Some(lv) = face_keep::level(keep, z, &rows, &pieces, (entry, ys[0]), &mut tally)? else {
+            continue;
+        };
+        let (ex, ey) = lv.start;
+        if tally.levels > 1 {
             // New material is engaged from the air, never from under:
             // lift to clearance and re-enter above the row's start.
             let at = b.at();
             b.push(MoveKind::Rapid, Point3::new(at.x, at.y, p.clearance_z), None);
-            b.push(MoveKind::Rapid, Point3::new(entry, ys[0], p.clearance_z), None);
         }
-        b.push(MoveKind::Plunge, Point3::new(entry, ys[0], z), Some(p.plunge_feed));
+        b.push(MoveKind::Rapid, Point3::new(ex, ey, p.clearance_z), None);
+        b.push(MoveKind::Plunge, Point3::new(ex, ey, z), Some(p.plunge_feed));
+        let pieces = lv.pieces.as_ref();
         for (i, y) in ys.iter().enumerate() {
             let forward = p.climb == (i % 2 == 0);
             let end_x = rows[i].2;
@@ -251,28 +284,46 @@ pub fn face_over(
                 let to = Point3::new(end_x, y1, z);
                 let at = b.at();
                 let next_whole = pieces[i + 1].first().is_some_and(|&(x0, _)| x0 == end_x);
-                if at.x != end_x || at.y != *y || !next_whole {
-                    // A hole took the row's end or the next row's start:
-                    // no reversal to ride, the link takes the tool over.
+                if at.x != end_x || at.y != *y || !next_whole || !lv.step_clear(end_x, *y, y1) {
+                    // A hole or a keep-out took the row's end or the next
+                    // row's start, or the step crosses a keep-out: no
+                    // reversal to ride, the link takes the tool over.
                     lifted = true;
                     if let Some(&(x0, _)) = pieces[i + 1].first() {
                         link(&mut b, Point3::new(x0, y1, z), p);
                     }
-                } else if turns.get(i).copied().unwrap_or(false) {
+                } else if let Some(turn) = turns.get(i).copied().flatten() {
                     // Blended reversal: the step's own endpoints, one
                     // semicircle bulging away from the footprint - a
                     // left (ccw) turn off a +X row, a right (cw) one
                     // off -X.
-                    let center = Point2::new(end_x, (*y + y1) * 0.5);
-                    b.push_arc(MoveKind::Feed, to, Some(p.feed), center, forward);
+                    match turn {
+                        Turn::Semicircle => {
+                            let center = Point2::new(end_x, (*y + y1) * 0.5);
+                            b.push_arc(MoveKind::Feed, to, Some(p.feed), center, forward);
+                        }
+                        // #1759: two quarter arcs of the radius asked
+                        // for, the straight step between them `rho`
+                        // farther out than the sharp step stood.
+                        Turn::Corners(rho) => {
+                            let out = end_x + if forward { rho } else { -rho };
+                            let (c0, c1) = (Point2::new(end_x, *y + rho), Point2::new(end_x, y1 - rho));
+                            b.push_arc(MoveKind::Feed, Point3::new(out, c0.y, z), Some(p.feed), c0, forward);
+                            b.push(MoveKind::Feed, Point3::new(out, c1.y, z), Some(p.feed));
+                            b.push_arc(MoveKind::Feed, to, Some(p.feed), c1, forward);
+                        }
+                    }
                 } else {
                     b.push(MoveKind::Feed, to, Some(p.feed));
                 }
             }
         }
     }
-    if lifted {
+    if lifted && !forbidden.is_empty() {
         b.note("facing rows lifted over the region's holes at the clearance plane");
+    }
+    for n in tally.finish(keep)? {
+        b.note(n);
     }
     let at = b.at();
     b.push(MoveKind::Rapid, Point3::new(at.x, at.y, p.clearance_z), None);

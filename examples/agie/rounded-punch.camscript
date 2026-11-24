@@ -16,5 +16,11 @@ cam.call("add_operation", {
     start: [0, -21], capture: true
   }
 });
+// Select the closed chain of the drawing as the punch outline.
+const outline = cam.call("list_features", {model: "rounded-punch", kinds: ["chains"]})
+  .chains.find(chain => chain.closed);
+cam.call("set_operation_geometry", {operation: "Punch1",
+  picks: [{model: "rounded-punch", id: outline.id}]
+});
 cam.generate();
-cam.post({to: "ROUND20", cps: "Agie native wire EDM", options: {separationLengthMm: 1.0}});
+cam.post({to: "ROUND20", cps: "Native wire EDM job files", options: {separationLengthMm: 1.0}});

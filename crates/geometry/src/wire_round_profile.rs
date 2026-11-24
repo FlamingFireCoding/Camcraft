@@ -1,24 +1,28 @@
-//! Placed DXF round profiles and circumscribed preview polygons; classical circle and tangent geometry.
+//! A selected DXF circle, tangent racetrack or convex tangent loop for a wire punch, and its
+//! circumscribed preview polygon. Provenance: classical circle and tangent-line geometry (#2022,
+//! #2983).
 use crate::dxf::Primitive;
 use crate::geo2d::{Loop, Point2};
-use crate::geometry::{Point3, Triangle};
-use crate::{sketch_chains::ClosedChain, sketch_data::SketchData};
+use crate::sketch_chains::ClosedChain;
+use std::f64::consts::PI;
 
 mod tangent;
-use std::f64::consts::PI;
-pub use tangent::{TangentProfile, TangentSegment};
+pub use tangent::{MAX_SEGMENTS, TangentProfile, TangentSegment};
 
+/// The joint and tangency tolerance in mm.
 const FIT: f64 = 1e-8;
-const SAG: f64 = 0.000025;
+/// The largest radial excess of the preview polygon over a true arc, in mm.
+pub const PREVIEW_SAG: f64 = 0.000025;
 
-#[derive(Clone, Copy, Debug)]
+/// The centre of a circle, or the two cap centres of a racetrack.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Spine {
     Circle(Point2),
     Stadium([Point2; 2]),
 }
 
-/// A circle or a tangent stadium from authoritative DXF primitives.
-#[derive(Clone, Copy, Debug)]
+/// A circle or a tangent racetrack, read from the analytic DXF primitives.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RoundProfile {
     pub spine: Spine,
     pub radius: f64,
@@ -29,40 +33,37 @@ fn distance(a: Point2, b: Point2) -> f64 {
 }
 
 impl RoundProfile {
-    /// Read a source circle or prove that four drawing primitives form a capsule.
-    /// A joint within the drawing tolerance alone does not establish tangency.
-    pub fn from_sketch(data: &SketchData) -> Result<Self, String> {
-        match WireProfile::from_sketch(data)? {
-            WireProfile::Round(shape) => Ok(shape),
-            WireProfile::Tangent(_) => Err("The DXF profile is not a circle or racetrack".into()),
+    /// Read one CIRCLE, or prove that four primitives form a racetrack: two
+    /// straight sides tangent to two semicircles of the same radius. A joint
+    /// inside the drawing tolerance alone does not prove tangency.
+    ///
+    /// # Errors
+    /// Refuses any other chain, an ambiguous nesting and a joint gap.
+    pub fn from_chain(chain: &ClosedChain) -> Result<Self, String> {
+        let failure = "A wire DXF punch with arcs needs one CIRCLE, or one closed racetrack of two tangent lines and two semicircles";
+        if !chain.nesting.as_ref().is_ok_and(|n| n.depth == 0) || chain.max_gap > FIT {
+            return Err(failure.into());
         }
-    }
-
-    pub fn prism(&self, ring: &Loop, bottom: f64, top: f64) -> Vec<Triangle> {
-        WireProfile::Round(*self).prism(ring, bottom, top)
-    }
-
-    fn from_chain(data: &SketchData, chain: &ClosedChain) -> Result<Self, String> {
-        let failure = "Wire DXF requires one CIRCLE or one closed racetrack of two tangent lines and two semicircles";
-        if let [entity] = data.primitives()
-            && let Primitive::Circle { center, radius } = entity.primitive
+        if let [segment] = chain.segments.as_slice()
+            && let Primitive::Circle { center, radius } = segment.curve
         {
             if !(0.5..=20.).contains(&radius) {
-                return Err("Wire DXF circle radius must be from 0.5 to 20 mm".into());
+                return Err("The wire DXF circle radius must be from 0.5 to 20 mm".into());
             }
             return Ok(Self {
                 spine: Spine::Circle(center),
                 radius,
             });
         }
-        if data.primitives().len() != 4 || chain.segments.len() != 4 {
+        if chain.segments.len() != 4 {
             return Err(failure.into());
         }
         let mut arcs = Vec::new();
         let mut lines = Vec::new();
         for segment in &chain.segments {
             match segment.curve {
-                Primitive::Line { start, end } => lines.push([start, end]),
+                Primitive::Line { .. } => lines.push([segment.start, segment.end]),
+                // The chain is counter-clockwise, so a convex cap sweeps +π.
                 Primitive::Arc {
                     center,
                     radius,
@@ -82,7 +83,7 @@ impl RoundProfile {
             radius: *r,
         };
         if !(0.5..=20.).contains(r) || (r - s).abs() > FIT || distance(*a, *b) < 6.0 {
-            return Err("Wire DXF requires equal cap radii from 0.5 to 20 mm and straight sides at least 6 mm long".into());
+            return Err("The wire DXF racetrack needs equal cap radii from 0.5 to 20 mm and straight sides at least 6 mm long".into());
         }
         let [ar, br, bl, al] = shape.tangencies([*a, *b]);
         let close = |a, b| distance(a, b) <= FIT;
@@ -98,6 +99,7 @@ impl RoundProfile {
         Ok(shape)
     }
 
+    /// The circle centre twice, or the two cap centres.
     pub fn centers(&self) -> [Point2; 2] {
         match self.spine {
             Spine::Circle(c) => [c, c],
@@ -105,6 +107,7 @@ impl RoundProfile {
         }
     }
 
+    /// Move the centres with a rigid transform. The radius does not change.
     pub fn place_centers(&mut self, transform: impl Fn(Point2) -> Point2) {
         self.spine = match self.spine {
             Spine::Circle(c) => Spine::Circle(transform(c)),
@@ -112,7 +115,8 @@ impl RoundProfile {
         };
     }
 
-    /// Tangencies in CCW order: first straight side, second cap, return side, first cap.
+    /// Tangency points in counter-clockwise order: the first straight side,
+    /// the cap at `b`, the return side, and the cap at `a`.
     pub fn tangencies(&self, [a, b]: [Point2; 2]) -> [Point2; 4] {
         let scale = self.radius / distance(a, b);
         let x = (b.y - a.y) * scale;
@@ -125,10 +129,14 @@ impl RoundProfile {
         ]
     }
 
-    /// Construct a circumscribed preview. Intersections of consecutive tangents
-    /// enclose the entire true arc with radial excess at most 0.000025 mm.
+    /// A circumscribed preview polygon. The intersections of consecutive
+    /// tangents enclose each true arc with a radial excess of at most
+    /// [`PREVIEW_SAG`].
+    ///
+    /// # Errors
+    /// Refuses a radius that needs more than 1024 sides for each half.
     pub fn preview(&self) -> Result<Loop, String> {
-        let n = (PI / (2. * (self.radius / (self.radius + SAG)).acos())).ceil();
+        let n = (PI / (2. * (self.radius / (self.radius + PREVIEW_SAG)).acos())).ceil();
         if !n.is_finite() || !(2.0..=1024.0).contains(&n) {
             return Err("The DXF arc exceeds the verified wire preview resolution".into());
         }
@@ -157,140 +165,69 @@ impl RoundProfile {
     }
 }
 
-/// The authoritative curves of one placed Wire Contour punch.
-#[derive(Clone, Debug)]
+/// The analytic curves of one selected wire punch chain (#2983).
+#[derive(Clone, Debug, PartialEq)]
 pub enum WireProfile {
+    /// A circle or a racetrack: the control-checked shapes of #2022.
     Round(RoundProfile),
+    /// Any other convex loop of tangent lines and counter-clockwise arcs.
     Tangent(TangentProfile),
 }
 
 impl WireProfile {
-    pub fn from_sketch(data: &SketchData) -> Result<Self, String> {
-        if data.primitives().len() > 128 {
-            return Err("The wire profile exceeds 128 source segments".into());
-        }
-        let chains = data.chains();
-        let [chain] = chains.closed.as_slice() else {
-            return Err("Wire DXF needs one complete simple closed profile".into());
-        };
-        if data.skipped_total() != 0
-            || !chains.open.is_empty()
-            || !chains.rejected.is_empty()
-            || !chain.nesting.as_ref().is_ok_and(|n| n.depth == 0)
-            || chain.max_gap > FIT
-        {
-            return Err("Wire DXF needs one complete simple closed profile".into());
-        }
-        match RoundProfile::from_chain(data, chain) {
+    /// Read a circle or racetrack first. A different chain must be a convex
+    /// tangent loop. A single circle keeps its own refusal.
+    ///
+    /// # Errors
+    /// Refuses an ambiguous nesting, a joint gap and every other chain.
+    pub fn from_chain(chain: &ClosedChain) -> Result<Self, String> {
+        match RoundProfile::from_chain(chain) {
             Ok(shape) => Ok(Self::Round(shape)),
-            Err(reason) if matches!(data.primitives(), [e] if matches!(e.primitive, Primitive::Circle { .. })) => {
-                Err(reason)
+            Err(why)
+                if chain.segments.len() == 1
+                    || !chain.nesting.as_ref().is_ok_and(|n| n.depth == 0)
+                    || chain.max_gap > FIT =>
+            {
+                Err(why)
             }
-            Err(_) if data.primitives().len() == chain.segments.len() => {
-                TangentProfile::from_chain(chain).map(Self::Tangent)
-            }
-            Err(_) => Err("The wire profile must use every source segment".into()),
+            Err(_) => TangentProfile::from_chain(chain).map(Self::Tangent),
         }
     }
 
+    /// Move the profile with a rigid transform.
     pub fn place(&mut self, transform: impl Fn(Point2) -> Point2) {
         match self {
-            Self::Round(r) => r.place_centers(transform),
-            Self::Tangent(t) => t.place(transform),
+            Self::Round(shape) => shape.place_centers(transform),
+            Self::Tangent(shape) => shape.place(transform),
         }
     }
 
-    pub fn preview(&self) -> Result<Loop, String> {
+    /// The exact axis-aligned bounds of the nominal curves.
+    pub fn bounds(&self) -> [Point2; 2] {
         match self {
-            Self::Round(r) => r.preview(),
-            Self::Tangent(t) => t.preview(),
-        }
-    }
-
-    /// A convex fan at both ends and two outward triangles per wall.
-    pub fn prism(&self, ring: &Loop, bottom: f64, top: f64) -> Vec<Triangle> {
-        let mid = match self {
             Self::Round(shape) => {
                 let [a, b] = shape.centers();
-                Point2::new((a.x + b.x) / 2., (a.y + b.y) / 2.)
+                let r = shape.radius;
+                [
+                    Point2::new(a.x.min(b.x) - r, a.y.min(b.y) - r),
+                    Point2::new(a.x.max(b.x) + r, a.y.max(b.y) + r),
+                ]
             }
-            Self::Tangent(_) => {
-                let n = ring.points().len() as f64;
-                Point2::new(
-                    ring.points().iter().map(|p| p.x / n).sum(),
-                    ring.points().iter().map(|p| p.y / n).sum(),
-                )
-            }
-        };
-        let at = |p: Point2, z| Point3::new(p.x, p.y, z);
-        let mut facets = Vec::with_capacity(4 * ring.points().len());
-        for (&p, &q) in ring
-            .points()
-            .iter()
-            .zip(ring.points().iter().cycle().skip(1))
-        {
-            let (l, r, h, k) = (at(p, bottom), at(q, bottom), at(p, top), at(q, top));
-            facets.extend([
-                Triangle::new(at(mid, bottom), r, l),
-                Triangle::new(at(mid, top), h, k),
-                Triangle::new(l, r, k),
-                Triangle::new(l, k, h),
-            ]);
+            Self::Tangent(shape) => shape.bounds(),
         }
-        facets
+    }
+
+    /// A circumscribed preview polygon within [`PREVIEW_SAG`] of each arc.
+    ///
+    /// # Errors
+    /// Refuses a profile that needs too many preview vertices.
+    pub fn preview(&self) -> Result<Loop, String> {
+        match self {
+            Self::Round(shape) => shape.preview(),
+            Self::Tangent(shape) => shape.preview(),
+        }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_circle_preview_stays_outside_the_true_wire_boundary() {
-        let center = Point2::new(3.5, -2.0);
-        let shape = RoundProfile {
-            spine: Spine::Circle(center),
-            radius: 10.0,
-        };
-        let circle = shape.preview().unwrap();
-        for (&p, &q) in circle
-            .points()
-            .iter()
-            .zip(circle.points().iter().cycle().skip(1))
-        {
-            let signed =
-                ((q.x - p.x) * (center.y - p.y) - (q.y - p.y) * (center.x - p.x)) / distance(p, q);
-            assert!((signed - shape.radius).abs() < 1e-9);
-            assert!(distance(center, p) <= shape.radius + SAG + 1e-9);
-        }
-    }
-
-    #[test]
-    fn the_preview_contains_each_true_cap_with_bounded_excess() {
-        let shape = RoundProfile {
-            spine: Spine::Stadium([Point2::new(1., -2.), Point2::new(13., 14.)]),
-            radius: 10.,
-        };
-        let ring = shape.preview().unwrap();
-        let [a, b] = shape.centers();
-        let dx = b.x - a.x;
-        let dy = b.y - a.y;
-        for (&p, &q) in ring
-            .points()
-            .iter()
-            .zip(ring.points().iter().cycle().skip(1))
-        {
-            // A capsule is the convex hull of its two circles. A CCW edge
-            // contains both discs if their centers clear its inner half-plane.
-            let length = distance(p, q);
-            for center in [a, b] {
-                let signed =
-                    ((q.x - p.x) * (center.y - p.y) - (q.y - p.y) * (center.x - p.x)) / length;
-                assert!(signed >= shape.radius - 1e-9, "{signed}");
-            }
-            let t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)).clamp(0., 1.);
-            let spine = Point2::new(a.x + t * dx, a.y + t * dy);
-            assert!(distance(p, spine) <= shape.radius + SAG + 1e-9);
-        }
-    }
-}
+mod tests;

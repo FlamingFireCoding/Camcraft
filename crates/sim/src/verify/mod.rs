@@ -171,14 +171,19 @@ mod contact;
 mod crossing;
 mod cut_index;
 mod engine;
+mod entry_advice;
 mod excess;
 mod fine_bore;
 mod finish;
 mod first_traverse;
+mod first_traverse_posed;
+// #3525: a cut deeper than the flute length, named by its cause.
+mod flute_reach;
 mod hidden;
 mod hidden_span;
 mod hole_wall;
 mod laws;
+mod live_traverse;
 mod mesh_posed;
 mod mesh_steel;
 mod midpose;
@@ -191,11 +196,21 @@ mod prior;
 mod prior_traverse;
 mod body_bands;
 mod probe;
+// #3367: the tool meridian's atoms against `Cutter::atoms`.
+#[cfg(test)]
+mod probe_meridian_tests;
 mod rapids;
 mod rapids_posed;
 mod rapids_radial;
 mod reach;
+#[cfg(test)]
+mod reach_reference;
+#[cfg(test)]
+mod reach_tests;
+mod sample_grid;
 mod rest;
+// #3615: the exact Y-slab point-location index over a cached slice.
+mod slice_index;
 mod rotary;
 mod rotary_geom;
 mod seat;
@@ -214,6 +229,8 @@ mod thread_bore;
 mod turn_cells;
 mod turn_hidden;
 mod types;
+// #1444: the undercut cutters' Z-move and neck law.
+mod undercut;
 mod upright;
 mod workholding;
 mod corner_relief;
@@ -221,16 +238,21 @@ mod corner_relief;
 pub use corner_relief::CornerReliefZone;
 
 pub use avoid::{AVOID_PAD, AVOID_VERIFY_TOL, AvoidItem, AvoidSpec, avoid_hits, avoid_hits_named};
-pub use excess::excess_floor;
-pub use first_traverse::{box_top, first_traverse_low};
-pub use types::{FixturePart, Mode, VerifyContext, Warning};
+pub use excess::{band_growth, excess_floor, excess_floor_for, strict_floor, PROMISED_CHORD, WIDE_CHORD_LIMIT};
+pub use first_traverse::{box_top, first_traverse_low, first_traverse_low_swept, swept_top, SweptSteel};
+pub use first_traverse_posed::{first_traverse_low_posed, posed_top, PosedTurn, PosedWork};
+pub use live_traverse::{live_first_traverse, LiveHit, LiveSolids, LiveStart, LiveUnjudged};
+pub use entry_advice::{AdvisedEntry, entry_advice};
+pub use types::{FallbackCause, FixturePart, Mode, VerifyContext, Warning};
 #[doc(hidden)]
 pub use crossing::{crossed_pairs, crossed_pairs_all};
 pub use laws::CROSSING_TOUCH;
 pub use engine::{verify, verify_bodies};
+pub use flute_reach::{flute_note, flute_reach};
 pub use thread_bore::{CHORD_CREDIT, ThreadBore};
 pub use air::cuts_no_material;
 pub use prior::{acquit_by_prior, prior_surface};
+pub use undercut::acquit_undercut_by_prior;
 pub use prior_traverse::{acquit_traverses_by_prior, Traverse};
 pub use traverse_solids::acquit_traverses_by_solids;
 pub use stock_top::acquit_by_stock_top;

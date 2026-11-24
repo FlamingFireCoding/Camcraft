@@ -234,7 +234,7 @@ fn wire_edm_2axis_and_4axis_ruled_cut_like_baked() {
             top_z: Height::of(HeightReference::TopOfModel, 0.0),
             bottom_z: Height::of(HeightReference::BottomOfModel, 0.0),
             condition: "C110".into(), side: WireSide::Punch, start: Some([-25.0, 0.0]), tabs: None, capture: true, both_pieces_restrained: false, stock_centered_in_xy_travel: false,
-            taper_deg: 0.0, burnout: None, clearance: camcraft_app::operation::DEFAULT_CLEARANCE, skims: Vec::new(),
+            taper_deg: 0.0, burnout: None, clearance: camcraft_app::operation::DEFAULT_CLEARANCE, skims: Vec::new(), sharp_corners: false,
             four_axis: four_axis.then(|| WireFourAxis { pairing: WirePairingRule::ArcLength, verify_tolerance: 0.12, ..WireFourAxis::default() }),
         };
         h.execute(&w, CreateOperation::new(&w, "W1", "W", src, OpParams::WireContour(op)).expect("op"));
@@ -296,6 +296,7 @@ fn sinker_electrode_burn_matches_baked_and_side_burn_stays_refused() {
             top_z: Height::of(HeightReference::TopOfModel, 0.0),
             floor_z: Height::fixed(4.0), datum: SinkerDatum::WorkTop, depth: 6.0, x: 4.0, y: -3.0,
             feed: 40.0, condition: "S1".into(), pass: SinkerPass::Rough, cavity_x: 10.2, cavity_y: 6.2,
+            cavity_outline: Vec::new(),
             orbit: None, layer: None, wear_lost: None, wear_over: None,
         };
         h.execute(&w, CreateOperation::new(&w, "SB1", "E-CAV", SrcRef::Entity("die".into()), OpParams::SinkerBurn(burn.clone())).expect("burn"));

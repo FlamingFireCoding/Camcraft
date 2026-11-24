@@ -23,7 +23,7 @@ fn assert_stack_in(h: &H, container: egui::Rect, who: &str, anchors: &[&str]) {
 }
 
 /// Floating `egui::Window`: inside the screen, anchors inside it top to bottom.
-fn assert_window_layout(h: &H, title: &str, anchors: &[&str]) {
+pub(super) fn assert_window_layout(h: &H, title: &str, anchors: &[&str]) {
     let screen = h.ctx.content_rect();
     let Some(win) = h
         .query_all_by_role(egui::accesskit::Role::Window)
@@ -139,6 +139,40 @@ fn layout_window_unsaved_prompt() {
         &["Unsaved changes", "Save the changes to Untitled before closing?", "Don't Save"],
         "Cancel",
     );
+}
+
+#[test]
+fn layout_window_overwrite_prompt() {
+    // #3608: a Save held because the project file on disk changed.
+    let _g = snapshot_guard();
+    let mut h = shell_harness();
+    h.state_mut().state.save_guard.held = Some(std::path::PathBuf::from("job.camproj"));
+    h.run_steps(3);
+    assert_modal_layout(
+        &h,
+        "overwrite-prompt",
+        "Overwrite modal",
+        &[
+            "job.camproj: the file on disk changed",
+            "job.camproj on disk changed after this window opened or saved it. \
+             Overwrite puts your document in place of that file. \
+             Save As writes your document to a new file and does not change the file on disk.",
+            "Overwrite",
+        ],
+        "Cancel",
+    );
+}
+
+#[test]
+fn layout_window_dxf_units() {
+    // #1863: a drawing with no $INSUNITS opens the units prompt.
+    let _g = snapshot_guard();
+    let mut h = shell_harness();
+    let dxf = "0\nSECTION\n2\nENTITIES\n0\nLINE\n8\n0\n10\n0\n20\n0\n11\n10\n21\n5\n0\nENDSEC\n0\nEOF\n";
+    let source = crate::state::DxfSource::Bytes { name: "free.dxf".into(), data: std::sync::Arc::from(dxf.as_bytes()) };
+    h.state_mut().state.pending.push_back(CommandKind::ImportDxf { source, units: None });
+    h.run_steps(3);
+    assert_modal_layout(&h, "dxf-units-prompt", "DXF units modal", &["DXF units", "Millimeters"], "Cancel");
 }
 
 fn assert_fixture_modal(cmd: CommandKind, who: &str, anchors: &[&str]) {
@@ -278,13 +312,20 @@ fn layout_window_display_menu() {
             "Shaded, with hidden edges",
             "Look at",
             "Look at a face",
+            "Look at a work plane",
             "Graphics",
             "Grid",
             "Origin axes",
             "Perspective view",
             "Orthographic view",
+            "Line width",
+            "Anti-aliasing",
+            "Performance",
+            "Quality",
+            "Ground shadow",
+            "Ambient occlusion",
         ],
     );
-    let last = h.get_by_label("Orthographic view").rect();
+    let last = h.get_by_label("Ambient occlusion").rect();
     assert!(last.bottom() <= button.top(), "the menu stands above the Display button");
 }

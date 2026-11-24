@@ -4,7 +4,7 @@
 //! Provenance: our own digest law over this repo's operation registry.
 
 use super::*;
-use digest::{w, write_corner_relief, wt};
+use digest::{w, write_blend, write_corner_relief, write_rest, wt};
 
 impl OpParams {
     /// The digest-relevant scalars, written to a hasher in a fixed
@@ -43,7 +43,7 @@ impl OpParams {
                 feed,
                 plunge_feed,
                 climb,
-                blend_turns,
+                blend_turns, blend_radius,
                 holes,
                 tilt,
             } => {
@@ -68,9 +68,7 @@ impl OpParams {
                 // M11.1 A: the blends change the moves, so they change
                 // the digest - written only when ON, so every legacy
                 // (sharp) face keeps the digest it was cached under.
-                if *blend_turns {
-                    h.write_u8(0xB1);
-                }
+                write_blend(h, *blend_turns, *blend_radius);
                 // M13.11: the hole law changes the moves only away from
                 // its default, and is written only then - every legacy
                 // (lift) face keeps the digest it was cached under.
@@ -98,9 +96,10 @@ impl OpParams {
                 climb,
                 entry,
                 helix_radius,
-                blend_turns,
+                blend_turns, blend_radius,
                 links: _,
                 tilt,
+                chain_overrides,
             } => {
                 w(h, *stock_to_leave);
                 wh(h, *clearance_z);
@@ -157,8 +156,23 @@ impl OpParams {
                 wt(h, *tilt);
                 // M11.1 B: written only when ON (A's word), so every
                 // legacy sharp contour keeps its cached digest.
-                if *blend_turns {
-                    h.write_u8(0xB1);
+                write_blend(h, *blend_turns, *blend_radius);
+                if !chain_overrides.is_empty() {
+                    h.write(b"chain-overrides");
+                    let mut sorted: Vec<_> = chain_overrides.iter().collect();
+                    sorted.sort_by(|a, b| a.entity.cmp(&b.entity).then(a.chain.cmp(&b.chain)));
+                    h.write_usize(sorted.len());
+                    for o in sorted {
+                        h.write_usize(o.entity.len());
+                        h.write(o.entity.as_bytes());
+                        h.write(&o.chain.0.to_le_bytes());
+                        h.write_u8(match o.side {
+                            None => 0,
+                            Some(ChainSide::Inside) => 1,
+                            Some(ChainSide::Outside) => 2,
+                        });
+                        h.write_u8(u8::from(o.reverse));
+                    }
                 }
                 // The level links ride the shared tail below (M11.2).
             }
@@ -183,6 +197,7 @@ impl OpParams {
                 optimal_load,
                 blend_turns,
                 tilt,
+                pass_start,
             } => {
                 w(h, *stepover);
                 w(h, *stock_to_leave);
@@ -228,15 +243,9 @@ impl OpParams {
                         w(h, *r);
                     }
                 }
-                // #1489: written only when ON, so every pocket without
-                // rest machining keeps its digest.
-                if let Some(r) = rest {
-                    h.write_u8(0xD7);
-                    for v in [r.previous_tool_diameter, r.previous_corner_radius, r.previous_stock_to_leave, r.allowance] {
-                        w(h, v);
-                    }
-                }
+                write_rest(rest, h, true);
                 write_corner_relief(corner_relief, h);
+                digest::write_pass_start(*pass_start, h); // #3354: only off Auto
             }
             // The roughing twins (M2.4 A): the pocket's digest minus
             // the strategy byte - the kind tag at the head already
@@ -262,7 +271,9 @@ impl OpParams {
                 optimal_load,
                 method,
                 troch,
+                rest,
                 tilt,
+                pass_start,
             } => {
                 w(h, *stepover);
                 w(h, *stock_to_leave);
@@ -313,18 +324,21 @@ impl OpParams {
                         w(h, *r);
                     }
                 }
+                write_rest(rest, h, false);
                 write_corner_relief(corner_relief, h);
+                digest::write_pass_start(*pass_start, h);
             }
             OpParams::Offset2D { .. }
             | OpParams::Slot { .. }
             | OpParams::TrochoidalSlot { .. }
             | OpParams::Trace { .. }
+            | OpParams::VCarve { .. }
             | OpParams::Engrave { .. }
             | OpParams::Chamfer2D { .. }
             | OpParams::Circular { .. } => self.stamp_mill2d(world, setup, src, h),
             OpParams::Pocket3D { .. }
             | OpParams::Finish3D { .. }
-            | OpParams::Deburr { .. } => self.stamp_mill3d(world, setup, src, h),
+            | OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. } => self.stamp_mill3d(world, setup, src, h),
             OpParams::Contour5D { .. }
             | OpParams::Parallel5D { .. }
             | OpParams::Swarf { .. }
@@ -354,7 +368,8 @@ impl OpParams {
             OpParams::WireContour { .. }
             | OpParams::SinkerBurn { .. }
             | OpParams::SinkerSideBurn { .. }
-            | OpParams::PlasmaProfile { .. } => self.stamp_cutting(world, setup, src, h),
+            | OpParams::SlotUndercut { .. }
+            | OpParams::PlasmaProfile { .. } | OpParams::WaterjetProfile { .. } => self.stamp_cutting(world, setup, src, h),
         }
         self.stamp_links(h);
     }

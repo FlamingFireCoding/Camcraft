@@ -28,7 +28,10 @@ pub fn moves_named(w: &Warning) -> [Option<usize>; 2] {
         | Warning::ShankHit { at, .. }
         | Warning::SweepHit { at, .. }
         | Warning::RapidInStock { at }
+        | Warning::RapidInPart { at }
+        | Warning::UndercutLift { at }
         | Warning::FirstTraverseLow { at, .. }
+        | Warning::FirstTraverseUnderTable { at, .. }
         | Warning::FixtureHit { at, .. }
         | Warning::AvoidHit { at, .. }
         | Warning::HolderHit { at, .. }
@@ -37,8 +40,13 @@ pub fn moves_named(w: &Warning) -> [Option<usize>; 2] {
         | Warning::Scallop { at, .. }
         | Warning::ProbeSearch { at, .. }
         | Warning::SinkerFinishOrder { at, .. }
-        | Warning::DrillUndersize { at, .. } => [Some(*at), None],
-        Warning::RestUnjudged { .. } => [None, None],
+        | Warning::DrillUndersize { at, .. }
+        // #3525: the first cutting move below the flute's reach.
+        | Warning::FluteShort { at, .. }
+        // #3748: the first cut of the selected entry.
+        | Warning::EntryNotRecommended { at, .. } => [Some(*at), None],
+        // #3035: the fallback names areas in the notes, not one move.
+        Warning::RestUnjudged { .. } | Warning::StrategyFallback { .. } => [None, None],
     }
 }
 

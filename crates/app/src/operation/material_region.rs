@@ -34,6 +34,9 @@ pub(super) struct RegionTurn {
 }
 
 pub(super) fn region_turn_of(world: &World, op: &Operation) -> Option<RegionTurn> {
+    if crate::sketch_model::generation_problem(world, op).is_some() {
+        return None;
+    }
     // The 3+2 index (M5.1 B): a tilted planar op draws the cutting
     // plane's own shadow - the local region through the frame's door,
     // at the plane its `region_height` names. A tilt that commands no
@@ -98,7 +101,17 @@ fn region_turn_core(
     frame: Option<&crate::cl::TiltedFrame>,
     controlled: impl Fn(Option<Region>) -> Option<(Region, f64)>,
 ) -> Option<Laid> {
+    if super::contour_sketch::is_sketch_contour(world, &op.src, &op.params) {
+        if frame.is_some() {
+            return None;
+        }
+        let plan = super::contour_sketch::resolve_plan(world, &op.src, &op.params).ok()?;
+        let (r, turn) = controlled(plan.region().ok()?)?;
+        return Some((r, turn, None));
+    }
     if let SrcRef::Selection(items) = &op.src
+        // #1868: sketch picks of a slot kind bound a slot, not a region.
+        && !super::slot_sketch::is_sketch_slot(world, &op.src, &op.params)
         && !matches!(
             op.params,
             OpParams::Slot { .. }
@@ -112,7 +125,7 @@ fn region_turn_core(
                 // The deburr ride's edges ARE the model's own exposed
                 // boundary (M2.5 E B); its picks name which of them to
                 // break, they bound no area (#1888, `deburr_picks`).
-                | OpParams::Deburr { .. }
+                | OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. }
                 // The drive-curve contour's picks are the PATH, not a
                 // boundary: the 2D selection walk below would try to
                 // bound an area with them (and refuse an open run),
@@ -146,6 +159,7 @@ fn region_turn_core(
         Some(f) => {
             let local = Material {
                 excess: material.excess,
+        file_tolerance: material.file_tolerance,
                 facets: f.local_facets(&material.facets),
                 top: material.top - f.origin.z,
                 bodies: material.bodies.clone(),
@@ -180,6 +194,11 @@ fn region_turn_core(
 /// a vanished source in `region_of`.
 #[must_use]
 pub fn chains_of(world: &World, op: &Operation) -> Vec<Vec<Point2>> {
+    if super::contour_sketch::is_sketch_contour(world, &op.src, &op.params) {
+        return super::contour_sketch::resolve_plan(world, &op.src, &op.params)
+            .map(|p| p.open_chains())
+            .unwrap_or_default();
+    }
     let SrcRef::Selection(items) = &op.src else {
         return Vec::new();
     };
@@ -236,7 +255,7 @@ pub(crate) fn selection_drives_region(params: &OpParams) -> bool {
             // The deburr loci are the model's own exposed edges - the
             // weld finds them (E B). Its picks are edges to break, not
             // a region: the drive-curve contour's answer (#1888).
-            | OpParams::Deburr { .. }
+            | OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. }
             // The 5-axis kinds are mesh-driven like the finish: the
             // rings and raster lines chase the model at every plane,
             // so a picked loop could only disagree with the path

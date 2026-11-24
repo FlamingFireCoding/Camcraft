@@ -192,7 +192,7 @@ fn the_mills_posts_decline_a_plasma_stream_and_the_1300pl() {
             let error = engine::run(cps, &pl1300(), &stream).expect_err("the native dispatcher must refuse a single-file post");
             assert!(
                 matches!(&error, camcraft_app::post::PostError::Script(message) if message.contains(
-                    "Agie native wire EDM requires the desktop or CLI One program post to a new job directory"
+                    "Native wire EDM job files require the desktop or CLI One program post to a new job directory"
                 )),
                 "{n}: {error}"
             );
@@ -200,6 +200,12 @@ fn the_mills_posts_decline_a_plasma_stream_and_the_1300pl() {
         }
         // #542: the sinker post refuses any machine not declared a
         // sinker by name (the app's serves door, #1232, refuses first).
+        if *n == "Heidenhain Klartext" {
+            let why = engine::run(cps, &pl1300(), &stream).expect_err("a Klartext controller is required");
+            assert!(why.to_string().contains("controller profile"), "{why}");
+            assert!(!posting::post_serves(n, Kind::Plasma));
+            continue;
+        }
         if posting::SINKER_POSTS.contains(n) {
             let w = warnings(cps, &pl1300(), &stream);
             assert!(w.iter().any(|m| m.contains("is not declared a sinker EDM")), "{n}: {w:?}");

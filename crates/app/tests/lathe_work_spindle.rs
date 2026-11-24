@@ -143,7 +143,7 @@ fn faced() -> (World, History) {
     let (world, mut h) = world_with(StockShape::Box { dx: 20.0, dy: 2.0, dz: 8.0 }, -4.0, false);
     let params = OpParams::Face {
         holes: Default::default(),
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         tilt: None,
         stepover: 3.0,
         clearance_z: Height::fixed(30.0),
@@ -323,7 +323,7 @@ fn live_tool_and_turning_sections_pass_the_lathe_door() {
     h.execute(&world, ImportModel::from_mesh("bar", bar));
     let wrap = OpParams::RotaryContour {
         tolerance: 0.05,
-        clearance_z: Height::fixed(25.0),
+        clearance_z: Height::fixed(40.0),
         retract_z: None,
         top_z: Height::fixed(6.0),
         bottom_z: Height::fixed(-8.0),

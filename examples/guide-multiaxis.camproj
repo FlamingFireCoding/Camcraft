@@ -1,5 +1,5 @@
 {
-  "version": 73,
+  "version": 76,
   "machine": {
     "path": "built-in: Tilt-head 5-axis",
     "machine": {
@@ -4528,7 +4528,7 @@
             }
           }
         },
-        "stamp": 1873777932616546446,
+        "stamp": 4951343210516092689,
         "cache": {
           "moves": [
             {
@@ -6468,9 +6468,10 @@
             {
               "first_traverse_low": {
                 "at": 0,
-                "height_mm": 10.0,
-                "top_mm": 11.113929111364872,
-                "fixture": false
+                "height_mm": 30.0,
+                "top_mm": 31.11392911136487,
+                "fixture": false,
+                "tilted": true
               }
             },
             {
@@ -6996,7 +6997,7 @@
             "max_tilt_deg": 60.0
           }
         },
-        "stamp": 1047702803816440687,
+        "stamp": 5397333877985809076,
         "cache": {
           "moves": [
             {

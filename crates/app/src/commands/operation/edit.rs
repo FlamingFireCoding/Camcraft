@@ -10,7 +10,7 @@ use crate::model;
 use crate::operation::{self, OpParams, SrcRef};
 use crate::schema::Operation;
 
-use super::gates::{area_gate, family_gate, heights_gate, infeed_plan_gate, sinker_gate, tool_door, tool_gate, valid_src, wire_gate};
+use super::gates::{area_gate, family_gate, heights_gate, infeed_plan_gate, sinker_gate, slot_gate, tool_door, tool_gate, valid_src, wire_gate};
 
 /// Replace an operation's parameters. The cache is left alone and the
 /// stamp is dropped, so the operation reads Stale immediately: the old
@@ -110,6 +110,8 @@ impl EditOperationParams {
         }
         // #2599: new angles on a legacy tilt take the current frame basis.
         let params = params.with_stepped_tilt_basis(&prev.params);
+        // #3843: a 2D Offset moved off Auto with the seed Helix takes Arc.
+        let params = params.with_start_side_entry(&prev.params);
         infeed_plan_gate(world, &params, &prev.tool)?;
         if let Some(why) = params.named_refusal() {
             return Err(CommandError::Invalid(why));
@@ -131,7 +133,15 @@ impl EditOperationParams {
         super::gates::thread_gate(world, &params, &prev.tool)?;
         // #1489: the rest group's previous tool against the mounted one.
         super::gates::rest_gate(world, &params, &prev.tool)?;
-        if let Some(msg) = crate::operation::side_sane(&params, &prev.src) {
+        // #3631: a Slot width or wall stock edit that leaves the mounted
+        // tool wider than the slot, by the #3475 door. Other edits keep
+        // an older document editable.
+        if let (OpParams::Slot { width, stock_to_leave, .. }, OpParams::Slot { width: w0, stock_to_leave: l0, .. }) = (&params, &prev.params)
+            && (width != w0 || stock_to_leave != l0)
+        {
+            slot_gate(world, prev.setup.as_deref(), &prev.src, &params, &prev.tool)?;
+        }
+        if let Some(msg) = crate::operation::side_sane(world, &params, &prev.src) {
             return Err(CommandError::Invalid(msg));
         }
         // #532 / #2011: an edited wire cut still agrees with its wire tool
@@ -212,7 +222,11 @@ impl ChangeOperationKind {
         };
         let prev = model::operation_of(world, &entity)
             .ok_or_else(|| CommandError::Invalid(format!("'{name}' is not an operation")))?;
-        let params = operation::retype_params(&prev.params, kind);
+        let mut params = operation::retype_params(&prev.params, kind);
+        // #3475: a Slot made by the retype holds the op's own tool.
+        if let Some(t) = model::find_by_name(world, &prev.tool).and_then(|e| model::tool_of(world, &e)) {
+            operation::seed_slot_for_tool(&mut params, t.diameter);
+        }
         if params.kind() == prev.params.kind() {
             return Err(CommandError::Invalid(format!(
                 "'{name}' is already a {} operation",
@@ -235,12 +249,13 @@ impl ChangeOperationKind {
             )));
         }
         heights_gate(world, prev.setup.as_deref(), &prev.src, &params)?;
-        if let Some(msg) = crate::operation::side_sane(&params, &prev.src) {
+        if let Some(msg) = crate::operation::side_sane(world, &params, &prev.src) {
             return Err(CommandError::Invalid(msg));
         }
         // The retype is a creation of the new kind against the op's
         // current tool: the same tool-law door (M10.1 B).
         tool_gate(world, &params, &prev.tool)?;
+        slot_gate(world, prev.setup.as_deref(), &prev.src, &params, &prev.tool)?;
         wire_gate(world, prev.setup.as_deref(), &prev.tool, &params)?;
         area_gate(world, prev.setup.as_deref(), &prev.src, &params)?;
         // The area controls ride the retype when the new kind has an
@@ -306,6 +321,7 @@ impl EditOperationLinks {
             // source-only edit never trips over a legacy mismatch.
             if tool != prev.tool {
                 tool_gate(world, &next.params, tool)?;
+                slot_gate(world, prev.setup.as_deref(), &prev.src, &next.params, tool)?;
                 // #890: the new tool's row for the document material
                 // seeds the op's milling feed; #2598: a Drill or Thread
                 // op takes the new tool's stated feed (same undo step).
@@ -328,7 +344,7 @@ impl EditOperationLinks {
             // Retargeting onto a whole-model source under Inside would
             // arm the mirror law; refused here, and backstopped at
             // generate for commands that arrive via file load.
-            if let Some(msg) = crate::operation::side_sane(&next.params, &src) {
+            if let Some(msg) = crate::operation::side_sane(world, &next.params, &src) {
                 return Err(CommandError::Invalid(msg));
             }
             // From: Selection heights re-resolve against the NEW source

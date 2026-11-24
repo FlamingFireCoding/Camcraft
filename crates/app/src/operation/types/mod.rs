@@ -24,8 +24,13 @@ mod sinker;
 mod sane;
 pub use sane::POCKET_ADAPTIVE_RETIRED;
 mod sel;
+mod start_side_entry;
 mod tilt_basis;
 pub use tilt_basis::CURRENT_TILT_BASIS;
+// #1444: the Slot Undercut's stored parameters.
+mod undercut;
+pub use undercut::SlotUndercutOp;
+mod waterjet;
 mod wire_edm;
 
 pub use area::{
@@ -48,6 +53,7 @@ pub use dwell::MAX_DWELL_S;
 pub use height::{Height, HeightReference};
 pub use params::{OpParams, Tilt};
 pub use plasma::{PlasmaComp, PlasmaOp};
+pub use waterjet::{JetLead, JetSide, JetTabsOp, WaterjetOp};
 pub use sinker::{
     SinkerBurnOp, SinkerDatum, SinkerOrbit, SinkerOrbitKind, SinkerPass, SinkerSide,
     SinkerSideBurnOp, SinkerSideDirection,
@@ -56,5 +62,5 @@ pub use wire_edm::{
     WireContourOp, WireFourAxis, WirePairingRule, WireSide, WireSkim, WireSyncPair, WireTabs, WireWidening,
     CONDITION_ID_MAX, DEFAULT_CLEARANCE, FOUR_AXIS_TOLERANCE, SKIMS_MAX, SYNC_PAIRS_MAX, VERIFY_TOLERANCE_MAX,
 };
-pub use sel::{FeatureSel, GenStamp, GeoSel, OpStatus, OpType, SrcRef};
+pub use sel::{ChainOverride, FeatureSel, GenStamp, GeoSel, OpStatus, OpType, SrcRef};
 pub(crate) use sel::LEGACY_WCS_NAMES;

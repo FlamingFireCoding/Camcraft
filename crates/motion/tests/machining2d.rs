@@ -11,6 +11,7 @@
 use camcraft_motion::cl::{MoveKind, Toolpath};
 use camcraft_motion::entry::Entry3D;
 use camcraft_motion::geo2d::{Loop, Point2, Region};
+use camcraft_motion::links::Compensation;
 use camcraft_motion::machining2d::{
     ARC_FIT_TOL, chord_clears, contour, contour_along_chain, face, on_boundary, pocket,
     ring_is_circular, slot, trace, ContourParams, FaceHoles, FaceParams, GenError, Lead, PocketParams,
@@ -39,7 +40,7 @@ fn params() -> FaceParams {
         feed: 500.0,
         plunge_feed: 100.0,
         climb: true,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         stock_top: None,
     }
 }
@@ -357,7 +358,7 @@ fn cp() -> ContourParams {
         tab_height: 0.0,
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links: camcraft_motion::links::Links::PLANAR,
     }
 }
@@ -919,27 +920,144 @@ fn the_inside_contour_bore_opens_with_a_helix() {
     assert!(t.is_chained() && t.all_finite());
 }
 
-#[test]
-fn a_wall_side_entry_is_refused_by_name_grazing_unchanged() {
-    // The grown region contains the part's own interior, so a chord or a
-    // dive certified on it would lie - on the wall side the arms are
-    // refused by name, once, and the graze this generator has always
-    // posted stands. Byte-for-byte: the refusal costs no move.
-    let base = contour(&rect(0.0, 0.0, 30.0, 30.0), &cp()).expect("plunge graze");
-    for (arm, e) in [("ramp", Entry3D::Ramp), ("helix", Entry3D::Helix)] {
-        let mut p = cp();
-        p.side = Side::Outside;
-        p.entry = e;
-        p.helix_radius = 3.0;
-        let t = contour(&rect(0.0, 0.0, 30.0, 30.0), &p).expect("wall contour valid");
-        assert_eq!(t.moves, base.moves, "the {arm} must not move the wall-side path");
-        assert_eq!(
-            t.notes.iter().filter(|n| n.contains("needs bounded air")).count(),
-            1,
-            "the {arm} refusal is said exactly once: {:?}",
-            t.notes
-        );
+/// The wall side's ramp: a 5 deg angle caps every feed descent of an
+/// outside contour, the first level's too, and no axial plunge enters
+/// the material. The ramp rides the lead-in and the ring, never a chord
+/// over the grown region (which holds the part).
+fn outside_ramped(entry: Entry3D, deg: f64) -> ContourParams {
+    let mut p = cp();
+    p.side = Side::Outside;
+    p.bottom_z = -3.0;
+    p.entry = entry;
+    p.helix_radius = 3.0;
+    p.links.approach.ramp_angle = deg;
+    p
+}
+
+/// The steepest feed descent (deg) of a path, and its axial feed descents.
+fn steepest_descent(t: &Toolpath) -> (f64, usize) {
+    let mut worst: f64 = 0.0;
+    let mut axial = 0;
+    for m in t.moves.iter().filter(|m| m.kind != MoveKind::Rapid && m.from.z - m.to.z > 1e-9) {
+        let run: f64 = m.chords(FLATTEN_TOL).iter().map(|(a, b)| (b.x - a.x).hypot(b.y - a.y)).sum();
+        if run <= 1e-9 {
+            axial += 1;
+        } else {
+            worst = worst.max(((m.from.z - m.to.z) / run).atan().to_degrees());
+        }
     }
+    (worst, axial)
+}
+
+#[test]
+fn a_wall_side_ramp_entry_ramps_every_level_within_its_angle() {
+    let base = contour(&rect(0.0, 0.0, 30.0, 30.0), &outside_ramped(Entry3D::Plunge, 5.0)).expect("plunge graze");
+    let (_, plunged) = steepest_descent(&base);
+    assert!(plunged >= 3, "the plunge entry dives at each of the three levels: {plunged}");
+    let t = contour(&rect(0.0, 0.0, 30.0, 30.0), &outside_ramped(Entry3D::Ramp, 5.0)).expect("wall ramp");
+    let (worst, axial) = steepest_descent(&t);
+    assert!(worst > 1.0 && worst <= 5.0 + 1e-3, "it ramps, no steeper than 5 deg: {worst}");
+    assert_eq!(axial, 0, "no axial dive at any level: {:?}", t.moves);
+    assert!(!t.moves.iter().any(|m| m.kind == MoveKind::Plunge), "no plunge move: {:?}", t.moves);
+    assert!(t.notes.is_empty(), "nothing to say: {:?}", t.notes);
+    // The ramp is on the ring: every ramp point stays outside the 30 x 30
+    // part by the cutter radius (the cutter centre never nears the wall).
+    let r = 5.0 - 1e-6;
+    for m in t.moves.iter().filter(|m| m.kind != MoveKind::Rapid) {
+        for (_, q) in m.chords(FLATTEN_TOL) {
+            let dx = (q.x - 15.0).abs() - 15.0;
+            let dy = (q.y - 15.0).abs() - 15.0;
+            let off = dx.max(0.0).hypot(dy.max(0.0));
+            assert!(off >= r, "the centre stands {off:.3} from the part wall at {q:?}");
+        }
+    }
+    assert!(t.is_chained() && t.all_finite());
+}
+
+#[test]
+fn a_wall_side_helix_stands_down_to_the_same_ramp_and_says_so_once() {
+    let ramp = contour(&rect(0.0, 0.0, 30.0, 30.0), &outside_ramped(Entry3D::Ramp, 5.0)).expect("ramp");
+    let helix = contour(&rect(0.0, 0.0, 30.0, 30.0), &outside_ramped(Entry3D::Helix, 5.0)).expect("helix");
+    assert_eq!(helix.moves, ramp.moves, "the helix stands down to the ramp");
+    assert_eq!(
+        helix.notes.iter().filter(|n| n.contains("needs bounded air")).count(),
+        1,
+        "said exactly once: {:?}",
+        helix.notes
+    );
+}
+
+#[test]
+fn a_wall_side_helix_names_its_ramp_and_its_tabbed_graze_each_once() {
+    // Three levels (-1, -2, -3), two tabs 1.5 high: -1 is untabbed (the helix
+    // stands down to the ramp), -2 and -3 are tabbed (they graze). Both
+    // substitutions are said, once each (review of #3833).
+    let mut p = outside_ramped(Entry3D::Helix, 5.0);
+    p.tab_count = 2;
+    p.tab_width = 5.0;
+    p.tab_height = 1.5;
+    let t = contour(&rect(0.0, 0.0, 30.0, 30.0), &p).expect("tabbed helix");
+    let said = |what: &str| t.notes.iter().filter(|n| n.contains(what)).count();
+    assert_eq!(said("needs bounded air"), 1, "{:?}", t.notes);
+    assert_eq!(said("a standing tab is material"), 1, "{:?}", t.notes);
+    assert!(t.moves.iter().any(|m| m.kind == MoveKind::Plunge), "the tabbed levels graze: {:?}", t.moves);
+}
+
+#[test]
+fn a_wall_side_ramp_too_short_for_its_angle_grazes_and_says_why() {
+    // A 4 x 4 part: the ring is too short for 0.005 deg over 1 mm (64 legs).
+    let t = contour(&rect(0.0, 0.0, 4.0, 4.0), &outside_ramped(Entry3D::Ramp, 0.005)).expect("graze");
+    assert_eq!(t.notes.iter().filter(|n| n.contains("too short for the ramp angle")).count(), 1, "{:?}", t.notes);
+    assert!(t.moves.iter().any(|m| m.kind == MoveKind::Plunge), "the graze dive stands in: {:?}", t.moves);
+}
+
+/// #3888: the outside ramp's params under one compensation, with the
+/// straight lead-in that control and wear need (radius 5).
+fn ramped_comp(side: Side, entry: Entry3D, comp: Compensation) -> ContourParams {
+    let mut p = outside_ramped(entry, 5.0);
+    p.side = side;
+    p.lead = Lead::Linear { length: 6.0 };
+    p.links.approach.compensation = comp;
+    p
+}
+
+#[test]
+fn a_ramp_or_helix_under_control_or_wear_is_refused_by_name_on_both_sides() {
+    // #3888: the zig-zag (and the bore's orbit) runs on the ring before the
+    // lead-in engages G41/G42, so the register never applies to it.
+    for comp in [Compensation::Control, Compensation::Wear] {
+        for side in [Side::Outside, Side::Inside] {
+            for (entry, name) in [(Entry3D::Ramp, "Ramp"), (Entry3D::Helix, "Helix")] {
+                let err = contour(&rect(0.0, 0.0, 30.0, 30.0), &ramped_comp(side, entry, comp))
+                    .expect_err("a ramp before G41/G42 must refuse");
+                let why = format!("{err:?}");
+                let want = format!("{} compensation does not ride a {name} entry", comp.label());
+                assert!(why.contains(&want), "{comp:?} {side:?} {name}: {why}");
+            }
+            // A level transition that ramps is the same descent.
+            let mut p = ramped_comp(side, Entry3D::Plunge, comp);
+            p.links.transition = Some(Entry3D::Ramp);
+            let why = format!("{:?}", contour(&rect(0.0, 0.0, 30.0, 30.0), &p).expect_err("transition ramp"));
+            assert!(why.contains("does not ride a Ramp level transition"), "{comp:?} {side:?}: {why}");
+            // The plunge at the lead-in's start still stands, under its span.
+            let t = contour(&rect(0.0, 0.0, 30.0, 30.0), &ramped_comp(side, Entry3D::Plunge, comp)).expect("plunge");
+            assert!(!t.comps.is_empty(), "{comp:?} {side:?}: one span per level");
+        }
+    }
+}
+
+#[test]
+fn a_wall_side_ramp_in_computer_compensation_is_unchanged() {
+    // #3888 pins the computer side: no span, and the same ramp as before.
+    let comp = contour(&rect(0.0, 0.0, 30.0, 30.0), &ramped_comp(Side::Outside, Entry3D::Ramp, Compensation::Computer))
+        .expect("computer ramp");
+    assert!(comp.comps.is_empty());
+    let (worst, axial) = steepest_descent(&comp);
+    assert!(worst > 1.0 && worst <= 5.0 + 1e-3 && axial == 0, "it ramps: {worst} {axial}");
+    let mut plain = outside_ramped(Entry3D::Ramp, 5.0);
+    plain.lead = Lead::Linear { length: 6.0 };
+    let plain = contour(&rect(0.0, 0.0, 30.0, 30.0), &plain).expect("default ramp");
+    assert_eq!(comp.moves, plain.moves);
 }
 
 #[test]
@@ -1094,21 +1212,14 @@ fn levels_3_zs() -> [f64; 2] {
 }
 
 #[test]
-fn zigzag_fills_a_square_with_one_plunge_per_level() {
+fn zigzag_fills_a_square_with_rows_and_a_closing_ring_per_level() {
     let region = rect(0.0, 0.0, 30.0, 30.0);
     let center = region.offset(-5.0).expect("offset");
     let t = pocket(&region, &pp()).expect("valid");
     assert!(t.is_chained() && t.all_finite());
-    // M8.1's entry law on zigzag, from level 0: the serpentine keeps
-    // its rows, but every level - the first included (Plunge never
-    // lands its dive on a wall corner, not even the stock's own
-    // surface corner) - first dives at the floor's room, then links
-    // to the row start - a chord across the rows' lines, so the
-    // hop-and-dive link. M11.3's one-entry law: the
-    // dive lands on the first row a little past its wall-corner start
-    // and links back along the row at depth - one dive per level.
-    // #2004: two levels (-3, -6), no air level at Top Z 0.
-    assert_eq!(plunge_xy(&t).len(), 2, "one entry dive at every level");
+    // The inset serpentine and its separate closing wall ring each have
+    // one entry at each of the two levels (-3, -6).
+    assert_eq!(plunge_xy(&t).len(), 4, "one dive for the rows and one for the ring at every level");
     let floor = t
         .moves
         .iter()
@@ -1116,7 +1227,7 @@ fn zigzag_fills_a_square_with_one_plunge_per_level() {
         .nth(1)
         .expect("a level-change dive");
     assert!(
-        center.contains(Point2::new(floor.to.x, floor.to.y)),
+        in_closed(&center, (floor.to.x, floor.to.y)),
         "the level-change dive at ({}, {}) is not inside the center area",
         floor.to.x,
         floor.to.y
@@ -1127,19 +1238,19 @@ fn zigzag_fills_a_square_with_one_plunge_per_level() {
         let mut v: Vec<f64> = pts.iter().map(|q| q.1).collect();
         v.sort_by(f64::total_cmp);
         v.dedup();
-        // M11.3: the entry dive lands just inside the first row (a wall
-        // margin off it) and links back to its start - not a row.
-        v.retain(|y| (y - y.round()).abs() < 1e-9);
+        // The entry landing may lie between rows; retain the row and wall Ys.
+        v.retain(|y| [5.0, 5.01, 10.01, 15.01, 20.01, 24.99, 25.0]
+            .iter().any(|row| (y - row).abs() < 1e-9));
         v
     };
-    assert_eq!(ys, vec![5.0, 10.0, 15.0, 20.0, 25.0]);
+    assert_eq!(ys, vec![5.0, 5.01, 10.01, 15.01, 20.01, 24.99, 25.0]);
     for q in &pts {
         assert!(in_closed(&center, *q), "feed point {q:?} outside the center area");
     }
-    // Five 20 mm rows plus four 5 mm connectors, all at cut depth - and
-    // (M11.3) the short at-depth link from the entry onto the first row.
+    // Five 19.98 mm rows plus 19.98 mm of connectors and the 80 mm
+    // wall ring, with the short entry link onto the first row.
     let len = level_len(&t, -6.0);
-    assert!((120.0 - 1e-9..120.0 + 2.0).contains(&len), "{len}");
+    assert!((199.88 - 1e-9..199.88 + 2.0).contains(&len), "{len}");
 }
 
 #[test]
@@ -1166,12 +1277,9 @@ fn zigzag_hops_over_islands_and_leaves_them_standing() {
     // the gouge check; the distance test is a loose physical cross-check.
     let center = region.offset(-5.0).expect("offset");
     let t = pocket(&region, &pp()).expect("valid");
-    // M8.1 read from level 0: every level posts five dives - the
-    // interior entry dive whose link to the row start the island
-    // forces to a hop, plus three island-crossing hops. 5 + 5 + 5.
-    // M11.3: the entry lands on the first row and links along it, so the
-    // entry's second dive is gone - 4 per level. #2004: two levels.
-    assert_eq!(plunge_xy(&t).len(), 8);
+    // The inset rows split into five passes around the island. The outer
+    // wall and island each add a closing ring: seven dives at each level.
+    assert_eq!(plunge_xy(&t).len(), 14);
 
     for z in levels_3_zs() {
         let (pts, lifted) = polyline_at(&t, z);
@@ -1666,7 +1774,7 @@ fn sp() -> SlotParams {
         plunge_feed: 100.0,
         climb: true,
         entry: Entry3D::Plunge,
-        helix_radius: 1.0,
+        helix_radius: 1.0, blend_turns: false, blend_radius: None,
     }
 }
 
@@ -1740,12 +1848,17 @@ fn slot_offsets_rows_across_a_wide_channel() {
         (40.0, 7.0),
     ];
     let (pts, _) = polyline_at(&t, 0.0);
-    assert_eq!(pts, want, "serpentine rows, each reaching its round end by sqrt(h^2 - d^2)");
+    assert_eq!(pts[..want.len()], want[..], "serpentine rows, each reaching its round end by sqrt(h^2 - d^2)");
+    // #2906: then one lap of the stadium - two straights and each cap
+    // split at its five row ends and its tip (five arcs) - so the round
+    // ends are cut between the row ends too.
     assert_eq!(
         t.moves.iter().filter(|m| m.kind == MoveKind::Feed).count(),
-        want.len() - 1,
+        want.len() - 1 + 12,
         "joins are feeds: the center area is convex"
     );
+    assert_eq!(t.moves.iter().filter(|m| m.arc.is_some()).count(), 10, "five arcs for each cap");
+    assert_eq!(pts.last().copied(), Some((40.0, 7.0)), "the lap closes where the rows end");
     assert_eq!(plunge_xy(&t).len(), 1);
     for q in &pts {
         assert!(
@@ -1753,10 +1866,15 @@ fn slot_offsets_rows_across_a_wide_channel() {
             "center left the area: {q:?}"
         );
     }
-    let max_x = pts.iter().map(|q| q.0).fold(f64::NEG_INFINITY, f64::max);
-    let min_x = pts.iter().map(|q| q.0).fold(f64::INFINITY, f64::min);
+    let rows = &pts[..want.len()];
+    let max_x = rows.iter().map(|q| q.0).fold(f64::NEG_INFINITY, f64::max);
+    let min_x = rows.iter().map(|q| q.0).fold(f64::INFINITY, f64::min);
     assert_eq!(max_x, 40.0 + s48);
     assert_eq!(min_x, -s48);
+    // The lap reaches each cap's tip.
+    let lap_max = pts.iter().map(|q| q.0).fold(f64::NEG_INFINITY, f64::max);
+    let lap_min = pts.iter().map(|q| q.0).fold(f64::INFINITY, f64::min);
+    assert!((lap_max - 47.0).abs() < 1e-9 && (lap_min + 7.0).abs() < 1e-9, "{lap_min} {lap_max}");
 }
 
 #[test]
@@ -1773,10 +1891,15 @@ fn conventional_slot_starts_at_the_far_end() {
     let (pts, _) = polyline_at(&t, 0.0);
     assert_eq!(pts[0], (40.0, -7.0), "conventional enters at +x");
     assert_eq!(pts[1], (0.0, -7.0));
-    let mut ys: Vec<f64> = pts.iter().map(|q| q.1).collect();
+    // The first ten points are the rows; the wall lap (#2906) follows.
+    let mut ys: Vec<f64> = pts[..10].iter().map(|q| q.1).collect();
     ys.sort_by(f64::total_cmp);
     ys.dedup();
     assert_eq!(ys, vec![-7.0, -3.0, 1.0, 5.0, 7.0], "same rows, reversed travel");
+    // Conventional walks the lap clockwise: from (0, 7) it turns round `a`.
+    let lap_arcs: Vec<_> = t.moves.iter().filter_map(|m| m.arc).collect();
+    assert_eq!(lap_arcs.len(), 10);
+    assert!(lap_arcs.iter().all(|a| !a.ccw), "conventional lap is clockwise");
 }
 
 #[test]
@@ -1798,11 +1921,13 @@ fn slot_stock_to_leave_narrows_the_center_area() {
             "cut into the allowance: {q:?}"
         );
     }
-    let mut ys: Vec<f64> = pts.iter().map(|q| q.1).collect();
+    // Six rows, twelve points; the wall lap (#2906) follows at h = 5.
+    let rows = &pts[..12];
+    let mut ys: Vec<f64> = rows.iter().map(|q| q.1).collect();
     ys.sort_by(f64::total_cmp);
     ys.dedup();
     assert_eq!(ys, vec![-5.0, -3.0, -1.0, 1.0, 3.0, 5.0]);
-    let max_x = pts.iter().map(|q| q.0).fold(f64::NEG_INFINITY, f64::max);
+    let max_x = rows.iter().map(|q| q.0).fold(f64::NEG_INFINITY, f64::max);
     assert_eq!(max_x, 40.0 + 24f64.sqrt());
 }
 
@@ -1873,7 +1998,9 @@ fn slot_helix_orbits_in_the_certified_channel() {
     // close - the second dive there is named, nothing else is.
     assert!(t.notes.iter().all(|n| n.contains("second dive")), "the channel has room; nothing else to say: {:?}", t.notes);
     assert!(t.is_chained() && t.all_finite());
-    let arc_moves: Vec<_> = t.moves.iter().filter(|m| m.arc.is_some()).collect();
+    // A descending arc is the helix; the planar arcs are the wall lap (#2906).
+    let descends = |m: &&camcraft_motion::cl::Move| m.arc.is_some() && m.from.z != m.to.z;
+    let arc_moves: Vec<_> = t.moves.iter().filter(descends).collect();
     assert!(!arc_moves.is_empty(), "a chosen helix must actually descend");
     for m in &arc_moves {
         // The orbit's standing center keeps a full orbit radius clear of
@@ -1891,9 +2018,9 @@ fn slot_helix_orbits_in_the_certified_channel() {
             );
         }
     }
-    // The wall dive this law replaces had no arcs at all.
+    // The wall dive this law replaces had no descending arcs at all.
     let base = slot(a, b, &SlotParams { entry: Entry3D::Plunge, ..p }).expect("valid");
-    assert_eq!(base.moves.iter().filter(|m| m.arc.is_some()).count(), 0);
+    assert_eq!(base.moves.iter().filter(descends).count(), 0);
     assert_ne!(t.moves, base.moves, "the helix changed the entry");
 }
 
