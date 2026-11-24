@@ -31,9 +31,14 @@ use super::ring_side::{mirror, share_ends};
 use super::ring::dist;
 
 /// How far (mm) the area's own boundary may stand from the start side
-/// and still be read as on it: a micron, well above Clipper's nanometre
-/// lattice and below its 5 um arc flats.
-const SIDE_EPS: f64 = 1e-3;
+/// and still be read as on it: 10 um, twice Clipper's 5 um arc flats
+/// (`ARC_TOL_UNITS`). #3824: the area and the start side flatten the
+/// same round joins apart, up to 5 um each; at the old micron a stretch
+/// of the part wall where the two flats part by more than that read as
+/// the other side - on fig8, two 0.117 mm slivers of the wall that the
+/// wall ring left as gaps and Outside cut first, each reached by a lift
+/// over the part and a plunge into material.
+pub(super) const SIDE_EPS: f64 = 1e-2;
 
 /// Pieces shorter than this (mm) are dropped: a stub where a wall meets
 /// the start side, which the neighbouring pieces' discs already cover.
@@ -307,7 +312,7 @@ fn core_first(c: &Region, step: f64, climb: bool, cap: u32, out: &mut Vec<Piece>
 /// outside it for Outside): ring 0 on the start side, the walls (level
 /// [`WALL`]) elsewhere. The area lies on the left of its loops, and it
 /// is the uncut side of ring 0 and the cut side of a wall.
-fn sides(center: &Region, start_side: &Region, start_inside: bool, climb: bool, out: &mut Vec<Piece>) -> Result<(), GenError> {
+pub(super) fn sides(center: &Region, start_side: &Region, start_inside: bool, climb: bool, out: &mut Vec<Piece>) -> Result<(), GenError> {
     for l in center.loops() {
         let ring = walk(l.points(), climb);
         push(out, 0, &ring, start_side.clip_ring(&ring, start_inside)?);

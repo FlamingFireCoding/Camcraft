@@ -159,19 +159,23 @@ pub(super) fn pass_link(b: &mut PathBuilder, lv: &LevelWalk, m: &Motion, cert: O
     let cur = b.at();
     let at = Point2::new(cur.x, cur.y);
     // #3747: round a part the rings link in the plane, whatever the pass
-    // link: a lift needs a named reason (`ring_links`).
+    // link: a lift needs a named reason (`ring_links`). #3824: the link
+    // tries the edge of the area too, before it lifts.
     let proof = match (&m.ring_links, m.links.pass) {
         (Some(rl), _) => Some(super::ring_links::link(b, rl, m, cert, &[passes, &st.level], e, z)),
         (None, Link::KeepDown) => Some(
             cert.map_or(Err(NOT_PROVED), |c| link_proof(c, &[passes, &st.level], at, e, &m.links))
                 .and_then(|()| if !m.cleared_links || through_cut(b, at, e, z, m.tool_r()) { Ok(()) } else { Err(NOT_PROVED) })
-                .map(|()| b.push(MoveKind::Feed, Point3::new(e.x, e.y, z), Some(m.feed))),
+                .map(|()| {
+                    b.push(MoveKind::Feed, Point3::new(e.x, e.y, z), Some(m.feed));
+                    vec![at, e]
+                }),
         ),
         (None, _) => None,
     };
     let plane = match (proof, m.links.pass) {
-        (Some(Ok(())), _) => {
-            st.level.push(vec![at, e]);
+        (Some(Ok(walk)), _) => {
+            st.level.push(walk);
             return;
         }
         // #3822: a failed ring link lifts to the plane the user chose for
