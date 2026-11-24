@@ -15,8 +15,10 @@
 //! stored tool's length re-seeds only that draft's projection (#808
 //! item 2). The stored `HolderRef` changes only through Apply holder.
 //! #3896 (U5): the editor's Recipes tab ([`ToolEditorTab::Recipes`]).
-//! #3897 (U6): the tool category of the list ([`ToolCategory`]) and the
-//! preview's two display toggles (dimension lines and holder, [`EditorFace`]). All of it is
+//! #3897 (U6): the window's page ([`LibraryPage`]: the tool list or the
+//! holder list), the tool category of the list ([`ToolCategory`]), the
+//! holder list's view ([`HoldersView`]) and the preview's two display
+//! toggles (dimension lines and holder, [`EditorFace`]). All of it is
 //! view state: never a command, never saved.
 //! Provenance: our own view state, after the tool shape window's
 //! `Option` pattern; no HSMWorks material involved.
@@ -83,6 +85,14 @@ impl Default for EditorFace {
     }
 }
 
+/// #3897 (U6): what the window shows - the tools or the holders.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LibraryPage {
+    #[default]
+    Tools,
+    Holders,
+}
+
 /// #3897: the tool categories on the left of the tool list, by the tool
 /// kind (`tool_library_dialog::categories` maps each kind to one).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -100,12 +110,42 @@ pub enum ToolCategory {
     BeamAndWire,
 }
 
+/// #3897: the holder list's view: the taper filter (`None`: all holders;
+/// `Some("")`: the straight-shank chucks) and the holder open in the
+/// read-only holder view.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HoldersView {
+    pub taper: Option<String>,
+    pub filter: String,
+    pub open: Option<String>,
+    /// The holder view's drawing hides its dimension lines.
+    pub hide_dims: bool,
+}
+
+/// #3893: the tool open in the window, with its own draft. `synced` is the
+/// (name, `doc_version`) the draft was read at, the same key that
+/// `State::sync_tool_ui` uses for Properties. Typing does not change
+/// `doc_version`, so a draft is read again only after a command or when
+/// another tool opens.
+#[derive(Clone, Debug)]
+pub struct ToolEditorView {
+    pub draft: ToolUi,
+    pub(super) synced: (String, u64),
+    pub face: EditorFace,
+    /// #3895: the window's holder draft (pick, gauge length, projection).
+    pub holder: ToolProfileUi,
+}
+
 /// The open tool library window.
 #[derive(Clone, Debug, Default)]
 pub struct ToolLibraryView {
     pub source: ToolSource,
+    /// #3897: the tool list or the holder list.
+    pub page: LibraryPage,
     /// #3897: the category the tool list shows; `None` shows all.
     pub category: Option<ToolCategory>,
+    /// #3897: the holder list and the open holder.
+    pub holders: HoldersView,
     /// #3893: the tool open in the editor. `None` shows the full list;
     /// `Some` folds the list into a rail beside the editor.
     pub editor: Option<ToolEditorView>,
@@ -157,6 +197,7 @@ impl State {
         };
         let face = view.editor.as_ref().map(|e| e.face).unwrap_or_default();
         view.source = ToolSource::Document;
+        view.page = LibraryPage::Tools;
         view.editor = Some(ToolEditorView {
             draft: ToolUi { name: name.to_owned(), ..ToolUi::default() },
             // An empty name never matches, so the first draw reads the tool.
@@ -164,6 +205,24 @@ impl State {
             face,
             holder: ToolProfileUi::default(),
         });
+    }
+
+    /// #3897: show the holder list (or the tool list) of the window. The
+    /// open tool and the open holder stay for the next visit.
+    pub(crate) fn show_library_page(&mut self, page: LibraryPage) {
+        self.open_tool_library();
+        if let Some(view) = self.tool_library.as_mut() {
+            view.page = page;
+        }
+    }
+
+    /// #3897: open the built-in holder `name` in the read-only holder
+    /// view (`None` goes back to the holder list).
+    pub(crate) fn open_holder_in_library(&mut self, name: Option<&str>) {
+        self.show_library_page(LibraryPage::Holders);
+        if let Some(view) = self.tool_library.as_mut() {
+            view.holders.open = name.map(str::to_owned);
+        }
     }
 
     /// #3893: close the editor; the window shows the full list again.

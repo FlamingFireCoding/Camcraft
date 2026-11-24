@@ -17,7 +17,9 @@
 //! #3896 (U5): the Recipes tab shows the cutting data per material with
 //! the surface speed and the feed per tooth. "Suggest" and "Copy from
 //! tool" fill the window's draft only; the same Apply lands it.
-//! #3897 (U6): the editor stands as
+//! #3897 (U6): a "Cutting tools | Holders" switch heads the window; the
+//! Holders page lists the built-in holders by taper and opens one in a
+//! read-only holder view (`holders`, `holder_view`). The editor stands as
 //! in the #3663 mock-up: the tabs and their rows on the left, the preview
 //! on the right. The window opens wide enough for the Recipes table and
 //! the preview side by side, as far as the screen permits ([`width`]).
@@ -28,6 +30,8 @@
 pub(crate) mod assembly_group;
 pub(crate) mod categories;
 mod details_tab;
+pub(crate) mod holder_view;
+pub(crate) mod holders;
 pub(crate) mod list;
 pub(crate) mod model;
 pub(crate) mod preview;
@@ -41,10 +45,13 @@ mod tool_tab;
 use egui::{Id, Ui, Window};
 
 use crate::actions;
-use crate::state::{ErrorScope, State, ToolEditorTab, UiTarget};
+use crate::state::{ErrorScope, LibraryPage, State, ToolEditorTab, UiTarget};
 
 /// The window's title, and its AccessKit name.
 pub(crate) const TITLE: &str = "Tool library";
+/// #3897: the labels of the page switch at the head of the window.
+pub(crate) const TOOLS_PAGE: &str = "Cutting tools";
+pub(crate) const HOLDERS_PAGE: &str = "Holders";
 
 /// The rail's width when a tool is open.
 const RAIL_W: f32 = 170.0;
@@ -97,8 +104,35 @@ pub(crate) fn tool_library_window(ctx: &egui::Context, state: &mut State) {
     }
 }
 
-/// The full list, or the rail beside the editor when a tool is open.
+/// #3897: the page switch, then the page.
 fn body(ui: &mut Ui, state: &mut State) {
+    let Some(page) = state.tool_library.as_ref().map(|v| v.page) else {
+        return;
+    };
+    let mut picked = page;
+    ui.horizontal(|ui| {
+        ui.selectable_value(&mut picked, LibraryPage::Tools, TOOLS_PAGE).on_hover_text("the tools: the document's and the catalog's");
+        ui.selectable_value(&mut picked, LibraryPage::Holders, HOLDERS_PAGE)
+            .on_hover_text("the built-in holders by spindle taper, with the tools that use each one");
+    });
+    ui.separator();
+    if picked != page {
+        state.show_library_page(picked);
+    }
+    match picked {
+        LibraryPage::Tools => tools_page(ui, state),
+        LibraryPage::Holders => {
+            if state.tool_library.as_ref().is_some_and(|v| v.holders.open.is_some()) {
+                holder_view::draw(ui, state);
+            } else {
+                holders::draw(ui, state);
+            }
+        }
+    }
+}
+
+/// The full list, or the rail beside the editor when a tool is open.
+fn tools_page(ui: &mut Ui, state: &mut State) {
     if state.tool_library.as_ref().and_then(|v| v.open_tool()).is_none() {
         list::draw(ui, state);
         return;

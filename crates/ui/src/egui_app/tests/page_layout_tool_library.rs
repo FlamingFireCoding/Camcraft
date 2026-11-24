@@ -7,7 +7,7 @@
 
 use super::page_layout_windows::assert_window_layout;
 use crate::egui_app::tool_library_dialog::recipes_tab::{MARK, SUGGEST, TAB};
-use crate::egui_app::tool_library_dialog::{categories, preview};
+use crate::egui_app::tool_library_dialog::{HOLDERS_PAGE, TOOLS_PAGE, categories, holder_view, holders, preview};
 use super::*;
 use egui_kittest::kittest::NodeT;
 
@@ -20,9 +20,9 @@ fn library_window(h: &H) -> egui::Rect {
         .unwrap_or_else(|| panic!("the Tool library window is not open"))
 }
 
-/// The tool library is its own window: the file buttons first, then the
-/// source row, then the Document list (#3897: with the categories on its
-/// left). It floats beside the dock and
+/// The tool library is its own window: (#3897) the Cutting tools | Holders
+/// switch first, then the file buttons, the source row, then the Document
+/// list with the categories on its left. It floats beside the dock and
 /// leaves the Properties pane free, so both can be used at once.
 #[test]
 fn layout_window_tool_library() {
@@ -34,15 +34,17 @@ fn layout_window_tool_library() {
     assert_window_layout(
         &h,
         "Tool library",
-        &["New tool…", "Import tool holders", "Document", "Recipes"],
+        &[TOOLS_PAGE, "New tool…", "Import tool holders", "Document", "Recipes"],
     );
     let win = library_window(&h);
-    // #3897: the categories stand left of the rows.
+    // #3897: the switch heads the window; the categories stand left of the rows.
     let node = h
         .query_all_by_role(egui::accesskit::Role::Window)
         .find(|n| n.accesskit_node().label().as_deref() == Some("Tool library"))
         .unwrap_or_else(|| panic!("the Tool library window is not open"));
     let rect = |l: &str| node.query_all_by_label(l).next().unwrap_or_else(|| panic!("no {l:?} in the window")).rect();
+    let (tools, holders) = (rect(TOOLS_PAGE), rect(HOLDERS_PAGE));
+    assert!((tools.top() - holders.top()).abs() < 2.0 && tools.right() <= holders.left() + 1.0, "Cutting tools {tools:?} | Holders {holders:?}");
     let all = rect(categories::ALL);
     assert!(all.right() < rect("Recipes").left(), "the categories {all:?} stand left of the rows");
     let Some(props) = super::layout::leaf_rect(&h.state().dock, &Tab::Properties) else {
@@ -158,4 +160,37 @@ fn layout_window_tool_editor() {
     assert!(tab.top() < suggest.top() && suggest.top() < apply.top(), "Suggest {suggest:?} stands between the tabs and Apply");
     assert!(node.query_all_by_label(MARK).next().is_none() || rect(MARK).top() > suggest.top(), "the table follows the Suggest row");
     assert!(node.query_all_by_label("Diameter").next().is_none(), "the geometry rows stay on the Tool tab");
+}
+
+/// #3897 (U6): the Holders page. The taper column stands left of the
+/// holder rows; the filter and the read-only note head the rows. A holder
+/// opens in its view: the way back and the name first, the facts on the
+/// left, the drawing's Dimensions toggle right of them.
+#[test]
+fn layout_window_holders() {
+    let _g = snapshot_guard();
+    let mut h = shell_harness();
+    h.run_steps(2);
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Tools").click();
+    h.run_steps(2);
+    super::tool_library_editor::click_window_button(&mut h, HOLDERS_PAGE);
+    assert_window_layout(&h, "Tool library", &[HOLDERS_PAGE, "Holder filter", holders::READ_ONLY, "Used by"]);
+    let win = library_window(&h);
+    let node = super::tool_library_editor::library_window(&h);
+    let rect = |l: &str| node.query_all_by_label(l).next().unwrap_or_else(|| panic!("no {l:?} in the window")).rect();
+    let (all, name) = (rect(holders::ALL), rect("Name"));
+    assert!(all.right() < name.left(), "the taper column {all:?} stands left of the rows {name:?}");
+    assert!(win.expand(1.0).contains_rect(rect("Used by")), "the last head stays in the window");
+    let Some(props) = super::layout::leaf_rect(&h.state().dock, &Tab::Properties) else {
+        panic!("the Properties leaf is not laid out");
+    };
+    assert!(!win.intersects(props), "the window {win:?} stands beside the Properties pane {props:?}");
+    super::tool_library_holders_ui::filter_to_holder(&mut h);
+    super::tool_library_editor::click_window_button(&mut h, "BT40 ER32");
+    let node = super::tool_library_editor::library_window(&h);
+    let rect = |l: &str| node.query_all_by_label(l).next().unwrap_or_else(|| panic!("no {l:?} in the holder view")).rect();
+    let (back, taper, dims) = (rect(holder_view::BACK), rect("Spindle taper"), rect(holder_view::DIMS));
+    assert!(back.top() < taper.top(), "the way back {back:?} heads the view");
+    assert!(dims.left() > taper.right(), "the drawing's toggle {dims:?} stands right of the facts {taper:?}");
+    assert!(win.expand(1.0).contains_rect(dims), "the toggle stays in the window {win:?}");
 }
