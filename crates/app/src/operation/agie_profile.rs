@@ -1,4 +1,4 @@
-//! Collect one nominal punch or die opening for the native wire EDM job,
+//! Collect one nominal punch, die opening or straight open cutoff for the native wire EDM job,
 //! before the wire generator offsets it.
 //! Provenance: CAMCraft's Wire Contour geometry and named controller recipe.
 
@@ -11,21 +11,33 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
     let OpParams::WireContour(wire) = &op.params else {
         return Err("The native wire EDM job requires a Wire Contour".into());
     };
-    if !matches!(wire.side, WireSide::Punch | WireSide::Die)
-        || !wire.capture
-        || wire.taper_deg != 0.0
+    if wire.taper_deg != 0.0
         || wire.tabs.is_some()
         || wire.burnout.is_some()
         || !wire.skims.is_empty()
         || wire.four_axis.is_some()
     {
-        return Err("The native wire EDM job supports one captured vertical punch or die opening. Disable taper, four-axis, tabs, burnout and requested skims; the controller selects trim passes".into());
+        return Err("The native wire EDM job supports one captured vertical punch, die opening or clamped open cutoff. Disable taper, four-axis, tabs, burnout and requested skims; the controller selects trim passes".into());
     }
     let side = match (&wire.side, &op.src) {
         (WireSide::Punch, SrcRef::Entity(_)) => agie::AgieSide::Punch,
         (WireSide::Die, SrcRef::Selection(_)) => agie::AgieSide::Die,
-        _ => return Err("The native wire EDM job requires the complete punch model, or the selected rim of a through-opening in the retained die plate".into()),
+        (WireSide::Left, SrcRef::Selection(_)) => agie::AgieSide::Left,
+        (WireSide::Right, SrcRef::Selection(_)) => agie::AgieSide::Right,
+        _ => return Err("The native wire EDM job requires the complete punch model, the selected rim of a through-opening in the retained die plate, or one selected cutoff edge".into()),
     };
+    // An open cutoff severs both pieces before the trims (#2962). A closed
+    // cycle keeps its captured slug and its drilled start hole.
+    if side.is_open() {
+        if !wire.both_pieces_restrained || !wire.stock_centered_in_xy_travel {
+            return Err("The open cutoff requires both pieces clamped through all passes and the stock centered in the installed XY travel".into());
+        }
+        if wire.start.is_some() || !(0.0..=3.6).contains(&wire.clearance) {
+            return Err("The open cutoff requires air threading and at most 3.6 mm run-out clearance for its 4 mm tails".into());
+        }
+    } else if !wire.capture || wire.start.is_none() {
+        return Err("The native wire EDM job requires a captured closed contour and a predrilled 2 mm start hole on the waste side".into());
+    }
     let models = model::model_entities(world);
     let [(source, _)] = models.as_slice() else {
         return Err("The native wire EDM job requires exactly one modeled workpiece; additional parts or fixture models can intersect the controller path".into());
@@ -43,9 +55,6 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
     if !on_source {
         return Err("The native wire EDM job requires the complete punch, or the edge chains of one through-opening in the retained die plate".into());
     }
-    let start = wire
-        .start
-        .ok_or("The native wire EDM job requires a predrilled 2 mm start hole on the waste side")?;
     let setup = op.setup.as_deref();
     let condition = super::wire_op::condition_of(world, setup, &op.tool, wire)?;
     if condition.id != agie::CONDITION
@@ -126,19 +135,22 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
     // A union of sampled slices can add rounded vertices along a sloping face.
     let region = crate::geometry::closed_vertical_prism(&job.material.facets, lo.z, hi.z)
         .map_err(|why| format!("The native wire EDM job requires one closed vertical prism spanning the stock height: {why}"))?;
-    let ring = match side {
+    let points = match side {
         agie::AgieSide::Punch => {
             let [ring] = region.loops() else {
                 return Err("The native wire EDM job requires exactly one closed punch boundary, without openings or additional contours".into());
             };
-            ring
+            ring.points()
         }
-        agie::AgieSide::Die => die_opening(&region, &job, [lo.x, lo.y], [hi.x, hi.y])?,
+        agie::AgieSide::Die => die_opening(&region, &job, [lo.x, lo.y], [hi.x, hi.y])?.points(),
+        agie::AgieSide::Left | agie::AgieSide::Right => {
+            cutoff_edge(&region, &job, side, [lo.x, lo.y], [hi.x, hi.y])?
+        }
     };
     Ok(agie::AgieJob {
         side,
-        contour: ring.points().iter().map(|p| [p.x - ox, p.y - oy]).collect(),
-        start: [start[0] - ox, start[1] - oy],
+        contour: points.iter().map(|p| [p.x - ox, p.y - oy]).collect(),
+        start: wire.start.map(|p| [p[0] - ox, p[1] - oy]),
         stock_min: [lo.x - ox, lo.y - oy, lo.z - oz],
         stock_max: [hi.x - ox, hi.y - oy, hi.z - oz],
     })
@@ -189,4 +201,50 @@ fn die_opening<'r>(
         );
     }
     Ok(hole)
+}
+
+/// The one selected straight wall of the retained prism for an open cutoff.
+/// The whole retained cap must lie on the side away from the kerf, and the
+/// model must lie inside the stock.
+fn cutoff_edge<'j>(
+    region: &Region,
+    job: &'j job::GenJob,
+    side: agie::AgieSide,
+    lo: [f64; 2],
+    hi: [f64; 2],
+) -> Result<&'j [crate::geo2d::Point2], String> {
+    let (rings, open, _) = job
+        .contour_sel
+        .as_ref()
+        .ok_or("Select one retained cutoff edge")?
+        .as_ref()
+        .map_err(ToString::to_string)?;
+    let [chain] = open.as_slice() else {
+        return Err("The open cutoff requires exactly one open cutoff edge".into());
+    };
+    let [a, b] = chain.as_slice() else {
+        return Err("The open cutoff requires a single straight edge".into());
+    };
+    let [body] = region.loops() else {
+        return Err("The open cutoff requires one through prism without holes".into());
+    };
+    let vertices = body.points();
+    let has_edge = vertices
+        .iter()
+        .zip(vertices.iter().cycle().skip(1))
+        .any(|(p, q)| (p == a && q == b) || (p == b && q == a));
+    let waste = if side == agie::AgieSide::Left { 1. } else { -1. };
+    if !rings.is_empty()
+        || !has_edge
+        || vertices.iter().any(|p| {
+            p.x < lo[0]
+                || p.x > hi[0]
+                || p.y < lo[1]
+                || p.y > hi[1]
+                || waste * ((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) > 0.
+        })
+    {
+        return Err("The selected cutoff must span a full retained wall with the kerf on the waste side and the model within stock".into());
+    }
+    Ok(chain.as_slice())
 }

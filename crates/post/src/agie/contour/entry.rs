@@ -134,6 +134,7 @@ pub(super) fn entry_face(
     best.ok_or_else(|| match side {
         AgieSide::Die => "The job needs 3 mm of clear inward lead from the start hole and 3 mm of straight wall on both sides of the entry into the die opening".into(),
         AgieSide::Punch if nominal_room => "The job cannot place an exterior entry on the 0.00001 mm ISO grid and keep the required 3 mm clearance".into(),
+        AgieSide::Left | AgieSide::Right => "An open cut has no start hole entry".into(),
         AgieSide::Punch => "The job needs the start hole at least 3 mm outside a straight face, with at least 3 mm of straight face on both sides of the perpendicular entry for the lead and separation".into(),
     })
 }

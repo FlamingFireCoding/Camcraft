@@ -3,6 +3,8 @@
 //! This encoder references an existing ISO geometry file for one closed punch
 //! ([`PunchSetup20::encode`]) or one convex die opening on a 20 mm plate
 //! ([`PunchSetup20::encode_die`]). The two differ only in the work side.
+//! [`CutoffSetup20::encode`] writes one straight open cut on a 20 mm plate,
+//! with a left or right side and two air endpoints instead of a start hole.
 //! The caller must verify the nominal contour, its lead from the threading hole,
 //! and the compensated cuts against the stock, installed travel and fixtures.
 //! The piece uses stock top Z0, steel 0001, Berco Cut 0.25 and a 1 mm separation.
@@ -102,6 +104,14 @@ pub enum SetupError {
         "Use a 20 mm plate for a die opening. The control checked the die cycle at 20 mm only."
     )]
     UnqualifiedDieHeight,
+    #[error(
+        "Use a 20 mm plate for an open cutoff. The control checked the open cut at 20 mm only."
+    )]
+    UnqualifiedCutoffHeight,
+    #[error(
+        "Place the entry and exit points in air beyond opposite faces of the stock and inside the 350 × 250 mm XY span."
+    )]
+    CutoffEndpoints,
 }
 
 /// The stock thickness of the control-checked die cycle (#2957).
@@ -112,7 +122,25 @@ pub const DIE_HEIGHT_UM: i32 = 20_000;
 enum WorkSide {
     Punch,
     Die,
+    Left,
+    Right,
 }
+
+impl WorkSide {
+    fn native(self) -> &'static str {
+        match self {
+            Self::Punch => "c_punch",
+            Self::Die => "c_die",
+            Self::Left => "c_left",
+            Self::Right => "c_right",
+        }
+    }
+}
+
+mod cutoff;
+mod piece;
+use piece::{attribute_call, checked};
+pub use cutoff::{CUTOFF_HEIGHT_UM, CutoffSetup20, CutoffSide};
 
 impl PunchSetup20<'_> {
     /// Encode one native work with zero erosion steps on import.
@@ -156,33 +184,58 @@ impl PunchSetup20<'_> {
         }
         // The punch text is unchanged. A die adds the side and the slug check.
         let die_check = match side {
-            WorkSide::Punch => "",
             WorkSide::Die => concat!(
                 " Confirm the c_die side and that each offset is inside the opening.",
                 " Support the slug before the control releases the separation section.",
             ),
+            _ => "",
         };
-        Ok(SetupFiles {
-            sbl: piece(self, side),
-            sbr: format!("AGIE.USING_{0}.ISO IMPORT {0}.ISO;\r\n", self.stem),
-            controller_review: format!(
-                concat!(
-                    "Import the ISO into ISO Sys and keep its SBR beside the SBL during script import. ",
-                    "Select the newly created piece. Earlier pieces can retain their steps on repeat import. ",
-                    "Match this work's ISO resource, geometry and start hole to the setup. Confirm zero steps. ",
-                    "Verify steel 0001, Berco Cut 0.25 and {height} mm. CCB030 requests Ra 0.30, Te 1.50, ",
-                    "Tkm 1.00 and three disabled options. Check the effective values and both visible options ",
-                    "on this work. Assign the matching TECCUT row. Check offsets of {rough}, {trim1}, {trim2} and ",
-                    "{trim3} µm in order before GRAFICHECK and FORMALCHECK.{die_check}",
-                ),
-                height = self.height_um / 1000,
-                rough = rough,
-                trim1 = trim1,
-                trim2 = trim2,
-                trim3 = trim3,
-                die_check = die_check,
+        let work = piece::Work {
+            stem: self.stem,
+            stock_min_um: self.stock_min_um,
+            stock_max_um: self.stock_max_um,
+            height_um: self.height_um,
+            side: side.native(),
+            start_um: self.start_hole_um,
+            exit_um: None,
+        };
+        Ok(setup_files(
+            &work,
+            "geometry and start hole",
+            [rough, trim1, trim2, trim3],
+            die_check,
+        ))
+    }
+}
+
+/// The SBL, the SBR and the operator review of one zero-step work.
+fn setup_files(
+    work: &piece::Work<'_>,
+    points: &str,
+    [rough, trim1, trim2, trim3]: [u16; 4],
+    side_check: &str,
+) -> SetupFiles {
+    SetupFiles {
+        sbl: piece::piece(work),
+        sbr: format!("AGIE.USING_{0}.ISO IMPORT {0}.ISO;\r\n", work.stem),
+        controller_review: format!(
+            concat!(
+                "Import the ISO into ISO Sys and keep its SBR beside the SBL during script import. ",
+                "Select the newly created piece. Earlier pieces can retain their steps on repeat import. ",
+                "Match this work's ISO resource, {points} to the setup. Confirm zero steps. ",
+                "Verify steel 0001, Berco Cut 0.25 and {height} mm. CCB030 requests Ra 0.30, Te 1.50, ",
+                "Tkm 1.00 and three disabled options. Check the effective values and both visible options ",
+                "on this work. Assign the matching TECCUT row. Check offsets of {rough}, {trim1}, {trim2} and ",
+                "{trim3} µm in order before GRAFICHECK and FORMALCHECK.{side_check}",
             ),
-        })
+            points = points,
+            height = work.height_um / 1000,
+            rough = rough,
+            trim1 = trim1,
+            trim2 = trim2,
+            trim3 = trim3,
+            side_check = side_check,
+        ),
     }
 }
 
@@ -198,169 +251,4 @@ pub fn valid_stem(stem: &str) -> bool {
         && !(bytes.len() == 4
             && (stem.starts_with("COM") || stem.starts_with("LPT"))
             && bytes[3].is_ascii_digit())
-}
-
-/// Format native millimetres without rounding a floating point coordinate.
-fn mm(value_um: i64) -> String {
-    let sign = if value_um < 0 { "-" } else { "" };
-    let value = value_um.unsigned_abs();
-    format!("{sign}{}.{:03}", value / 1000, value % 1000)
-}
-
-fn attribute(lines: &mut Vec<String>, object: &str, context: &str, key: &str, value: &str) {
-    lines.push(attribute_call(object, context, key, value));
-}
-
-fn attribute_call(object: &str, context: &str, key: &str, value: &str) -> String {
-    format!("  ok=JE_AttribObject({object},SETATTR,je_piece,{context},{key},{value},je_dim)")
-}
-
-fn checked(lines: &mut Vec<String>, command: String) {
-    lines.push(command);
-    lines.extend([
-        "  if (ok<>0) then".into(),
-        "    stop".into(),
-        "  end if".into(),
-    ]);
-}
-
-fn piece(setup: &PunchSetup20<'_>, side: WorkSide) -> String {
-    let [xmin, ymin] = setup.stock_min_um.map(i64::from);
-    let [xmax, ymax] = setup.stock_max_um.map(i64::from);
-    let stem = setup.stem;
-    let height = mm(i64::from(setup.height_um));
-    let group = format!("\"{stem}\"");
-    let work = format!("{group},\"CUT1\"");
-    let work_context = format!("{work},NULL");
-    let hole_context = format!("{work},\"stp1\"");
-    let mut lines = vec!["'$Include \"jescript.sbh\"".into(), "sub SetOrigin".into()];
-    for (field, value) in [
-        ("ID_HEIGHT", height.clone()),
-        ("ID_NOMEOBJ", stem.into()),
-        ("ID_MATERIAL", "0001".into()),
-        ("ID_THREAD", "Berco Cut 0.25".into()),
-        ("ID_POSX", "0".into()),
-        ("ID_POSY", "0".into()),
-        ("ID_POSZ", "0".into()),
-        ("ID_ROTATION", "0".into()),
-        ("ID_DIML", mm(xmax - xmin)),
-        ("ID_DIMB", mm(ymax - ymin)),
-        ("ID_POSPOSX", mm(xmin)),
-        ("ID_POSPOSY", mm(ymin)),
-        ("ID_POSPOSZ", mm(-i64::from(setup.height_um))),
-        ("ID_VALSECP", "3.0".into()),
-        ("ID_VALRETP", "30.0".into()),
-    ] {
-        attribute(
-            &mut lines,
-            "PIECE",
-            "NULL,NULL,NULL",
-            field,
-            &format!("\"{value}\""),
-        );
-    }
-    lines.extend([
-        "  ok=JE_GenerateAttrib(c_tecauto,c_tecauto_t)".into(),
-        "  ok=JE_GenerateAttrib(c_tecassign,c_tecass_fi)".into(),
-        "  ok=JE_GenerateAttrib(c_tecalert,c_tecalert_sea)".into(),
-        "end sub".into(),
-        "sub CutPunch".into(),
-    ]);
-    checked(
-        &mut lines,
-        "  ok=JE_CreateQuality(je_piece,\"CCB030\",\"0.30,1.50,1.00,F,F,F\",je_q1)".into(),
-    );
-    checked(
-        &mut lines,
-        format!("  ok=JE_Create(GROUP,je_piece,{group},NULL)"),
-    );
-    checked(&mut lines, format!("  ok=JE_Create(WORK,je_piece,{work})"));
-    attribute(
-        &mut lines,
-        "WORK",
-        &work_context,
-        "ID_GEOMETRY",
-        &format!("\"AGIE.USING_{stem}.ISO\""),
-    );
-    let work_side = match side {
-        WorkSide::Punch => "c_punch",
-        WorkSide::Die => "c_die",
-    };
-    attribute(&mut lines, "WORK", &work_context, "ID_PUNCH", work_side);
-    attribute(&mut lines, "WORK", &work_context, "ID_WORKCOND", "\"2\"");
-    checked(
-        &mut lines,
-        format!(
-            "  ok=JE_AttribObject(WORK,SETATTR,je_piece,{work_context},ID_QUALITY,je_q1,je_dim)"
-        ),
-    );
-    let work_height = format!("\"{height}\"");
-    for (field, value) in [
-        ("ID_THREAD", "\"Berco Cut 0.25\""),
-        ("ID_ENTRYMODE", "c_entper"),
-        ("ID_HEIGHT", work_height.as_str()),
-        ("ID_POSX", "\"0\""),
-        ("ID_POSY", "\"0\""),
-        ("ID_SEPCUT", "\"1.0\""),
-        ("ID_REVCUT", "\"T\""),
-        ("ID_COMMPOINTENTRY", "\"3.0\""),
-        ("ID_COMMPOINTEXIT", "\"0\""),
-        ("ID_PRIORITY", "\"10\""),
-        ("ID_RADIUSMINLA", "\"T\""),
-        ("ID_I_TYPE", "c_radius_rm"),
-        ("ID_E_TYPE", "c_radius_rm"),
-        ("ID_ENTRY", "\"2\""),
-    ] {
-        attribute(&mut lines, "WORK", &work_context, field, value);
-    }
-    lines.push(format!(
-        "  ok=JE_CreateStartPoint(WORK,\"stp1\",je_piece,{work})"
-    ));
-    for (field, coordinate) in ["ID_POSX", "ID_POSY"].into_iter().zip(setup.start_hole_um) {
-        attribute(
-            &mut lines,
-            "STARTPOINT",
-            &hole_context,
-            field,
-            &format!("\"{}\"", mm(i64::from(coordinate))),
-        );
-    }
-    attribute(&mut lines, "WORK", &work_context, "ID_STP", "\"stp1\"");
-    attribute(&mut lines, "WORK", &work_context, "ID_STPMODE", "c_work");
-    attribute(
-        &mut lines,
-        "STARTPOINT",
-        &hole_context,
-        "ID_STP_PL",
-        "\"4\"",
-    );
-    attribute(
-        &mut lines,
-        "STARTPOINT",
-        &hole_context,
-        "ID_DIAMETER",
-        "\"2.0\"",
-    );
-    // An existing quality name can bind to stale data even after a successful assignment.
-    checked(
-        &mut lines,
-        format!("  ok=JE_GenerateCuts(WORK,je_piece,{work},ASDELETE,NULL)"),
-    );
-    lines.extend([
-        "end sub".into(),
-        "sub main".into(),
-        "  ok=JE_Initiate".into(),
-        "  if (ok=0) then".into(),
-        "    SetOrigin".into(),
-        "    CutPunch".into(),
-        "    ok=JE_AttribObject(PIECE,SETATTR,je_piece,je_grp,NULL,NULL,ID_STATEGY,\"EW\",je_dim)"
-            .into(),
-        "    ok=JE_ClosePiece(je_piece)".into(),
-        "  else".into(),
-        "    stop".into(),
-        "  end if".into(),
-        "end sub".into(),
-        String::new(),
-    ]);
-    lines.join("\r\n")
 }

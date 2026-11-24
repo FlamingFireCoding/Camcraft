@@ -38,7 +38,7 @@ fn intersects(a: Point, b: Point, c: Point, d: Point) -> bool {
         || (z == 0 && between(c, d, b))
 }
 
-fn micrometres(value: f64) -> Result<i32, String> {
+pub(super) fn micrometres(value: f64) -> Result<i32, String> {
     // quantize rejects nonfinite or out-of-range geometry before conversion.
     let hundredth_microns = quantize(value)?;
     let microns = i32::try_from(hundredth_microns / 100)
@@ -77,9 +77,17 @@ fn punch_setup<'a>(job: &AgieJob, program: &'a str) -> Result<PunchSetup20<'a>, 
     if job.side == AgieSide::Die && i32::from(mm) * 1000 != crate::agie_setup::DIE_HEIGHT_UM {
         return Err("The die opening requires the qualified 20 mm stock height".into());
     }
-    if !(0..2)
-        .all(|i| job.start[i] - 1.0 >= job.stock_min[i] && job.start[i] + 1.0 <= job.stock_max[i])
-    {
+    // An open cut has two air endpoints and no hole; `cutoff` prepares it.
+    let start = match (job.side, job.start) {
+        (AgieSide::Punch | AgieSide::Die, Some(start)) => start,
+        (AgieSide::Punch | AgieSide::Die, None) => {
+            return Err("The closed contour requires a predrilled 2 mm start hole".into());
+        }
+        (AgieSide::Left | AgieSide::Right, _) => {
+            return Err("An open cut has no closed contour or start hole".into());
+        }
+    };
+    if !(0..2).all(|i| start[i] - 1.0 >= job.stock_min[i] && start[i] + 1.0 <= job.stock_max[i]) {
         return Err("The complete 2 mm start hole must lie inside the stock".into());
     }
     Ok(PunchSetup20 {
@@ -92,7 +100,7 @@ fn punch_setup<'a>(job: &AgieJob, program: &'a str) -> Result<PunchSetup20<'a>, 
             micrometres(job.stock_max[0])?,
             micrometres(job.stock_max[1])?,
         ],
-        start_hole_um: [micrometres(job.start[0])?, micrometres(job.start[1])?],
+        start_hole_um: [micrometres(start[0])?, micrometres(start[1])?],
         height_um: i32::from(mm) * 1000,
     })
 }
@@ -177,7 +185,10 @@ pub(super) fn prepare<'a>(
     // The hole (radius 1 mm) and the swept rough pass both fit in the convex
     // stock. The straight perpendicular entry between them fits too.
     check_cut_envelope(&outline, job, rough_um)?;
-    let hole = [quantize(job.start[0])?, quantize(job.start[1])?];
+    let start = job
+        .start
+        .ok_or("The closed contour requires a predrilled 2 mm start hole")?;
+    let hole = [quantize(start[0])?, quantize(start[1])?];
     let (edge, foot) = entry::entry_face(&outline, hole, job.side, stock_margin(rough_um))?;
     // Begin the nominal program at the middle of the chosen edge, facing along that edge. The
     // hole and the full three-millimetre lead share its waste half-plane. Compensation is
