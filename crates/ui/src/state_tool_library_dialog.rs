@@ -14,6 +14,7 @@
 //! its own draft too ([`ToolEditorView::holder`]), and a change of the
 //! stored tool's length re-seeds only that draft's projection (#808
 //! item 2). The stored `HolderRef` changes only through Apply holder.
+//! #3896 (U5): the editor's Recipes tab ([`ToolEditorTab::Recipes`]).
 //! Provenance: our own view state, after the tool shape window's
 //! `Option` pattern; no HSMWorks material involved.
 
@@ -36,6 +37,9 @@ pub enum ToolEditorTab {
     /// Type, geometry and the kind's own rows.
     #[default]
     Tool,
+    /// #3896 (U5): the cutting data per workpiece material, with the
+    /// surface speed and the feed per tooth of each row.
+    Recipes,
     /// Material group, the catalog facts (#898) and the tool number.
     Details,
 }

@@ -133,6 +133,8 @@ mod tool_library_editor;
 mod tool_library_preview;
 // #3895: the holder, gauge length and stick-out in the tool library window.
 mod tool_library_assembly;
+// #3896: the Recipes tab of the tool library window's editor.
+mod tool_library_recipes;
 mod anchors;
 mod stock_fit;
 mod stock_source_default;
