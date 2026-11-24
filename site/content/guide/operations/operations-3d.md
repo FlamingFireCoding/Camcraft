@@ -51,7 +51,7 @@ Blue shows the operation travel; dashed orange shows approach and retract; gray 
 <!-- catalog:examples:start -->
 **Example cases**
 
-No catalog case yet.
+- [3d/rough-finish](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/3d/rough-finish)
 <!-- catalog:examples:end -->
 
 {{ <icon name="op-pocket3d" /> }} ![View of roughing passes at successive levels around a 3D model.](../../../operation-paths.svg#Pocket3D)
@@ -137,7 +137,7 @@ so a deep job can refuse even where there appears to be side clearance.
 <!-- catalog:examples:start -->
 **Example cases**
 
-No catalog case yet.
+- [3d/rough-finish](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/3d/rough-finish)
 <!-- catalog:examples:end -->
 
 {{ <icon name="op-finish3d" /> }} ![View of parallel finishing passes following a curved surface.](../../../operation-paths.svg#Finish3D)
@@ -149,6 +149,15 @@ ground. Use it after a 3D Pocket has roughed the part.
 **Picks:** none needed; the path covers the whole model. With Boundary
 settings, the whole-model path is clipped to the area, and it leaves and
 re-enters through the clearance plane.
+
+**Do not touch** on **Geometry > Boundary > Boundaries** also protects
+model faces or edge chains on 3D Finish. Choose **Pick protected**, pick
+the items, choose **Done**, set **Clearance**, then **Apply**. CamCraft
+restricts the finishing area so the full tool assembly (flutes, shank and
+holder) stays clear from the cut depths up to the clearance plane.
+Clearance adds to positive **Stock to leave**. The final check includes cuts,
+entries, lifts and rapid links; an unsafe path is refused and cannot post.
+Protected items stay highlighted while the operation is selected.
 
 | Tab | Setting | Default |
 |---|---|---|

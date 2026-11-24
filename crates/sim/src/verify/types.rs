@@ -186,6 +186,10 @@ pub struct VerifyContext<'a> {
     /// that traces one at the untightened `gouge_tol`
     /// ([`VerifyContext::loop_tol`]). Empty everywhere else.
     pub rims: &'a [(crate::geo2d::Point2, f64)],
+    /// Geometric upper bound of the finished hole walls (#3451).
+    /// Only the axial cone boundary check reads this cap. `None` keeps
+    /// the stock-top cap; the rapid and collision laws always use stock.
+    pub rim_top_z: Option<f64>,
     /// The spindle a turning nose path cuts about (#1408): given, the
     /// envelope law (f) reads the hidden half as the turning work sees
     /// it (`stock_sim::envelope_scan_turned`). `None` - every mill
@@ -232,6 +236,7 @@ impl Default for VerifyContext<'_> {
             model_excess: 0.0,
             file_tolerance: false,
             rims: &[],
+            rim_top_z: None,
             lathe_axis: None,
             corner_reliefs: &[],
         }
@@ -302,6 +307,8 @@ pub enum Warning {
     /// Rapid `move` travels through stock: under the clearance plane,
     /// or (#2121) at it under the stock top.
     RapidInStock { at: usize },
+    /// The tool assembly meets the finished part on rapid move `at` (#3520).
+    RapidInPart { at: usize },
     /// #2901: the path starts at `height_mm`, under the `top_mm` of the
     /// start stock or of a fixture (`fixture`). The first traverse comes
     /// from an X/Y the machine does not know, so it can cross that top
@@ -493,6 +500,9 @@ impl core::fmt::Display for Warning {
             ),
             Warning::RapidInStock { at } => {
                 write!(f, "rapid move {at} travels through stock (below the clearance plane, or at it below the stock top)")
+            }
+            Warning::RapidInPart { at } => {
+                write!(f, "tool meets the part on rapid move {at}")
             }
             Warning::FirstTraverseLow { at, height_mm, top_mm, fixture, tilted: false } => write!(
                 f,

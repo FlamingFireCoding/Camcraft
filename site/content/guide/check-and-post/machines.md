@@ -22,7 +22,7 @@ messages below.
 | Lathe | Turning, plus the axial Drill | Fanuc Lathe, Tormach PathPilot Lathe | Turning center 2-axis, Tormach 8L, 15L, 15LX |
 | Mill-turn (live tooling) | milling and turning | every post except plasma | Multitasking 5-axis |
 | Plasma | Plasma Profile only | Tormach PathPilot Plasma | Tormach 1300PL |
-| Wire / sinker EDM | Wire Contour (wire EDM); Sinker Burn, Side Burn (sinker EDM) | Generic ISO Wire EDM, Sodick Wire EDM (Mark 21); Sinker EDM (ISO) | Sodick ALC400G (complete its EDM data); supply a sinker machine file |
+| Wire / sinker EDM | Wire Contour (wire EDM); Sinker Burn, Side Burn (sinker EDM) | Generic ISO Wire EDM, Sodick Wire EDM (Mark 21), G-EDM Wire EDM; Sinker EDM (ISO) | Sodick ALC400G (complete its EDM data); supply a sinker machine file |
 
 A **waterjet** machine file needs linear X and Y axes; Z is optional. It
 is refused by name if it states a spindle, live tooling, a rotary axis or
@@ -31,9 +31,9 @@ milling coolant. The matching **Waterjet nozzle** tool kind turns no spindle
 material and thickness: cut feed, kerf, pierce time, abrasive delay,
 re-pierce time and pierce method. The machine check judges X/Y travel and
 feed limits, including arc extremes, and says which Z and spindle checks do
-not apply. No waterjet operation kind and no post for it ship yet, so a
-waterjet machine can be declared, mounted and checked but nothing can be
-posted for it.
+not apply. The [Waterjet Profile](@/guide/operations/operations-waterjet.md)
+operation cuts on it, and the generic ISO abrasive waterjet post
+(`waterjet-iso.cps`) posts it.
 
 The picker lists posts for the setup's machine kind. A loaded post also
 refuses by name any operation or move that it cannot express.
@@ -242,6 +242,11 @@ Wire Contour runs on a machine file that declares `wire_edm`. The
 `edm.codes`. A user `.cps` file can also declare `wireEdm` in its manifest.
 The **Sodick Wire EDM (Mark 21)** post writes 2-axis contours. It refuses
 taper and 4-axis cuts. Its output has not been verified on a Sodick control.
+The **G-EDM Wire EDM** post writes one 2-axis contour for a G-EDM
+controller (G-RBLv3). It needs no `edm.codes`: you set the spark power at
+the controller. Thread the wire at the start point before you start the
+program. It refuses taper, 4-axis cuts, skims and wire offset (G41 / G42).
+Its output has not been verified on a G-EDM controller.
 
 For an angle-word taper, the machine must state `edm.taper_angle`,
 including its side rule and mitre or cone corner rule. The generic wire

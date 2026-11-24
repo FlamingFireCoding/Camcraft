@@ -27,6 +27,7 @@ use super::shell::*;
 use super::{gpu, gpu_init, icons, theme, world};
 
 mod capture;
+mod eye_boot;
 mod frame;
 mod start;
 
@@ -56,6 +57,11 @@ pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: O
     let ai_proxy = event_loop.create_proxy();
     shell.state.set_ai_wake(std::sync::Arc::new(move || {
         let _ = ai_proxy.send_event(());
+    }));
+    // #2428: check GitHub for a newer release once per day on native startup.
+    let update_proxy = event_loop.create_proxy();
+    shell.state.start_update_check(std::sync::Arc::new(move || {
+        let _ = update_proxy.send_event(());
     }));
     // #183: the opt-in live MCP server. Its waker posts an empty user
     // event, which wakes the idle loop for a frame that answers the call.
@@ -109,6 +115,8 @@ struct Shell {
     /// M7.2 B3b: the traced-stock eye; `None` where the device cannot
     /// composite it (the stock sheet then stands, said once at init).
     stock_eye: Option<crate::trace::eye::StockEye>,
+    /// The eye being built on its own thread (`eye_boot`); `None` once taken.
+    eye_rx: Option<eye_boot::EyeRx>,
     view_tex: Option<egui::TextureId>,
     /// The bundled glyphs, built once on the first GPU-backed frame (the
     /// retired imgui loader's law: lazy, and `None` means painted fallback,
@@ -186,6 +194,7 @@ impl Shell {
             dock_state,
             view: None,
             stock_eye: None,
+            eye_rx: None,
             view_tex: None,
             icons: None,
             viewport_points: [600.0, 400.0],
@@ -274,13 +283,17 @@ impl Shell {
         view.set_document(&device, &queue, &scene.parts);
         view.set_shade(&device, &queue, &scene.shade);
         view.set_overlay(&device, &queue, &scene.overlay);
-        let stock_eye = match crate::trace::eye::StockEye::new(&device, VIEW3D_FORMAT) {
-            Ok(e) => Some(e),
-            Err(err) => {
-                diag_warn!("stock eye: {err} - the deviate sheet stands in");
-                None
-            }
-        };
+        // The eye lands on a later frame; until then the sheet stands in.
+        self.eye_rx = eye_boot::spawn(device.clone(), VIEW3D_FORMAT, Arc::clone(&window));
+        if self.eye_rx.is_none() {
+            self.stock_eye = match crate::trace::eye::StockEye::new(&device, VIEW3D_FORMAT) {
+                Ok(e) => Some(e),
+                Err(err) => {
+                    diag_warn!("stock eye: {err} - the deviate sheet stands in");
+                    None
+                }
+            };
+        }
         let tex =
             renderer.register_native_texture(&device, view.color_view(), wgpu::FilterMode::Linear);
         let winit_state = egui_winit::State::new(
@@ -301,7 +314,6 @@ impl Shell {
         self.renderer = Some(renderer);
         self.winit_state = Some(winit_state);
         self.view = Some(view);
-        self.stock_eye = stock_eye;
         self.view_tex = Some(tex);
     }
 
@@ -350,6 +362,7 @@ impl Shell {
         // #183: the MCP listener stops (and its thread is joined) first,
         // so no wake-up reaches a closing loop.
         self.state.ai_chat.shutdown();
+        self.state.update_watcher.clear();
         self.state.ai_mcp_inbox = None;
         self.state.mcp = None;
         self.renderer = None;

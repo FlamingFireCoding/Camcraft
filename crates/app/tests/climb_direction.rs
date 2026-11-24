@@ -160,7 +160,7 @@ fn contour(side: Side, climb: bool, lead: Lead, bottom: f64) -> OpParams {
         tab_height: 1.0,
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         tilt: None,
         links: camcraft_app::links::Links::PLANAR,
         chain_overrides: Vec::new(),
@@ -209,6 +209,7 @@ fn first_in_solid(t: &Toolpath) -> Option<Point3> {
 
 fn adaptive2d(climb: bool) -> OpParams {
     OpParams::Adaptive2D {
+        rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         stepover: 4.0,

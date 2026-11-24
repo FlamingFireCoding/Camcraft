@@ -87,7 +87,7 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
     {
         return Err("The native wire EDM job requires axis-aligned rectangular box stock".into());
     }
-    let mut job = job::collect_job(world, op, name).map_err(|e| e.to_string())?;
+    let job = job::collect_job(world, op, name).map_err(|e| e.to_string())?;
     if !job.fixtures.is_empty() || !job.unread_steel.is_empty() {
         return Err("The native wire EDM post cannot verify controller-generated leads against fixtures".into());
     }
@@ -96,32 +96,22 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
     if job.hs.top != Some(hi.z) || job.hs.bottom != Some(lo.z) || oz != hi.z {
         return Err("The native wire EDM job requires a through cut from stock top to bottom and the setup Z origin at stock top".into());
     }
-    if hi.z - lo.z != 20.0 {
-        return Err("This Berco Cut 0.25 QN2 recipe requires 20 mm stock thickness".into());
-    }
     // Guide heights and posted stock Z are in the setup frame (stock top Z0).
     if edm.lower_guide_z.is_some_and(|z| z > lo.z - oz)
         || edm.upper_guide_z.is_some_and(|z| z < 0.0)
     {
         return Err("The wire work extends outside the stated wire guide heights".into());
     }
-    let region = job::region_for_job(
-        &mut job.picked_region,
-        &mut job.section_z,
-        &job.src,
-        &job.params,
-        &job.material,
-        None,
-    )
-    .map_err(|e| e.to_string())?;
+    if !job.material.bodies.is_empty() {
+        return Err("The native wire EDM job requires one closed vertical prism spanning the stock height; cavities, steps and multiple bodies are unsupported".into());
+    }
+    // Both caps of the complete source model have the exact planar outline.
+    // A union of sampled slices can add rounded vertices along a sloping face.
+    let region = crate::geometry::closed_vertical_prism(&job.material.facets, lo.z, hi.z)
+        .map_err(|why| format!("The native wire EDM job requires one closed vertical prism spanning the stock height: {why}"))?;
     let [ring] = region.loops() else {
         return Err("The native wire EDM job requires exactly one closed punch boundary, without openings or additional contours".into());
     };
-    if !job.material.bodies.is_empty()
-        || !crate::geometry::is_closed_convex_prism(&job.material.facets, ring, lo.z, hi.z)
-    {
-        return Err("The native wire EDM job requires one closed convex vertical prism spanning the stock height; cavities, steps, concavities and multiple bodies are unsupported".into());
-    }
     Ok(agie::AgieJob {
         contour: ring.points().iter().map(|p| [p.x - ox, p.y - oy]).collect(),
         start: [start[0] - ox, start[1] - oy],

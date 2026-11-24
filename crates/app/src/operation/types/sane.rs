@@ -27,7 +27,11 @@ impl OpParams {
     /// The corner-arc option's door (#1733), for the kinds that carry it.
     fn arc_turn_refusal(&self) -> Option<&'static str> {
         let (on, radius, trochoidal) = match self {
+            // #1759: Face, 2D Contour and Slot carry the option too.
             OpParams::Pocket { blend_turns, blend_radius, .. }
+            | OpParams::Face { blend_turns, blend_radius, .. }
+            | OpParams::Contour { blend_turns, blend_radius, .. }
+            | OpParams::Slot { blend_turns, blend_radius, .. }
             | OpParams::Offset2D { blend_turns, blend_radius, .. } => (*blend_turns, *blend_radius, false),
             OpParams::Adaptive2D { blend_turns, blend_radius, method, .. } => {
                 (*blend_turns, *blend_radius, *method == crate::machining2d::AdaptiveMethod::Trochoidal)
@@ -73,6 +77,10 @@ impl OpParams {
         // than ignored (`operation::pick_kinds`).
         if let Some(why) = self.pick_refusal() {
             return Some(why);
+        }
+        // #3745: the approach distance outside the stock, by name.
+        if let Some(why) = self.links().and_then(|l| l.approach.approach_distance_refusal()) {
+            return Some(why.into());
         }
         match self {
             OpParams::Finish3D { direction_angle, .. } => {
@@ -132,6 +140,8 @@ impl OpParams {
             && match self {
             // The plasma door (#670): the parameter set's own sanity.
             OpParams::PlasmaProfile(p) => p.is_sane(),
+            // The waterjet door (#1883).
+            OpParams::WaterjetProfile(p) => p.is_sane(),
             // The wire door (#532): the parameter set's own sanity; the
             // condition is the command door's world question.
             OpParams::WireContour(p) => p.is_sane(),
@@ -566,6 +576,49 @@ impl OpParams {
                     && hole_max_diameter.is_finite()
                     && *hole_min_diameter >= 0.0
                     && hole_max_diameter >= hole_min_diameter
+            }
+            // #1894: the Deburr's numbers, and the lean inside its cap -
+            // the kernel's door at command creation.
+            OpParams::MultiAxisDeburr {
+                width,
+                clearance_z,
+                top_z,
+                bottom_z,
+                feed,
+                plunge_feed,
+                exclude_edges,
+                min_edge_angle_deg,
+                exclude_holes: _,
+                hole_min_diameter,
+                hole_max_diameter,
+                unreachable: _,
+                sizing,
+                axis_mode: _,
+                lead_deg,
+                lag_deg,
+                max_tilt_deg,
+                shank_avoid: _,
+            } => {
+                let cap = crate::multiaxis::MAX_TILT_CAP_DEG;
+                let deg = |v: f64| v.is_finite() && (0.0..=cap).contains(&v);
+                pos(*width)
+                    && sizing.is_sane()
+                    && clearance_z.is_sane()
+                    && top_z.is_sane()
+                    && bottom_z.is_sane()
+                    && pos(*feed)
+                    && pos(*plunge_feed)
+                    && exclude_edges.iter().all(|g| matches!(g.feature, FeatureSel::Chain(_)))
+                    && min_edge_angle_deg.is_finite()
+                    && (0.0..180.0).contains(min_edge_angle_deg)
+                    && hole_min_diameter.is_finite()
+                    && hole_max_diameter.is_finite()
+                    && *hole_min_diameter >= 0.0
+                    && hole_max_diameter >= hole_min_diameter
+                    && deg(*lead_deg)
+                    && deg(*lag_deg)
+                    && deg(*max_tilt_deg)
+                    && (lead_deg - lag_deg).abs() <= *max_tilt_deg
             }
             OpParams::Contour5D {
                 tolerance,
@@ -1102,6 +1155,7 @@ impl OpParams {
                 plunge_feed,
                 bar_advance,
                 inspect_tol,
+                kerf,
                 ..
             } => {
                 pos(*tolerance)
@@ -1126,6 +1180,8 @@ impl OpParams {
                     // generator's level-cap precedent, at the door.
                     && inspect_tol.is_finite()
                     && (*inspect_tol == 0.0 || *inspect_tol >= 1e-4)
+                    // #3469: the back stock is a length, 0 or more.
+                    && kerf.problem().is_none()
             }
             // The threading door (M5.2 stage D): three positive helix
             // numbers - pitch, depth, infeed - beside the twins'
