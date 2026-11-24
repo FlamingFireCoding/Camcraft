@@ -12,7 +12,7 @@ use egui::accesskit::Role;
 
 use super::tool_library_editor::{H, click_window_button, library_window, open_in_window};
 use super::*;
-use crate::egui_app::tool_library_dialog::{self as dialog, categories, list, preview, recipes_tab, thumbs};
+use crate::egui_app::tool_library_dialog::{self as dialog, categories, list, preview, recipes_tab, side_view, thumbs};
 
 fn painted_texts(h: &H) -> Vec<String> {
     super::structural::painted(h).into_iter().map(|(t, _)| t).collect()
@@ -165,4 +165,57 @@ fn the_window_shows_the_recipes_table_and_the_preview_side_by_side() {
     let narrow = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(1280.0, 720.0));
     let (w, left) = dialog::width(narrow);
     assert!(left >= 8.0 && left + w <= 1280.0 * 0.77, "{w} from {left} keeps left of Properties");
+}
+
+/// A shell on a 960 px screen (the #3943 review): the window is narrower
+/// than [`dialog::WIDE_W`], with the seeded tool in a holder and open in
+/// the window's Side view.
+fn narrow_side() -> H {
+    let mut h = Harness::builder().with_size(egui::Vec2::new(960.0, 720.0)).build_ui_state(frame, ShellUi::seeded());
+    h.run_steps(2);
+    let name = seeded_in_holder(&mut h);
+    open_in_window(&mut h, &name);
+    click_window_button(&mut h, "Side");
+    h
+}
+
+/// The Side view paints the drawing on the next frames (not the early
+/// return) and keeps at least `MIN_DRAW` for it; the size it drew.
+fn draws(h: &mut H) -> egui::Vec2 {
+    let (before, _) = side_view::drawn();
+    h.run_steps(2);
+    let (after, size) = side_view::drawn();
+    assert!(after > before, "the Side view painted no drawing ({before} -> {after})");
+    let least = side_view::MIN_DRAW - 0.5;
+    assert!(size.x >= least && size.y >= least, "the drawing keeps {} px: {size:?}", side_view::MIN_DRAW);
+    size
+}
+
+#[test]
+fn the_side_view_draws_the_tool_on_a_960_px_screen() {
+    let mut h = narrow_side();
+    let win = library_window(&h).rect();
+    assert!(win.width() < dialog::WIDE_W, "the window {win:?} is narrow");
+    assert!(win.expand(1.0).contains_rect(library_window(&h).get_by_label(preview::HOLDER).rect()), "the toggles stay in the window");
+    draws(&mut h);
+    // The layout rule: the rail folds, and the preview keeps its least width.
+    assert!(dialog::rail_w(win.width()) < dialog::rail_w(dialog::WIDE_W), "the rail folds on a narrow window");
+    for avail in [420.0, 560.0, 700.0, 1100.0] {
+        let (rows, preview) = dialog::columns(avail);
+        assert!(preview >= 160.0 && rows >= 200.0, "{avail}: rows {rows}, preview {preview}");
+        assert!(avail < 560.0 || preview >= dialog::PREVIEW_MIN, "{avail}: the preview {preview} keeps {}", dialog::PREVIEW_MIN);
+    }
+    assert!(painted_texts(&h).iter().any(|t| t.starts_with("dimensions in")), "the dimension lines stay on");
+}
+
+#[test]
+fn the_side_view_without_dimensions_takes_their_room_on_a_960_px_screen() {
+    let mut h = narrow_side();
+    let with = draws(&mut h);
+    library_window(&h).get_by_label(preview::DIMS).click();
+    h.run_steps(2);
+    assert!(!face(&h).dims, "the Dimensions toggle is off");
+    let without = draws(&mut h);
+    assert!(without.x > with.x && without.y > with.y, "the drawing takes the dimension room: {with:?} -> {without:?}");
+    assert!(h.state().state.pending.is_empty(), "a toggle queues no command");
 }

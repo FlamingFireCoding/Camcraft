@@ -37,12 +37,21 @@
      The window stands left of the Properties pane. On a screen that is
      too narrow for that width, the window takes the space left of
      Properties (it then covers the browser), and the Recipes table
-     scrolls across as before.
+     scrolls across as before. Review fix (#3943): on such a window the
+     rail folds from 170 px to 120 px, the preview keeps 250 px while the
+     rows keep 280 px, and the side view's dimension room gives way
+     before the drawing: a thin 8 px border with Dimensions off, and a
+     room that shrinks in proportion so the drawing keeps 96 px. The
+     painter clips a dimension value at the area's edge.
 
 **Why.** The mock-up of #3663 (pictures 1, 2, 4, 5) and the scope comments
 on #3897.
 
 **Dropped.**
+- Stacking the preview under the rows on a narrow window (the review's
+  first option): the editor's column height is already bounded by the
+  screen, so two stacked panes would each get half of it. A folded rail
+  and a shrinking dimension room keep the two columns side by side.
 - "New holder", "Import" and "Export" on the Holders page, the holder
   fields as edit boxes, Duplicate and Apply on the holder view: these need
   the store of #3645 (U7).

@@ -23,6 +23,8 @@
 //! in the #3663 mock-up: the tabs and their rows on the left, the preview
 //! on the right. The window opens wide enough for the Recipes table and
 //! the preview side by side, as far as the screen permits ([`width`]).
+//! On a narrow window the rail folds and the preview keeps a least width
+//! ([`rail_w`], [`columns`]), so the side drawing always has room.
 //! Provenance: our own window, after the tool shape window pattern
 //! (`pages::tool_shape_editor_window`) and the egui `Window` docs; no
 //! HSMWorks material involved.
@@ -38,7 +40,7 @@ pub(crate) mod preview;
 mod rail;
 mod recipes_fill;
 pub(crate) mod recipes_tab;
-mod side_view;
+pub(crate) mod side_view;
 pub(crate) mod thumbs;
 mod tool_tab;
 
@@ -62,6 +64,30 @@ pub(crate) const PREVIEW_W: f32 = 320.0;
 /// The window's width that shows the rail, the rows and the preview side
 /// by side (with the separators and the window's margins).
 pub(crate) const WIDE_W: f32 = RAIL_W + PARAMS_W + PREVIEW_W + 60.0;
+/// #3943 review: on a narrow window the rail folds to this width, and the
+/// preview keeps [`PREVIEW_MIN`] while the rows keep [`ROWS_MIN`], so the
+/// side drawing always has room (`side_view::MIN_DRAW`).
+const RAIL_NARROW: f32 = 120.0;
+pub(crate) const PREVIEW_MIN: f32 = 250.0;
+const ROWS_MIN: f32 = 280.0;
+/// The gap between the rows and the preview (the separator and spacing).
+const COL_GAP: f32 = 24.0;
+
+/// The rail's width on a tools page `avail` wide.
+#[must_use]
+pub(crate) fn rail_w(avail: f32) -> f32 {
+    if avail < RAIL_W + ROWS_MIN + PREVIEW_MIN + COL_GAP + 16.0 { RAIL_NARROW } else { RAIL_W }
+}
+
+/// The rows' and the preview's widths in an editor `avail` wide: the
+/// preview takes 40 % up to [`PREVIEW_W`], and never less than
+/// [`PREVIEW_MIN`] while the rows keep [`ROWS_MIN`].
+#[must_use]
+pub(crate) fn columns(avail: f32) -> (f32, f32) {
+    let floor = PREVIEW_MIN.min(avail - ROWS_MIN - COL_GAP).max(160.0);
+    let preview = PREVIEW_W.min(avail * 0.4).max(floor);
+    ((avail - preview - COL_GAP).max(200.0), preview)
+}
 /// The gap between the window and the screen's edge.
 const MARGIN: f32 = 8.0;
 /// The share of the screen's width left of the Properties pane (the dock's
@@ -137,11 +163,12 @@ fn tools_page(ui: &mut Ui, state: &mut State) {
         list::draw(ui, state);
         return;
     }
+    let rail = rail_w(ui.available_width());
     let pick = ui
         .horizontal_top(|ui| {
             let pick = ui
                 .vertical(|ui| {
-                    ui.set_width(RAIL_W);
+                    ui.set_width(rail);
                     rail::draw(ui, state)
                 })
                 .inner;
@@ -190,8 +217,7 @@ fn editor(ui: &mut Ui, state: &mut State) {
             // as tall as the room would let the window grow each frame.
             let screen_h = ui.ctx().viewport_rect().height();
             let col_h = (ui.available_height() - footer_h).min(screen_h * 0.7 - 190.0).max(160.0);
-            let preview_w = PREVIEW_W.min((ui.available_width() * 0.4).max(160.0));
-            let rows_w = (ui.available_width() - preview_w - 24.0).max(200.0);
+            let (rows_w, preview_w) = columns(ui.available_width());
             let mut shape = false;
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
