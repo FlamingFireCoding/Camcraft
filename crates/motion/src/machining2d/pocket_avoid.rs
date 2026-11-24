@@ -268,7 +268,7 @@ pub(super) fn pocket_avoid_over(
             .with_cleared_links(cleared_links)
             .with_ring_links(match &src {
                 AvoidSource::Plain { side, .. } if cleared_links => {
-                    super::ring_links::for_side(side, p.tool_diameter * 0.5, Some(ko.union(&ko_entry)?))?
+                    super::ring_links::for_side(side, actual, p.tool_diameter * 0.5, Some(ko.union(&ko_entry)?))?
                 }
                 _ => None,
             })

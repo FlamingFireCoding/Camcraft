@@ -1,10 +1,12 @@
-//! Quantize the nominal polygon and find an exterior perpendicular Agie punch entry (planar geometry).
-use super::AgieJob;
+//! Quantize the nominal polygon of a punch or a die opening, check the swept
+//! rough pass and find a perpendicular entry on the waste side (planar geometry).
+use super::{AgieJob, AgieSide};
 use crate::agie_setup::{PunchSetup20, QN2_OFFSETS_UM, qn2_offsets_um};
 
 pub(super) type Point = [i64; 2];
 const UNITS: f64 = 100_000.0; // Five decimal places in the native ISO geometry file.
 const MAX_VERTICES: usize = 4096;
+mod entry;
 
 fn quantize(v: f64) -> Result<i64, String> {
     if !v.is_finite() || v.abs() > 9999.9999 {
@@ -71,6 +73,10 @@ fn punch_setup<'a>(job: &AgieJob, program: &'a str) -> Result<PunchSetup20<'a>, 
             "The QN2 recipe has no measured offset for stock thickness {height} mm. Supported thicknesses in mm are {supported}"
         ));
     };
+    // The control checked the die cycle on a 20 mm plate only (#2957).
+    if job.side == AgieSide::Die && i32::from(mm) * 1000 != crate::agie_setup::DIE_HEIGHT_UM {
+        return Err("The die opening requires the qualified 20 mm stock height".into());
+    }
     if !(0..2)
         .all(|i| job.start[i] - 1.0 >= job.stock_min[i] && job.start[i] + 1.0 <= job.stock_max[i])
     {
@@ -156,22 +162,40 @@ pub(super) fn prepare<'a>(
     if area < 0 {
         outline.reverse();
     }
+    if job.side == AgieSide::Die {
+        // Convexity proves that every straight lead from the inside hole to
+        // the chosen wall stays in the opening throughout its length.
+        if (0..n).any(|i| cross(outline[i], outline[(i + 1) % n], outline[(i + 2) % n]) <= 0) {
+            return Err("The job supports a convex die opening only".into());
+        }
+        // Clockwise, the retained plate is on the left and the waste on the
+        // right, as outside a counter-clockwise punch. The offset direction
+        // and the convex/reentrant sense of each corner flip with it: every
+        // corner of the opening is an inside corner of the plate.
+        outline.reverse();
+    }
     // The hole (radius 1 mm) and the swept rough pass both fit in the convex
     // stock. The straight perpendicular entry between them fits too.
-    check_punch_envelope(&outline, job, rough_um)?;
+    check_cut_envelope(&outline, job, rough_um)?;
     let hole = [quantize(job.start[0])?, quantize(job.start[1])?];
-    let (edge, foot) = entry_face(&outline, hole)?;
+    let (edge, foot) = entry::entry_face(&outline, hole, job.side, stock_margin(rough_um))?;
     // Begin the nominal program at the middle of the chosen edge, facing along that edge. The
-    // hole and the full three-millimetre lead share its exterior half-plane. Compensation is
-    // deliberately left to the Agie technology. The closing move returns to the inserted point.
+    // hole and the full three-millimetre lead share its waste half-plane. Compensation is
+    // deliberately left to the control technology. The closing move returns to the inserted point.
     let exact_face = cross(outline[edge], outline[(edge + 1) % n], foot) == 0;
     outline.rotate_left((edge + 1) % n);
     let mut vertices = vec![foot];
     vertices.extend(outline);
-    // An exterior rounded seam adds a small convex corner and slightly
+    // A rounded seam on the waste side adds a small corner and slightly
     // changes its neighbours. Check the envelope of the actual ISO lines.
     if !exact_face {
-        check_punch_envelope(&vertices, job, rough_um)?;
+        check_cut_envelope(&vertices, job, rough_um)?;
+    }
+    if job.side == AgieSide::Die {
+        // The control read the die opening as counter-clockwise nominal ISO
+        // geometry with c_die (#2957). Keep the seam first, so the separation
+        // stays on the chosen wall.
+        vertices[1..].reverse();
     }
     let vertices = vertices
         .into_iter()
@@ -180,17 +204,27 @@ pub(super) fn prepare<'a>(
     Ok((vertices, setup))
 }
 
+/// The measured rough wire-centre offset plus the 125 µm wire radius, rounded
+/// up to a tenth of a millimetre, in µm. All measured heights give 0.4 mm.
+fn margin_um(rough_um: u16) -> u32 {
+    (u32::from(rough_um) + 125).next_multiple_of(100)
+}
+
+/// The straight and round swept envelope of the rough pass and wire, in ISO lattice units.
+fn stock_margin(rough_um: u16) -> i64 {
+    i64::from(margin_um(rough_um)) * 100
+}
+
 /// Check the swept wire against the stock before the control chooses its
-/// corner joins. A round join lies within the rough offset of its nominal
-/// vertex. A miter reaches the intersection of the two parallel,
-/// outward-offset face lines. The segments that connect adjacent joins stay
+/// corner joins. The ring has the retained material on its left and the waste
+/// on its right. A round join lies within the rough offset of its nominal
+/// vertex. A miter reaches the intersection of the two parallel face lines
+/// offset toward the waste. The segments that connect adjacent joins stay
 /// inside the convex stock bounds.
-fn check_punch_envelope(ring: &[Point], job: &AgieJob, rough_um: u16) -> Result<(), String> {
-    // Round the measured rough wire-centre offset plus the 125 µm wire radius
-    // up to a tenth of a millimetre for the straight and round swept envelope.
-    // All measured heights give 0.4 mm. The miter below uses the exact offset.
-    let margin_um = (u32::from(rough_um) + 125).next_multiple_of(100);
-    let stock_margin = i64::from(margin_um) * 100; // ISO lattice units.
+fn check_cut_envelope(ring: &[Point], job: &AgieJob, rough_um: u16) -> Result<(), String> {
+    // The miter below uses the exact offset.
+    let margin_um = margin_um(rough_um);
+    let stock_margin = stock_margin(rough_um);
     let rough_offset = f64::from(rough_um) * 100.0;
     let wire_and_allowance = stock_margin as f64 - rough_offset;
     let lo = [quantize(job.stock_min[0])?, quantize(job.stock_min[1])?];
@@ -211,12 +245,12 @@ fn check_punch_envelope(ring: &[Point], job: &AgieJob, rough_um: u16) -> Result<
         let a = outward(previous, corner);
         let b = outward(corner, next);
         // Use the squared bisector length instead of 1 + dot(a, b);
-        // the latter loses precision when the punch corner is very sharp.
+        // the latter loses precision when the corner is very sharp.
         let bisector = [a[0] + b[0], a[1] + b[1]];
         let norm2 = bisector[0] * bisector[0] + bisector[1] * bisector[1];
         if norm2.is_nan() || norm2 <= f64::EPSILON {
             return Err(
-                "The rough pass cannot be bounded at a nearly reversed punch corner".into(),
+                "The rough pass cannot be bounded at a nearly reversed contour corner".into(),
             );
         }
         let reach = 2.0 * rough_offset / norm2.sqrt();
@@ -236,7 +270,7 @@ fn check_punch_envelope(ring: &[Point], job: &AgieJob, rough_um: u16) -> Result<
         for axis in 0..2 {
             if corner[axis] - stock_margin < lo[axis] || corner[axis] + stock_margin > hi[axis] {
                 return Err(format!(
-                    "The rough pass and wire need at least {}.{} mm of stock beyond every punch face",
+                    "The rough pass and wire need at least {}.{} mm of stock beyond every contour face",
                     margin_um / 1000,
                     margin_um % 1000 / 100,
                 ));
@@ -249,7 +283,7 @@ fn check_punch_envelope(ring: &[Point], job: &AgieJob, rough_um: u16) -> Result<
                 || miter + wire_and_allowance > right
             {
                 return Err(
-                    "The rough corner and wire can reach outside the stock at a punch vertex"
+                    "The rough corner and wire can reach outside the stock at a contour vertex"
                         .into(),
                 );
             }
@@ -272,97 +306,4 @@ pub(super) fn vector(a: Point, b: Point) -> Point {
 
 pub(super) fn dot(a: Point, b: Point) -> i128 {
     i128::from(a[0]) * i128::from(b[0]) + i128::from(a[1]) * i128::from(b[1])
-}
-
-const LEAD: i128 = 300_000; // 3 mm on the ISO lattice.
-
-/// The complete approach stays on the waste side of this emitted face.
-fn clears_entry_line(a: Point, b: Point, hole: Point) -> bool {
-    let side = cross(a, b, hole);
-    let edge = vector(a, b);
-    side < 0 && side * side >= LEAD * LEAD * dot(edge, edge)
-}
-
-/// Quantize the perpendicular projection without moving the start hole or
-/// cutting into the punch. Compare the four nearest cell corners against the
-/// exact rational projection. Allow at most one grid unit (0.00001 mm)
-/// Euclidean error to choose an exterior point when nearest rounding is inward.
-fn outside_seam(a: Point, b: Point, hole: Point, along: i128) -> Option<Point> {
-    let edge = vector(a, b);
-    let length2 = dot(edge, edge);
-    let numerator: [i128; 2] =
-        std::array::from_fn(|k| i128::from(a[k]) * length2 + i128::from(edge[k]) * along);
-    // The projected point lies strictly between the bounded endpoints, so it fits an i64.
-    let floor = [
-        i64::try_from(numerator[0].div_euclid(length2)).ok()?,
-        i64::try_from(numerator[1].div_euclid(length2)).ok()?,
-    ];
-    let mut best = None;
-    for x in floor[0]..=floor[0] + 1 {
-        for y in floor[1]..=floor[1] + 1 {
-            let p = [x, y];
-            let residual: [i128; 2] =
-                std::array::from_fn(|k| i128::from(p[k]) * length2 - numerator[k]);
-            let error2 = residual[0] * residual[0] + residual[1] * residual[1];
-            if error2 > length2 * length2 || cross(a, b, p) > 0 {
-                continue;
-            }
-            let from_a = dot(vector(a, p), edge);
-            let from_b = length2 - from_a;
-            // Measure room along the original face, before and after the seam.
-            // Neither coordinate rounding nor a short angled leg may add
-            // fictitious room for the transition and separation segment.
-            if from_a <= 0
-                || from_b <= 0
-                || from_a * from_a < LEAD * LEAD * length2
-                || from_b * from_b < LEAD * LEAD * length2
-                || !clears_entry_line(a, p, hole)
-                || !clears_entry_line(p, b, hole)
-            {
-                continue;
-            }
-            if best.is_none_or(|(previous, _)| error2 < previous) {
-                best = Some((error2, p));
-            }
-        }
-    }
-    best.map(|(_, p)| p)
-}
-
-fn entry_face(ring: &[Point], hole: Point) -> Result<(usize, Point), String> {
-    let mut best = None;
-    let mut nominal_room = false;
-    let mut nearest = f64::INFINITY;
-    for (i, &a) in ring.iter().enumerate() {
-        let b = ring[(i + 1) % ring.len()];
-        if !clears_entry_line(a, b, hole) || ring.iter().any(|&p| cross(a, b, p) < 0) {
-            continue;
-        }
-        let edge = vector(a, b);
-        let length2 = dot(edge, edge);
-        let along = dot(vector(a, hole), edge);
-        let remaining = length2 - along;
-        if along <= 0
-            || remaining <= 0
-            || along * along < LEAD * LEAD * length2
-            || remaining * remaining < LEAD * LEAD * length2
-        {
-            continue;
-        }
-        nominal_room = true;
-        let distance = -(cross(a, b, hole) as f64) / (length2 as f64).sqrt();
-        if distance < nearest
-            && let Some(foot) = outside_seam(a, b, hole, along)
-        {
-            nearest = distance;
-            best = Some((i, foot));
-        }
-    }
-    best.ok_or_else(|| {
-        if nominal_room {
-            "The job cannot place an exterior entry on the 0.00001 mm ISO grid and keep the required 3 mm clearance".into()
-        } else {
-            "The job needs the start hole at least 3 mm outside a straight face, with at least 3 mm of straight face on both sides of the perpendicular entry for the lead and separation".into()
-        }
-    })
 }
