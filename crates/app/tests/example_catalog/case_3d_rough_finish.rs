@@ -23,12 +23,11 @@ mod catalog_3d_rough_finish {
         assert!(!op_lines.is_empty(), "3D Pocket1 section present");
         let mut lowest_rapid_z = f64::INFINITY;
         for line in &op_lines {
-            if line.starts_with("G00") || line.starts_with("G0 ") {
-                if let Some(z) = word(line, 'Z') {
-                    if z < lowest_rapid_z {
-                        lowest_rapid_z = z;
-                    }
-                }
+            if (line.starts_with("G00") || line.starts_with("G0 "))
+                && let Some(z) = word(line, 'Z')
+                && z < lowest_rapid_z
+            {
+                lowest_rapid_z = z;
             }
         }
         // The last level cuts at Z8. The level above it cut at Z10.
