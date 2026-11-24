@@ -353,7 +353,7 @@ pub(super) fn pocket_over_with_relief(
             ramp_starts,
             ring_links: match side.start {
                 PassStart::Auto => None,
-                _ => super::ring_links::for_side(side, p.tool_diameter * 0.5, None)?,
+                _ => super::ring_links::for_side(side, strategy, p.tool_diameter * 0.5, None)?,
             },
             air,
         },
