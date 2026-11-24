@@ -171,6 +171,7 @@ include!("example_catalog/case_2d_slots.rs");
 
 // #2856: the refusal case 2d/drill-overfeed and its two case tests.
 include!("example_catalog/case_2d_drill_overfeed.rs");
+include!("example_catalog/case_3d_rough_finish.rs"); // #2866: 3d/rough-finish
 
 mod catalog_turning_bushing {
     use super::*;
@@ -382,7 +383,7 @@ fn hole_work_case_posts_drilling_cycles_and_thread_helix() {
         assert!(section(name).iter().any(|line| line.starts_with("G03 ")),
             "{name} must retain circular interpolation");
     }
-    assert!(section("Tap drill").contains(&"G81 X0. Y0. Z4. R20. F80"));
+    assert!(section("Tap drill").contains(&"G81 X0. Y0. Z4. R20. F80."));
     let thread = section("Thread");
     let helix: Vec<_> = thread.iter().filter(|line| {
         let words: Vec<_> = line.split_whitespace().collect();

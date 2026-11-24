@@ -57,9 +57,11 @@ pub const PLASMA_POSTS: &[&str] = &["Tormach PathPilot Plasma"];
 
 /// The registry entries that speak WIRE EDM (#533): RS-274 motion with
 /// the control's own codes from the machine file, and (#617) the Sodick
-/// dialect with its manual's words. They serve wire EDMs only, and no
-/// cutting post serves one. The first is the default for a wire EDM.
-pub const WIRE_POSTS: &[&str] = &["Generic ISO Wire EDM", "Sodick Wire EDM (Mark 21)", agie::POST];
+/// dialect with its manual's words, and (#2700) the G-EDM dialect for
+/// G-RBLv3 controllers. They serve wire EDMs only, and no cutting post
+/// serves one. The first is the default for a wire EDM.
+pub const WIRE_POSTS: &[&str] =
+    &["Generic ISO Wire EDM", "Sodick Wire EDM (Mark 21)", agie::POST, "G-EDM Wire EDM"];
 
 /// The registry entries that speak SINKER EDM (#542): RS-274 motion
 /// with the control's own codes from the machine file, each declaring
@@ -351,7 +353,7 @@ pub struct Posted {
 mod sim_clause_impl;
 #[path = "posting_plasma.rs"]
 mod plasma_clause_impl;
-pub use plasma_clause_impl::{plasma_clause, PlasmaClause, PLASMA_VERDICT};
+pub use plasma_clause_impl::{plasma_clause, GateWarning, PlasmaClause, PLASMA_VERDICT};
 #[path = "posting_wire.rs"]
 mod wire;
 pub use wire::{wire_clause, WireClause, WIRE_VERDICT};
@@ -544,11 +546,13 @@ pub use per_op::{
 pub use sim_clause_impl::{sim_clause, SimClause, NOT_JUDGED};
 
 /// The verification gate's whole answer: the blocking problems, and
-/// the stock sim's visible not-judged line (see [`sim_clause`]).
+/// the stock sim's visible not-judged line (see [`sim_clause`]), and
+/// (#3456) the program laws' non-blocking findings, one per op.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct GateReport {
     pub problems: Vec<String>,
     pub not_judged: Option<String>,
+    pub warnings: Vec<GateWarning>,
 }
 
 /// Post every operation of the document, in tree order, to one NC
@@ -1009,7 +1013,7 @@ pub fn verification_report_by(world: &World, voice: &dyn Fn(Option<&str>) -> pos
         (Some(s), Some(w)) => Some(format!("{s}; {w}")),
         (s, w) => s.or(w),
     };
-    GateReport { problems, not_judged }
+    GateReport { problems, not_judged, warnings: plasma.warnings }
 }
 
 /// The gate's fixture walk: one problem string per operation with a
@@ -1379,6 +1383,7 @@ impl HeightRefs for OpParams {
         match self {
             OpParams::Probe { clearance_z, .. } => vec![clearance_z],
             OpParams::PlasmaProfile(p) => vec![&p.clearance_z, &p.top_z, &p.bottom_z],
+            OpParams::WaterjetProfile(p) => vec![&p.clearance_z, &p.top_z, &p.bottom_z],
             OpParams::WireContour(p) => vec![&p.top_z, &p.bottom_z],
             OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(crate::operation::SinkerSideBurnOp { burn: p, .. }) => vec![&p.clearance_z, &p.top_z, &p.floor_z],
             OpParams::SlotUndercut(p) => {
@@ -1591,6 +1596,12 @@ impl HeightRefs for OpParams {
             // between runs itself, and the window's two planes clip
             // the loci (M2.5 E B).
             OpParams::Deburr {
+                clearance_z,
+                top_z,
+                bottom_z,
+                ..
+            }
+            | OpParams::MultiAxisDeburr {
                 clearance_z,
                 top_z,
                 bottom_z,

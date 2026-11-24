@@ -169,20 +169,25 @@ use super::*;
 /// v76 file posted - so a v76 file steps up unchanged. An old reader must
 /// refuse a v77 file rather than drop the order and post a setup before
 /// the setup its datum comes from.
-/// v78 (#2772): the rotary kinds' operations may state their own
+/// v78 (#2604): a stored machine may hold `reserved_tools`, the tool
+/// numbers and names kept for a probe or a tool setter. Absent reserves
+/// nothing, what every v77 machine was, so a v77 file steps up unchanged.
+/// An old reader must refuse a v78 file rather than drop the reservations
+/// and post a cutting tool at a reserved probe pocket.
+/// v79 (#2772): the rotary kinds' operations may state their own
 /// rotation axis (`stated_axis`, a direction through the setup's work
 /// offset origin, overriding the machine's stated rotary line). Absent
-/// is what every v77 file stated: follow the machine, else fit the axis
-/// off the model - so a v77 file steps up unchanged. An old reader must
-/// refuse a v78 file rather than drop the statement and turn the part
+/// is what every v78 file stated: follow the machine, else fit the axis
+/// off the model - so a v78 file steps up unchanged. An old reader must
+/// refuse a v79 file rather than drop the statement and turn the part
 /// about an axis the user never named.
-/// v79 (#2826): the Rotary Flow operation arrives (`rotary_flow`, the
+/// v80 (#2826): the Rotary Flow operation arrives (`rotary_flow`, the
 /// picked guide chains' kind, its heights read as ball-center radii
-/// about the stated axis). No older file names the arm, so a v78 file
-/// steps up unchanged. An old reader must refuse a v79 file rather
+/// about the stated axis). No older file names the arm, so a v79 file
+/// steps up unchanged. An old reader must refuse a v80 file rather
 /// than drop the op it cannot read: the post would re-open a document
 /// whose flow band op vanished without a word.
-pub const PROJECT_VERSION: u32 = 79;
+pub const PROJECT_VERSION: u32 = 80;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

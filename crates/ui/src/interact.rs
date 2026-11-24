@@ -1374,7 +1374,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         // The deburr ride says it too: every run starts and ends at
         // the clearance plane by the kernel's own word - no hop
         // height exists to author or draw (M2.5 E B).
-        | operation::OpParams::Deburr { .. }
+        | operation::OpParams::Deburr { .. } | operation::OpParams::MultiAxisDeburr { .. }
         // The flow band's links ride the RETRACT RADIUS about the
         // stated axis (#2826) - a radius is no world-Z plane to draw,
         // and the links are the kernel's own radial law. "Hop at
@@ -1384,6 +1384,8 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         // so does the torch between contours (#670).
         | operation::OpParams::Probe { .. }
         | operation::OpParams::PlasmaProfile(_)
+        // The jet travels at its clearance plane only too (#1883).
+        | operation::OpParams::WaterjetProfile(_)
         // The wire never lifts out of the work (#532): no hop plane.
         | operation::OpParams::WireContour(_) => None,
         // The electrode retracts to its approach plane only (#541).
@@ -1520,6 +1522,8 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         // The plate the torch cuts through: its top (the cut plane) and
         // bottom (#670).
         | operation::OpParams::PlasmaProfile(operation::PlasmaOp { top_z, bottom_z, .. })
+        // The sheet the jet cuts through (#1883).
+        | operation::OpParams::WaterjetProfile(operation::WaterjetOp { top_z, bottom_z, .. })
         // The workpiece the wire cuts through: its two programmed
         // planes (#532).
         | operation::OpParams::WireContour(operation::WireContourOp { top_z, bottom_z, .. })
@@ -1532,7 +1536,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         })
         // #1444: the material top and the undercut's floor.
         | operation::OpParams::SlotUndercut(operation::SlotUndercutOp { top_z, bottom_z, .. })
-        | operation::OpParams::Deburr { top_z, bottom_z, .. } => {
+        | operation::OpParams::Deburr { top_z, bottom_z, .. } | operation::OpParams::MultiAxisDeburr { top_z, bottom_z, .. } => {
             if let Some(z) = resolve(*top_z) {
                 out.push(HeightPlane {
                     z,

@@ -300,6 +300,7 @@ pub(super) fn add_operation(env: &mut Env, a: &Map<String, Value>) -> Result<Val
     // The seed helix follows the tool, as the app's quick-add does.
     if let Some(t) = model::find_by_name(&env.world, tool).and_then(|e| model::tool_of(&env.world, &e)) {
         operation::seed_helix_for_tool(&mut params, t.diameter);
+        operation::seed_slot_for_tool(&mut params, t.diameter);
         // #890: the feed from the tool's row for the document material;
         // an explicit params patch below still wins.
         crate::cutting_rows::seed_feed_for_tool(&env.world, &mut params, &t);
@@ -331,10 +332,13 @@ pub(super) fn edit_operation(env: &mut Env, a: &Map<String, Value>) -> Result<Va
 /// #2121: a clearance plane set inside raw stock is said when the
 /// operation is made or edited (`operation::clearance_in_stock_advice`),
 /// as the answer's `warning` - the rapid law holds the post at Generate.
-fn clearance_warning(env: &Env, key: &str, out: &mut Value) {
+/// #3631: a 2D Pocket whose tool fits nowhere in its region is said too.
+pub(super) fn clearance_warning(env: &Env, key: &str, out: &mut Value) {
     let op = model::find_by_name(&env.world, key).and_then(|e| model::operation_of(&env.world, &e));
-    if let Some(w) = op.and_then(|o| operation::clearance_in_stock_advice(&env.world, o.setup.as_deref(), &o.src, &o.params, Some(key))) {
-        out["warning"] = json!(w);
+    let clearance = op.and_then(|o| operation::clearance_in_stock_advice(&env.world, o.setup.as_deref(), &o.src, &o.params, Some(key)));
+    let said: Vec<String> = clearance.into_iter().chain(operation::pocket_fit_advice(&env.world, key)).collect();
+    if !said.is_empty() {
+        out["warning"] = json!(said.join("; "));
     }
 }
 
@@ -374,7 +378,9 @@ pub(super) fn set_tool(env: &mut Env, a: &Map<String, Value>) -> Result<Value, S
     let tool = req_str(a, "tool")?;
     let cmd = EditOperationLinks::new(&env.world, &key, Some(tool), None).map_err(cmd_err)?;
     env.history.execute(&env.world, cmd);
-    Ok(json!({ "operation": key, "tool": tool }))
+    let mut out = json!({ "operation": key, "tool": tool });
+    clearance_warning(env, &key, &mut out);
+    Ok(out)
 }
 
 fn history_state(env: &Env) -> Value {

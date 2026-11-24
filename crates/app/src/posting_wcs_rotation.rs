@@ -118,6 +118,7 @@ fn unsupported_op_reason(
             | OpParams::MultiAxisRough { .. }
             | OpParams::Flow5D { .. }
             | OpParams::MultiAxisContour { .. }
+            | OpParams::MultiAxisDeburr { .. }
             // #2826: the band's cylinders and rotary words are not
             // verified under a rotated offset.
             | OpParams::RotaryFlow { .. }

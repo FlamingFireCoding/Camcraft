@@ -123,14 +123,14 @@ impl CutItem {
         if !self.ball && self.flank <= 0.0 {
             return Err(bad(format!("item {n} is a flat end mill with no flank")));
         }
-        for a in 0..3 {
+        for (a, dim) in dims.into_iter().enumerate() {
             let (lo, hi) = (self.lo[a], self.hi[a]);
             if lo > hi || hi >= CUT_BRICK {
                 return Err(bad(format!("item {n} has the cells {lo}..={hi} on axis {a}: not inside one brick")));
             }
             let first = i64::from(self.base[a]) + i64::from(lo);
             let last = i64::from(self.base[a]) + i64::from(hi);
-            if first < 0 || last >= i64::from(dims[a]) {
+            if first < 0 || last >= i64::from(dim) {
                 return Err(bad(format!("item {n} reaches the cells {first}..={last} on axis {a}, outside the lattice")));
             }
         }
@@ -187,6 +187,37 @@ pub fn cut_cpu(input: &CutInput) -> Result<Vec<f32>, String> {
     let mut keys = Vec::new();
     keys.try_reserve_exact(n).map_err(|e| bad(format!("no memory for {n} texels: {e}")))?;
     keys.resize(n, input.grid.floor_key());
+    fold(input, keys)
+}
+
+/// The incremental CPU run (#2629, GPU stock sim S3a): cut `input` onto
+/// an earlier layer `base` of the same lattice (a playback keyframe)
+/// instead of the empty floor. The max law makes it exact: cutting A,
+/// then B onto it, gives the bits of cutting A and B in one batch.
+pub fn cut_cpu_onto(input: &CutInput, base: &[f32]) -> Result<Vec<f32>, String> {
+    let n = input.check()?;
+    check_base(base, n)?;
+    let mut keys = Vec::new();
+    keys.try_reserve_exact(n).map_err(|e| bad(format!("no memory for {n} texels: {e}")))?;
+    keys.extend(base.iter().map(|v| ordered_bits(*v)));
+    fold(input, keys)
+}
+
+/// A base layer must match the lattice and hold finite values only (the
+/// key order of a NaN is not a cut depth).
+pub(crate) fn check_base(base: &[f32], n: usize) -> Result<(), String> {
+    if base.len() != n {
+        return Err(bad(format!("the base layer has {} texels, the lattice {n}", base.len())));
+    }
+    match base.iter().position(|v| !v.is_finite()) {
+        Some(at) => Err(bad(format!("the base layer texel {at} is not finite"))),
+        None => Ok(()),
+    }
+}
+
+/// Fold every item's claims into `keys` (one key for each texel) with the
+/// max law, and decode the keys into the layer.
+fn fold(input: &CutInput, mut keys: Vec<u32>) -> Result<Vec<f32>, String> {
     for it in &input.items {
         for z in it.lo[2]..=it.hi[2] {
             for y in it.lo[1]..=it.hi[1] {

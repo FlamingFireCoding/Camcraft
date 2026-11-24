@@ -39,7 +39,7 @@ fn params() -> FaceParams {
         feed: 500.0,
         plunge_feed: 100.0,
         climb: true,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         stock_top: None,
     }
 }
@@ -357,7 +357,7 @@ fn cp() -> ContourParams {
         tab_height: 0.0,
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links: camcraft_motion::links::Links::PLANAR,
     }
 }
@@ -919,27 +919,95 @@ fn the_inside_contour_bore_opens_with_a_helix() {
     assert!(t.is_chained() && t.all_finite());
 }
 
-#[test]
-fn a_wall_side_entry_is_refused_by_name_grazing_unchanged() {
-    // The grown region contains the part's own interior, so a chord or a
-    // dive certified on it would lie - on the wall side the arms are
-    // refused by name, once, and the graze this generator has always
-    // posted stands. Byte-for-byte: the refusal costs no move.
-    let base = contour(&rect(0.0, 0.0, 30.0, 30.0), &cp()).expect("plunge graze");
-    for (arm, e) in [("ramp", Entry3D::Ramp), ("helix", Entry3D::Helix)] {
-        let mut p = cp();
-        p.side = Side::Outside;
-        p.entry = e;
-        p.helix_radius = 3.0;
-        let t = contour(&rect(0.0, 0.0, 30.0, 30.0), &p).expect("wall contour valid");
-        assert_eq!(t.moves, base.moves, "the {arm} must not move the wall-side path");
-        assert_eq!(
-            t.notes.iter().filter(|n| n.contains("needs bounded air")).count(),
-            1,
-            "the {arm} refusal is said exactly once: {:?}",
-            t.notes
-        );
+/// The wall side's ramp: a 5 deg angle caps every feed descent of an
+/// outside contour, the first level's too, and no axial plunge enters
+/// the material. The ramp rides the lead-in and the ring, never a chord
+/// over the grown region (which holds the part).
+fn outside_ramped(entry: Entry3D, deg: f64) -> ContourParams {
+    let mut p = cp();
+    p.side = Side::Outside;
+    p.bottom_z = -3.0;
+    p.entry = entry;
+    p.helix_radius = 3.0;
+    p.links.approach.ramp_angle = deg;
+    p
+}
+
+/// The steepest feed descent (deg) of a path, and its axial feed descents.
+fn steepest_descent(t: &Toolpath) -> (f64, usize) {
+    let mut worst: f64 = 0.0;
+    let mut axial = 0;
+    for m in t.moves.iter().filter(|m| m.kind != MoveKind::Rapid && m.from.z - m.to.z > 1e-9) {
+        let run: f64 = m.chords(FLATTEN_TOL).iter().map(|(a, b)| (b.x - a.x).hypot(b.y - a.y)).sum();
+        if run <= 1e-9 {
+            axial += 1;
+        } else {
+            worst = worst.max(((m.from.z - m.to.z) / run).atan().to_degrees());
+        }
     }
+    (worst, axial)
+}
+
+#[test]
+fn a_wall_side_ramp_entry_ramps_every_level_within_its_angle() {
+    let base = contour(&rect(0.0, 0.0, 30.0, 30.0), &outside_ramped(Entry3D::Plunge, 5.0)).expect("plunge graze");
+    let (_, plunged) = steepest_descent(&base);
+    assert!(plunged >= 3, "the plunge entry dives at each of the three levels: {plunged}");
+    let t = contour(&rect(0.0, 0.0, 30.0, 30.0), &outside_ramped(Entry3D::Ramp, 5.0)).expect("wall ramp");
+    let (worst, axial) = steepest_descent(&t);
+    assert!(worst > 1.0 && worst <= 5.0 + 1e-3, "it ramps, no steeper than 5 deg: {worst}");
+    assert_eq!(axial, 0, "no axial dive at any level: {:?}", t.moves);
+    assert!(!t.moves.iter().any(|m| m.kind == MoveKind::Plunge), "no plunge move: {:?}", t.moves);
+    assert!(t.notes.is_empty(), "nothing to say: {:?}", t.notes);
+    // The ramp is on the ring: every ramp point stays outside the 30 x 30
+    // part by the cutter radius (the cutter centre never nears the wall).
+    let r = 5.0 - 1e-6;
+    for m in t.moves.iter().filter(|m| m.kind != MoveKind::Rapid) {
+        for (_, q) in m.chords(FLATTEN_TOL) {
+            let dx = (q.x - 15.0).abs() - 15.0;
+            let dy = (q.y - 15.0).abs() - 15.0;
+            let off = dx.max(0.0).hypot(dy.max(0.0));
+            assert!(off >= r, "the centre stands {off:.3} from the part wall at {q:?}");
+        }
+    }
+    assert!(t.is_chained() && t.all_finite());
+}
+
+#[test]
+fn a_wall_side_helix_stands_down_to_the_same_ramp_and_says_so_once() {
+    let ramp = contour(&rect(0.0, 0.0, 30.0, 30.0), &outside_ramped(Entry3D::Ramp, 5.0)).expect("ramp");
+    let helix = contour(&rect(0.0, 0.0, 30.0, 30.0), &outside_ramped(Entry3D::Helix, 5.0)).expect("helix");
+    assert_eq!(helix.moves, ramp.moves, "the helix stands down to the ramp");
+    assert_eq!(
+        helix.notes.iter().filter(|n| n.contains("needs bounded air")).count(),
+        1,
+        "said exactly once: {:?}",
+        helix.notes
+    );
+}
+
+#[test]
+fn a_wall_side_helix_names_its_ramp_and_its_tabbed_graze_each_once() {
+    // Three levels (-1, -2, -3), two tabs 1.5 high: -1 is untabbed (the helix
+    // stands down to the ramp), -2 and -3 are tabbed (they graze). Both
+    // substitutions are said, once each (review of #3833).
+    let mut p = outside_ramped(Entry3D::Helix, 5.0);
+    p.tab_count = 2;
+    p.tab_width = 5.0;
+    p.tab_height = 1.5;
+    let t = contour(&rect(0.0, 0.0, 30.0, 30.0), &p).expect("tabbed helix");
+    let said = |what: &str| t.notes.iter().filter(|n| n.contains(what)).count();
+    assert_eq!(said("needs bounded air"), 1, "{:?}", t.notes);
+    assert_eq!(said("a standing tab is material"), 1, "{:?}", t.notes);
+    assert!(t.moves.iter().any(|m| m.kind == MoveKind::Plunge), "the tabbed levels graze: {:?}", t.moves);
+}
+
+#[test]
+fn a_wall_side_ramp_too_short_for_its_angle_grazes_and_says_why() {
+    // A 4 x 4 part: the ring is too short for 0.005 deg over 1 mm (64 legs).
+    let t = contour(&rect(0.0, 0.0, 4.0, 4.0), &outside_ramped(Entry3D::Ramp, 0.005)).expect("graze");
+    assert_eq!(t.notes.iter().filter(|n| n.contains("too short for the ramp angle")).count(), 1, "{:?}", t.notes);
+    assert!(t.moves.iter().any(|m| m.kind == MoveKind::Plunge), "the graze dive stands in: {:?}", t.moves);
 }
 
 #[test]
@@ -1656,7 +1724,7 @@ fn sp() -> SlotParams {
         plunge_feed: 100.0,
         climb: true,
         entry: Entry3D::Plunge,
-        helix_radius: 1.0,
+        helix_radius: 1.0, blend_turns: false, blend_radius: None,
     }
 }
 

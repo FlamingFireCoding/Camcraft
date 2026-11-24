@@ -240,6 +240,47 @@ fn align_pair_takes_the_nearest_whole_turn() {
 }
 
 #[test]
+fn a_model_with_a_non_finite_facet_is_refused_by_name() {
+    // The review's reproduction: one NaN facet on an otherwise valid
+    // model. The radius and distance folds dropped the NaN, and the
+    // kernel answered Ok.
+    let t = ball(6.0);
+    let mut facets = boxy();
+    facets.push(Triangle::new(
+        p3(f64::NAN, 0.0, 0.0),
+        p3(0.0, f64::NAN, 0.0),
+        p3(0.0, 0.0, f64::NAN),
+    ));
+    let e = rotary_flow(&[front(), inner()], &facets, &axis(), &params(&t), &AxisControl::default())
+        .unwrap_err();
+    let want = format!("model facet {} carries a non-finite vertex", facets.len());
+    assert!(format!("{e}").contains(&want), "{e}");
+}
+
+#[test]
+fn the_push_out_march_refuses_a_radius_that_cannot_advance() {
+    // At a 1e16 mm radius a quarter-radius step is lost in the float
+    // spacing: the march must stop by name, not repeat forever.
+    use super::super::rotary_flow_pass::{ball_center, boxes_of, PushFail};
+    use super::super::rotary_flow_unwrap::basis;
+    let ax = Axis {
+        origin: Point3::ZERO,
+        dir: p3(0.0, 0.0, 1.0),
+    };
+    let b = basis(&ax).unwrap();
+    let x = 1e16;
+    let facets = vec![Triangle::new(p3(x, -1.0, 0.0), p3(x, 1.0, 0.0), p3(x, 0.0, 1.0))];
+    let boxes = boxes_of(&facets);
+    let got = ball_center(&ax, &b, &facets, &boxes, 0.0, 0.3, x, 1.0, 0.01);
+    assert_eq!(got, Err(PushFail::Precision));
+    // A station at a sane radius still marches and clears.
+    let near = vec![Triangle::new(p3(20.0, -1.0, 0.0), p3(20.0, 1.0, 0.0), p3(20.0, 0.0, 1.0))];
+    let nb = boxes_of(&near);
+    let c = ball_center(&ax, &b, &near, &nb, -std::f64::consts::FRAC_PI_2, 0.3, 20.0, 1.0, 0.01).unwrap();
+    assert!(c.x > 21.0 && c.x < 21.1, "{c:?}");
+}
+
+#[test]
 fn a_small_band_poses_clears_and_opens_at_clearance() {
     let facets = boxy();
     let t = ball(6.0);

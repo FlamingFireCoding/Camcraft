@@ -87,6 +87,7 @@ fn fig8_offset() -> (World, String) {
         blend_turns: false,
         blend_radius: None,
         links: Links::PLANAR,
+        rest: None,
         corner_relief: Default::default(),
         pass_start: Default::default(),
     };

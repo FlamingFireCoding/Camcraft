@@ -28,6 +28,8 @@ pub(crate) fn op_icon(kind: OpType) -> Icon {
         OpType::RotaryFlow => Icon::RotaryFlow,
         OpType::Chamfer2D => Icon::Chamfer2D,
         OpType::Deburr => Icon::Deburr,
+        // #1894: the break with the axis tilted onto it - its own glyph.
+        OpType::MultiAxisDeburr => Icon::MultiAxisDeburr,
         OpType::Circular => Icon::Circular,
         OpType::PlasmaProfile => Icon::PlasmaProfile,
         OpType::WireContour => Icon::WireContour,
@@ -36,6 +38,8 @@ pub(crate) fn op_icon(kind: OpType) -> Icon {
         OpType::SinkerSideBurn => Icon::SinkerSideBurn,
         // #1444: a T-slot's section with the cutter in it.
         OpType::SlotUndercut => Icon::SlotUndercut,
+        // #1883: the nozzle and its jet - its own glyph.
+        OpType::WaterjetProfile => Icon::WaterjetProfile,
         OpType::Drill => Icon::Drill,
         OpType::Bore => Icon::Bore,
         OpType::Thread => Icon::Thread,
