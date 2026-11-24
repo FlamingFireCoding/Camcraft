@@ -123,6 +123,48 @@ fn a_projection_in_the_flutes_is_named_before_apply() {
     assert!(shows(&h, "Apply holder refuses this"), "the group shows it");
 }
 
+/// Review of #3931: Apply holder judges the STORED tool, so the refusal
+/// note does too. Unapplied short flutes (5 mm, stored 15 mm) must not
+/// hide the refusal of a 10 mm projection that Apply holder gives.
+#[test]
+fn the_refusal_judges_the_stored_tool_not_shorter_draft_flutes() {
+    let mut h = window();
+    assert_eq!(tool(&h, TOOL).flute_len, 15.0, "the stored flutes");
+    draft(&mut h).flute_len = 5.0;
+    pick(&mut h, "ER20 chuck");
+    holder(&mut h).projection = 10.0;
+    h.run_steps(2);
+    let err = last().holder_err.clone().unwrap_or_default();
+    assert!(err.contains("reaches into the flutes"), "the stored tool's refusal: {err:?}");
+    assert!(shows(&h, "Apply holder refuses this"), "the group shows it");
+    let done = h.state().state.history.done_len();
+    apply_holder(&mut h);
+    assert_eq!(reference(&h, TOOL), None, "Apply holder refuses it too");
+    assert_eq!(h.state().state.history.done_len(), done, "a refusal is no undo step");
+}
+
+/// The reverse: unapplied long flutes (25 mm) refuse a 20 mm projection,
+/// but the stored 15 mm flutes take it. The group does not say that Apply
+/// holder refuses; it gives a separate draft note, and Apply holder lands.
+#[test]
+fn longer_draft_flutes_give_a_draft_note_not_an_apply_refusal() {
+    let mut h = window();
+    draft(&mut h).flute_len = 25.0;
+    pick(&mut h, "ER20 chuck");
+    holder(&mut h).projection = 20.0;
+    h.run_steps(2);
+    let m = last();
+    assert_eq!(m.holder_err, None, "Apply holder accepts the stored tool");
+    let note = m.draft_err.clone().unwrap_or_default();
+    assert!(note.contains("reaches into the flutes"), "the draft numbers get a note: {note:?}");
+    assert!(!shows(&h, "Apply holder refuses this"), "no false refusal");
+    assert!(shows(&h, "unapplied tool numbers"), "the draft note says what it judges");
+    let gauge_len = holder(&mut h).gauge;
+    apply_holder(&mut h);
+    let want = HolderRef { entry: "ER20 chuck".into(), gauge_len, projection: 20.0 };
+    assert_eq!(reference(&h, TOOL), Some(want), "status: {}", h.state().state.status);
+}
+
 /// The stored tool gets longer: the projection draft takes the new
 /// stickout and says so; the stored `HolderRef` keeps its projection
 /// until Apply holder stores the new one.
