@@ -23,6 +23,8 @@ mod common;
 mod flanks;
 #[path = "offset_pass_start/lifts.rs"]
 mod lifts;
+#[path = "offset_pass_start/start_side_entry.rs"]
+mod start_side_entry;
 
 use area_support::*;
 use camcraft_app::machining2d::{PASS_START_NOTE, PassStart};
