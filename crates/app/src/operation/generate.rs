@@ -413,7 +413,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             feed,
             plunge_feed,
             climb,
-            blend_turns,
+            blend_turns, blend_radius,
             holes,
             ..
         } => {
@@ -443,7 +443,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 feed: *feed,
                 plunge_feed: *plunge_feed,
                 climb: *climb,
-                blend_turns: *blend_turns,
+                blend_turns: *blend_turns, blend_radius: *blend_radius,
                 holes: *holes,
                 // #2004 review: stock over the face's Top keeps the
                 // level at Top (a first bite of at most one stepdown).
@@ -519,7 +519,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             tab_height,
             entry,
             helix_radius,
-            blend_turns,
+            blend_turns, blend_radius,
             ..
         } => {
             // Backstop for a committed file that carries Inside on a
@@ -571,7 +571,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 tab_height: *tab_height,
                 entry: *entry,
                 helix_radius: *helix_radius,
-                blend_turns: *blend_turns,
+                blend_turns: *blend_turns, blend_radius: *blend_radius,
             links: lk,
             };
             let (region, path) = if let Some(plan_res) = sketch_contour.take() {
@@ -1317,6 +1317,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             pencil_reference,
             fill_openings,
             gap_link,
+            waterlines,
             pass_start,
             ..
         } => {
@@ -1358,6 +1359,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 steep_stepover: *steep_stepover,
                 pencil_reference: *pencil_reference,
                 gap_link: *gap_link,
+                waterlines: *waterlines,
             };
             // The pattern picks the generator; Waterline never
             // reaches the raster code at all. SteepShallow is the
@@ -1397,6 +1399,18 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // name too. Flow grounds every column on the same support
             // as Parallel and honours the lids (pinned in motion's
             // finish3d_land).
+            if !*waterlines
+                && matches!(
+                    *pattern,
+                    finishing3d::FinishPattern::Waterline
+                        | finishing3d::FinishPattern::Blend
+                        | finishing3d::FinishPattern::Morph
+                )
+            {
+                return Err(GenError::Invalid(format!(
+                    "{pattern:?} 3D finish relies on the waterline ring pass - enable waterlines or pick a shallow-first pattern"
+                )));
+            }
             let land = match fill_openings {
                 Some(_) if *pattern == finishing3d::FinishPattern::Geodesic => {
                     return Err(GenError::Invalid(
@@ -1704,6 +1718,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry_ramp: false,
                 steep_stepover: None,
                 pencil_reference: None,
+                waterlines: true,
             };
             let axis = crate::multiaxis::AxisControl {
                 lead_deg: *lead_deg,
@@ -1797,6 +1812,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry_ramp: false,
                 steep_stepover: None,
                 pencil_reference: None,
+                waterlines: true,
             };
             let axis = crate::multiaxis::AxisControl {
                 lead_deg: *lead_deg,
@@ -1888,6 +1904,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry_ramp: false,
                 steep_stepover: None,
                 pencil_reference: None,
+                waterlines: true,
             };
             let axis = crate::multiaxis::AxisControl {
                 lead_deg: *lead_deg,
@@ -2186,6 +2203,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry_ramp: false,
                 steep_stepover: None,
                 pencil_reference: None,
+                waterlines: true,
             };
             let axis = crate::multiaxis::AxisControl {
                 lead_deg: *lead_deg,
@@ -2294,7 +2312,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             plunge_feed,
             climb,
             entry,
-            helix_radius,
+            helix_radius, blend_turns, blend_radius,
             extend_start,
             extend_end,
             ..
@@ -2315,7 +2333,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     links: lk,
                     tool_diameter: d,
                     entry: *entry,
-                    helix_radius: *helix_radius,
+                    helix_radius: *helix_radius, blend_turns: *blend_turns, blend_radius: *blend_radius,
                     width: *width,
                     stock_to_leave: *stock_to_leave,
                     clearance_z: hl.clearance,
