@@ -12,7 +12,8 @@
 use flecs_ecs::prelude::World;
 use serde_json::{Value, json};
 
-use camcraft_app::commands::{AddTool, CreateOperation, EditOperationParams, History, SetStock};
+use camcraft_app::commands::{AddTool, ApplyCutRecipe, CreateOperation, EditOperationParams, History, SetStock};
+use camcraft_app::cut_recipe::CutRecipe;
 use camcraft_app::machining2d::PassStart;
 use camcraft_app::machining3d::Entry3D;
 use camcraft_app::mcp::Server;
@@ -116,4 +117,35 @@ fn mcp_edit_operation_with_explicit_helix_and_start_side_keeps_helix() {
     let text = edit.to_string();
     assert!(text.contains("\"pass_start\":\"inside\""), "{text}");
     assert!(text.contains("\"entry\":\"helix\""), "explicit Helix in same edit stays Helix: {text}");
+}
+
+#[test]
+fn cut_recipe_keeps_explicit_helix_on_start_side_offset() {
+    let world = world();
+    let mut h = History::default();
+    let mut params = seed_params(OpType::Offset2D.ordinal());
+    if let OpParams::Offset2D { pass_start, entry, .. } = &mut params {
+        *pass_start = PassStart::Outside;
+        *entry = Entry3D::Helix;
+    }
+    h.execute(
+        &world,
+        CreateOperation::with_named_entry(&world, "O1", "CC", SrcRef::Stock, params.clone(), true)
+            .expect("create"),
+    );
+    let recipe = CutRecipe::capture(&world, "O1", "OutsideHelix").expect("capture");
+    assert_eq!(recipe.params, params);
+
+    h.execute(
+        &world,
+        ApplyCutRecipe::new(&world, &recipe, "O2", SrcRef::Stock).expect("apply"),
+    );
+    let e = model::find_by_name(&world, "O2").expect("op O2");
+    match model::operation_of(&world, &e).map(|o| o.params) {
+        Some(OpParams::Offset2D { pass_start, entry, .. }) => {
+            assert_eq!(pass_start, PassStart::Outside);
+            assert_eq!(entry, Entry3D::Helix, "recipe preserves explicit Helix");
+        }
+        other => panic!("expected Offset2D: {other:?}"),
+    }
 }

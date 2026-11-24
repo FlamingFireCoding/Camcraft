@@ -146,38 +146,32 @@ fn fields_of(p: &OpParams) -> Map<String, Value> {
     .unwrap_or_default()
 }
 
+fn probe_kept(key: &str, fields: &Map<String, Value>, k: &str, val: Value) -> bool {
+    let mut probe = fields.clone();
+    probe.insert(k.to_owned(), val);
+    project::params_from_json(&json!({ key: probe }))
+        .map(|p| fields_of(&p).contains_key(k))
+        .unwrap_or(false)
+}
+
 /// True when the kind `key` has a boolean field `k`: set to `true`, it
 /// survives the typed round-trip. A misspelled key never does.
 fn flag_kept(key: &str, fields: &Map<String, Value>, k: &str) -> bool {
     let mut probe = fields.clone();
     probe.insert(k.to_owned(), Value::Bool(true));
-    let mut tagged = Map::new();
-    tagged.insert(key.to_owned(), Value::Object(probe));
-    project::params_from_json(&Value::Object(tagged))
+    project::params_from_json(&json!({ key: probe }))
         .map(|p| fields_of(&p).get(k) == Some(&Value::Bool(true)))
         .unwrap_or(false)
 }
 
 fn corner_relief_kept(key: &str, fields: &Map<String, Value>) -> bool {
-    let mut probe = fields.clone();
-    probe.insert("corner_relief".into(), serde_json::json!({ "kind": "dogbone" }));
-    let mut tagged = Map::new();
-    tagged.insert(key.to_owned(), Value::Object(probe));
-    project::params_from_json(&Value::Object(tagged))
-        .map(|p| fields_of(&p).contains_key("corner_relief"))
-        .unwrap_or(false)
+    probe_kept(key, fields, "corner_relief", json!({ "kind": "dogbone" }))
 }
 
 /// True when the kind `key` has the `pass_start` field (#3316): a value
 /// off `auto` survives the typed round-trip.
 fn pass_start_kept(key: &str, fields: &Map<String, Value>) -> bool {
-    let mut probe = fields.clone();
-    probe.insert("pass_start".into(), json!("outside"));
-    let mut tagged = Map::new();
-    tagged.insert(key.to_owned(), Value::Object(probe));
-    project::params_from_json(&Value::Object(tagged))
-        .map(|p| fields_of(&p).contains_key("pass_start"))
-        .unwrap_or(false)
+    probe_kept(key, fields, "pass_start", json!("outside"))
 }
 
 /// The first key path of `patch` (dotted, e.g. `clearance_z.ofset`) the
@@ -383,14 +377,18 @@ fn history_state(env: &Env) -> Value {
 }
 
 pub(super) fn undo(env: &mut Env, _a: &Map<String, Value>) -> Result<Value, String> {
-    env.history.undo(&env.world).then(|| ()).ok_or_else(|| "nothing to undo".to_string())?;
+    if !env.history.undo(&env.world) {
+        return Err("nothing to undo".into());
+    }
     let mut out = history_state(env);
     out["undone"] = json!(true);
     Ok(out)
 }
 
 pub(super) fn redo(env: &mut Env, _a: &Map<String, Value>) -> Result<Value, String> {
-    env.history.redo(&env.world).then(|| ()).ok_or_else(|| "nothing to redo".to_string())?;
+    if !env.history.redo(&env.world) {
+        return Err("nothing to redo".into());
+    }
     let mut out = history_state(env);
     out["redone"] = json!(true);
     Ok(out)
