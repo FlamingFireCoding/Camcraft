@@ -174,8 +174,11 @@ pub(super) struct Motion {
     /// path already cut (the start-side plan's open pieces end on walls,
     /// beside stock no cut has reached yet).
     pub(super) cleared_links: bool,
-    /// #3567: the plan's dead-end starts, entered by a ramp along the pass.
-    pub(super) ramp_starts: Vec<Point2>,
+    /// #3747: a ring area round a part links ring to ring in the plane.
+    pub(super) ring_links: Option<super::ring_links::RingLinks>,
+    /// #3746: a start-side ladder's air round the stock box; its Arc
+    /// entry plunges there and arcs onto the first ring.
+    pub(super) air: Option<super::air_entry::AirRoom>,
 }
 
 impl Motion {
@@ -205,7 +208,8 @@ impl Motion {
             zig_legs: crate::links::MAX_ZIG_LEGS,
             solid_restart: false,
             cleared_links: false,
-            ramp_starts: Vec::new(),
+            ring_links: None,
+            air: None,
         }
     }
 
@@ -327,6 +331,7 @@ pub(super) fn run_levels(
 /// came out degenerate still crosses in over new material.
 /// Mutable ladder cursor shared between `run_level_walks` and
 /// per-level keep-out walks (#2055).
+#[derive(Clone)]
 pub(super) struct WalkState {
     first: bool,
     pub(super) last_cut_z: Option<f64>,
