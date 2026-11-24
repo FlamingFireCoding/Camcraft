@@ -135,6 +135,16 @@ fn failed_test_names_the_cause_the_model_and_what_to_try() {
             "Set API key",
         ),
         (
+            "generativelanguage.googleapis.com answered HTTP 400: API key not valid. Please pass a valid API key. [status: INVALID_ARGUMENT]",
+            "rejected the key",
+            "Set API key",
+        ),
+        (
+            "generativelanguage.googleapis.com answered HTTP 403: Method doesn't allow unregistered callers. [status: PERMISSION_DENIED]",
+            "rejected the key",
+            "Set API key",
+        ),
+        (
             "api.anthropic.com answered HTTP 404: model: nope",
             "does not know this model",
             "Model name",
