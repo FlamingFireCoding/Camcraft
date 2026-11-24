@@ -158,25 +158,28 @@ pub(super) fn pass_link(b: &mut PathBuilder, lv: &LevelWalk, m: &Motion, cert: O
     };
     let cur = b.at();
     let at = Point2::new(cur.x, cur.y);
-    let plane = match m.links.pass {
-        Link::Clearance => m.clearance_z,
-        Link::Retract => m.hop_z,
-        Link::KeepDown => {
-            let proof = cert
-                .map_or(Err(NOT_PROVED), |c| link_proof(c, &[passes, &st.level], at, e, &m.links))
-                .and_then(|()| if !m.cleared_links || through_cut(b, at, e, z, m.tool_r()) { Ok(()) } else { Err(NOT_PROVED) });
-            match proof {
-                Ok(()) => {
-                    b.push(MoveKind::Feed, Point3::new(e.x, e.y, z), Some(m.feed));
-                    st.level.push(vec![at, e]);
-                    return;
-                }
-                Err(why) => {
-                    st.tally.lift(why, at, z);
-                    m.hop_z
-                }
-            }
+    // #3747: round a part the rings link in the plane, whatever the pass
+    // link: a lift needs a named reason (`ring_links`).
+    let proof = match (&m.ring_links, m.links.pass) {
+        (Some(rl), _) => Some(super::ring_links::link(b, rl, m, cert, &[passes, &st.level], e, z)),
+        (None, Link::KeepDown) => Some(
+            cert.map_or(Err(NOT_PROVED), |c| link_proof(c, &[passes, &st.level], at, e, &m.links))
+                .and_then(|()| if !m.cleared_links || through_cut(b, at, e, z, m.tool_r()) { Ok(()) } else { Err(NOT_PROVED) })
+                .map(|()| b.push(MoveKind::Feed, Point3::new(e.x, e.y, z), Some(m.feed))),
+        ),
+        (None, _) => None,
+    };
+    let plane = match (proof, m.links.pass) {
+        (Some(Ok(())), _) => {
+            st.level.push(vec![at, e]);
+            return;
         }
+        (Some(Err(why)), _) => {
+            st.tally.lift(why, at, z);
+            m.hop_z
+        }
+        (None, Link::Clearance) => m.clearance_z,
+        (None, _) => m.hop_z,
     };
     // The climb-and-dive every planar ladder has posted between passes:
     // the floor its neighbours already cleared, crossed in air.

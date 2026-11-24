@@ -1,7 +1,7 @@
-//! Native Agie bundle integrity, nominal seam, corner clearance and no-clobber checks on original convex punches.
+//! Native Agie bundle integrity, nominal seam, corner clearance and no-clobber checks on original punches.
 use super::*;
 
-fn punch() -> AgieJob {
+pub(super) fn punch() -> AgieJob {
     AgieJob {
         contour: vec![[-20., -10.], [20., -10.], [20., 10.], [-20., 10.]],
         start: [-30., 0.],
@@ -77,7 +77,7 @@ fn stock_hole_and_entry_are_validated_before_output() {
 }
 
 /// The contour that `prepare` posts, without the setup half.
-fn points(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
+pub(super) fn points(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
     contour::prepare(job, "PUNCH40").map(|(points, _)| points)
 }
 
@@ -293,7 +293,10 @@ fn an_acute_miter_needs_more_stock_than_a_round_corner() {
     assert!(points(&job).is_ok());
 
     job.contour = vec![[-20., -10.], [20., -10.], [0., 0.], [20., 10.], [-20., 10.]];
-    assert!(points(&job).unwrap_err().contains("convex"));
+    // The (20, -10) - (0, 0) - (20, 10) notch opens at 53 degrees: the rough
+    // offset cannot reach its reentrant vertex within 0.002 mm.
+    let why = points(&job).unwrap_err();
+    assert!(why.contains("reentrant corner"), "{why}");
 }
 
 #[test]

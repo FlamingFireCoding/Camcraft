@@ -98,7 +98,7 @@ fn texts(warns: &[Warning]) -> Vec<String> {
 #[ignore = "heavy lane (#3525 fig8 flute 10): one generation and its verify run past the 60 s debug budget (about 65 s) - run with --release -- --ignored"]
 fn a_ten_mm_flute_names_its_cause_before_the_rapid_findings() {
     let warns = named_first(10.0);
-    let rapids = warns.iter().filter(|w| matches!(w, Warning::RapidInStock { .. })).count();
+    let rapids = warns.iter().filter(|w| matches!(w, Warning::RapidInPart { .. })).count();
     assert_eq!(rapids, 3, "the three rapid findings of #3319 stay: {:?}", texts(&warns));
 }
 
@@ -140,7 +140,7 @@ fn named_first(flute: f64) -> Vec<Warning> {
     // The note names the tool, its flute and the depth, first.
     assert_eq!(path.notes.first().cloned().unwrap_or_default(), NOTE.replace("{F}", &format!("{flute:.3}")));
     // Every rapid and shank finding comes after it; none is lost.
-    let first_rapid = warns.iter().position(|w| matches!(w, Warning::RapidInStock { .. }));
+    let first_rapid = warns.iter().position(|w| matches!(w, Warning::RapidInPart { .. }));
     let first_shank = warns.iter().position(|w| matches!(w, Warning::ShankHit { .. }));
     assert!(first_shank.is_some(), "the shank still collides: {all:?}");
     assert!(first_rapid.is_none_or(|i| i > 0) && first_shank.is_some_and(|i| i > 0), "{all:?}");

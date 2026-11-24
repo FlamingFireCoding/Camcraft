@@ -16,6 +16,9 @@ use camcraft_app::stock::StockShape;
 use flecs_ecs::prelude::World;
 use std::{collections::BTreeMap, fs};
 
+#[path = "agie_native/reentrant.rs"]
+mod reentrant;
+
 fn separation(value: f64) -> BTreeMap<String, OptionValue> {
     BTreeMap::from([("separationLengthMm".into(), OptionValue::Float(value))])
 }

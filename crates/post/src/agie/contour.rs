@@ -2,7 +2,7 @@
 use super::AgieJob;
 use crate::agie_setup::{PunchSetup20, QN2_OFFSETS_UM, qn2_offsets_um};
 
-type Point = [i64; 2];
+pub(super) type Point = [i64; 2];
 const UNITS: f64 = 100_000.0; // Five decimal places in the native ISO geometry file.
 const MAX_VERTICES: usize = 4096;
 
@@ -13,7 +13,7 @@ fn quantize(v: f64) -> Result<i64, String> {
     Ok((v * UNITS).round() as i64)
 }
 
-fn cross(a: Point, b: Point, p: Point) -> i128 {
+pub(super) fn cross(a: Point, b: Point, p: Point) -> i128 {
     i128::from(b[0] - a[0]) * i128::from(p[1] - a[1])
         - i128::from(b[1] - a[1]) * i128::from(p[0] - a[0])
 }
@@ -203,12 +203,11 @@ fn check_punch_envelope(ring: &[Point], job: &AgieJob, rough_um: u16) -> Result<
         let length = dx.hypot(dy);
         [dy / length, -dx / length]
     };
+    let mut reentrant = false;
+    let mut max_miter: f64 = 0.0;
     for (i, &corner) in ring.iter().enumerate() {
         let previous = ring[(i + n - 1) % n];
         let next = ring[(i + 1) % n];
-        if cross(previous, corner, next) <= 0 {
-            return Err("The punch contour must be convex; a reentrant corner is refused".into());
-        }
         let a = outward(previous, corner);
         let b = outward(corner, next);
         // Use the squared bisector length instead of 1 + dot(a, b);
@@ -219,6 +218,20 @@ fn check_punch_envelope(ring: &[Point], job: &AgieJob, rough_um: u16) -> Result<
             return Err(
                 "The rough pass cannot be bounded at a nearly reversed punch corner".into(),
             );
+        }
+        let reach = 2.0 * rough_offset / norm2.sqrt();
+        max_miter = max_miter.max(reach);
+        if cross(previous, corner, next) < 0 {
+            reentrant = true;
+            // At an inside turn the two offset faces intersect outside the
+            // drawing corner. The strict wire cover law permits 0.002 mm of
+            // rest. Use the largest resident offset across all four passes.
+            if reach - rough_offset > 0.002 * UNITS {
+                return Err(
+                    "The rough compensation cannot reach the reentrant corner within 0.002 mm"
+                        .into(),
+                );
+            }
         }
         for axis in 0..2 {
             if corner[axis] - stock_margin < lo[axis] || corner[axis] + stock_margin > hi[axis] {
@@ -242,14 +255,22 @@ fn check_punch_envelope(ring: &[Point], job: &AgieJob, rough_um: u16) -> Result<
             }
         }
     }
+    if reentrant {
+        // The full segment between two joins stays inside the nominal edge's
+        // capsule. Bound each join by the longest miter, plus a complete rough
+        // kerf allowance. Disjoint capsules on unrelated faces exclude contact
+        // at every smaller offset, including all trims.
+        let clearance = (2.0 * (max_miter + rough_offset)).ceil() as i64;
+        super::spacing::check_feature_spacing(ring, clearance)?;
+    }
     Ok(())
 }
 
-fn vector(a: Point, b: Point) -> Point {
+pub(super) fn vector(a: Point, b: Point) -> Point {
     [b[0] - a[0], b[1] - a[1]]
 }
 
-fn dot(a: Point, b: Point) -> i128 {
+pub(super) fn dot(a: Point, b: Point) -> i128 {
     i128::from(a[0]) * i128::from(b[0]) + i128::from(a[1]) * i128::from(b[1])
 }
 

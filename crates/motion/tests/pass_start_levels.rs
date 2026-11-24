@@ -15,6 +15,8 @@
 mod common;
 #[path = "pass_start_levels/one_ring_set.rs"]
 mod one_ring_set;
+#[path = "pass_start_levels/ring_links.rs"]
+mod ring_links;
 
 use camcraft_motion::cl::Toolpath;
 use camcraft_motion::entry::Entry3D;
