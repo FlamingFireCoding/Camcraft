@@ -15,6 +15,9 @@
 //! stored tool's length re-seeds only that draft's projection (#808
 //! item 2). The stored `HolderRef` changes only through Apply holder.
 //! #3896 (U5): the editor's Recipes tab ([`ToolEditorTab::Recipes`]).
+//! #3897 (U6): the tool category of the list ([`ToolCategory`]) and the
+//! preview's two display toggles (dimension lines and holder, [`EditorFace`]). All of it is
+//! view state: never a command, never saved.
 //! Provenance: our own view state, after the tool shape window's
 //! `Option` pattern; no HSMWorks material involved.
 
@@ -55,32 +58,54 @@ pub enum PreviewMode {
 }
 
 /// The editor's view state that stays when another tool opens: the tab,
-/// the preview view and the 3D view's orbit.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+/// the preview view, the 3D view's orbit and (#3897) the preview's
+/// toggles. Both toggles start on.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EditorFace {
     pub tab: ToolEditorTab,
     pub preview: PreviewMode,
     pub orbit: Orbit,
+    /// #3897: the side view draws its dimension lines.
+    pub dims: bool,
+    /// #3897: the preview draws the holder (the 3D model and the side view).
+    pub holder: bool,
 }
 
-/// #3893: the tool open in the window, with its own draft. `synced` is the
-/// (name, `doc_version`) the draft was read at, the same key that
-/// `State::sync_tool_ui` uses for Properties. Typing does not change
-/// `doc_version`, so a draft is read again only after a command or when
-/// another tool opens.
-#[derive(Clone, Debug)]
-pub struct ToolEditorView {
-    pub draft: ToolUi,
-    pub(super) synced: (String, u64),
-    pub face: EditorFace,
-    /// #3895: the window's holder draft (pick, gauge length, projection).
-    pub holder: ToolProfileUi,
+impl Default for EditorFace {
+    fn default() -> Self {
+        Self {
+            tab: ToolEditorTab::default(),
+            preview: PreviewMode::default(),
+            orbit: Orbit::default(),
+            dims: true,
+            holder: true,
+        }
+    }
+}
+
+/// #3897: the tool categories on the left of the tool list, by the tool
+/// kind (`tool_library_dialog::categories` maps each kind to one).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ToolCategory {
+    FlatEndMills,
+    BallNose,
+    BullNose,
+    ChamferMills,
+    ThreadSlotForm,
+    Drills,
+    Taps,
+    BoringBars,
+    Turning,
+    Probes,
+    BeamAndWire,
 }
 
 /// The open tool library window.
 #[derive(Clone, Debug, Default)]
 pub struct ToolLibraryView {
     pub source: ToolSource,
+    /// #3897: the category the tool list shows; `None` shows all.
+    pub category: Option<ToolCategory>,
     /// #3893: the tool open in the editor. `None` shows the full list;
     /// `Some` folds the list into a rail beside the editor.
     pub editor: Option<ToolEditorView>,
@@ -108,7 +133,7 @@ impl State {
         } else {
             ToolSource::Document
         };
-        self.tool_library = Some(ToolLibraryView { source, editor: None });
+        self.tool_library = Some(ToolLibraryView { source, ..ToolLibraryView::default() });
         if let UiTarget::Tool(name) = &self.ui_target
             && !name.is_empty()
             && model::find_by_name(&self.world, name).is_some_and(|e| model::is_tool(&self.world, &e))

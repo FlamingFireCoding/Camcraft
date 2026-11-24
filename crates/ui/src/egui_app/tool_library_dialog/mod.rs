@@ -17,19 +17,25 @@
 //! #3896 (U5): the Recipes tab shows the cutting data per material with
 //! the surface speed and the feed per tooth. "Suggest" and "Copy from
 //! tool" fill the window's draft only; the same Apply lands it.
+//! #3897 (U6): the editor stands as
+//! in the #3663 mock-up: the tabs and their rows on the left, the preview
+//! on the right. The window opens wide enough for the Recipes table and
+//! the preview side by side, as far as the screen permits ([`width`]).
 //! Provenance: our own window, after the tool shape window pattern
 //! (`pages::tool_shape_editor_window`) and the egui `Window` docs; no
 //! HSMWorks material involved.
 
 pub(crate) mod assembly_group;
+pub(crate) mod categories;
 mod details_tab;
-mod list;
+pub(crate) mod list;
 pub(crate) mod model;
 pub(crate) mod preview;
 mod rail;
 mod recipes_fill;
 pub(crate) mod recipes_tab;
 mod side_view;
+pub(crate) mod thumbs;
 mod tool_tab;
 
 use egui::{Id, Ui, Window};
@@ -42,6 +48,29 @@ pub(crate) const TITLE: &str = "Tool library";
 
 /// The rail's width when a tool is open.
 const RAIL_W: f32 = 170.0;
+/// #3897: the editor's two columns - the tabs' rows (wide enough for the
+/// Recipes table without a horizontal scroll bar) and the preview.
+pub(crate) const PARAMS_W: f32 = 780.0;
+pub(crate) const PREVIEW_W: f32 = 320.0;
+/// The window's width that shows the rail, the rows and the preview side
+/// by side (with the separators and the window's margins).
+pub(crate) const WIDE_W: f32 = RAIL_W + PARAMS_W + PREVIEW_W + 60.0;
+/// The gap between the window and the screen's edge.
+const MARGIN: f32 = 8.0;
+/// The share of the screen's width left of the Properties pane (the dock's
+/// default split: `layout::BROWSER_FRAC` and `VIEWPORT_FRAC`).
+const BESIDE_PROPS: f32 = 0.77;
+
+/// #3897: the window's width and left edge on a `screen`: [`WIDE_W`] when
+/// it fits left of the Properties pane, else as wide as that space
+/// permits. The window then covers the browser, never Properties.
+#[must_use]
+pub(crate) fn width(screen: egui::Rect) -> (f32, f32) {
+    let right = screen.left() + screen.width() * BESIDE_PROPS - MARGIN;
+    let room = (right - screen.left() - MARGIN).max(320.0);
+    let w = WIDE_W.min(room);
+    (w, (right - w).max(screen.left() + MARGIN))
+}
 
 /// Draw the window when it is open (`state.tool_library` is `Some`).
 /// Its ✕ closes it; closing is view state, nothing is queued.
@@ -50,17 +79,18 @@ pub(crate) fn tool_library_window(ctx: &egui::Context, state: &mut State) {
         return;
     }
     let screen = ctx.viewport_rect();
+    let (w, left) = width(screen);
     let mut open = true;
     Window::new(TITLE)
         .id(Id::new("tool-library"))
         .open(&mut open)
         .collapsible(false)
         .resizable(true)
-        // Over the viewport, left of the Properties pane, so the two can
-        // be used at the same time.
-        .default_pos([screen.left() + screen.width() * 0.2, screen.top() + 0.15 * screen.height()])
-        .default_size([620.0, (screen.height() * 0.7).max(320.0)])
-        .min_width(420.0)
+        // Left of the Properties pane, so the two can be used at the same
+        // time; as wide as the rows and the preview need (#3897).
+        .default_pos([left, screen.top() + 0.15 * screen.height()])
+        .default_size([w, (screen.height() * 0.7).max(320.0)])
+        .min_width(w)
         .show(ctx, |ui| body(ui, state));
     if !open {
         state.close_tool_library();
@@ -102,8 +132,10 @@ enum After {
     Shape(String),
 }
 
-/// The heading, the preview, the Tool, Recipes and Details tabs, and the Apply row. The draft
-/// is swapped into `tool_ui` only while it is drawn (`with_library_draft`).
+/// The heading, then (#3897) two columns: the Tool, Recipes and Details
+/// tabs with their rows on the left, the preview on the right; the Apply
+/// row at the foot. The draft is swapped into `tool_ui` only while it is
+/// drawn (`with_library_draft`).
 fn editor(ui: &mut Ui, state: &mut State) {
     let after = state
         .with_library_draft(|state, face| {
@@ -117,28 +149,30 @@ fn editor(ui: &mut Ui, state: &mut State) {
                 state.sync_tool_profile_ui();
             }
             ui.heading(format!("Tool: {name}"));
-            preview::draw(ui, state, face);
-            let tab = &mut face.tab;
+            // The foot (Apply, and a refusal above it) and the gaps keep
+            // their room, so the columns never push the window taller.
+            let footer_h = if state.error_for(ErrorScope::Tool).is_some() { 100.0 } else { 72.0 };
+            // Bounded by the screen, not only by the room left: a column
+            // as tall as the room would let the window grow each frame.
+            let screen_h = ui.ctx().viewport_rect().height();
+            let col_h = (ui.available_height() - footer_h).min(screen_h * 0.7 - 190.0).max(160.0);
+            let preview_w = PREVIEW_W.min((ui.available_width() * 0.4).max(160.0));
+            let rows_w = (ui.available_width() - preview_w - 24.0).max(200.0);
             let mut shape = false;
-            ui.horizontal(|ui| {
-                ui.selectable_value(tab, ToolEditorTab::Tool, "Tool")
-                    .on_hover_text("type, geometry and the rows the tool's kind reads");
-                ui.selectable_value(tab, ToolEditorTab::Recipes, recipes_tab::TAB)
-                    .on_hover_text("speeds and feeds for each workpiece material");
-                ui.selectable_value(tab, ToolEditorTab::Details, "Details")
-                    .on_hover_text("material group, catalog facts and the tool number");
-            });
-            ui.separator();
-            let footer_h = if state.error_for(ErrorScope::Tool).is_some() { 68.0 } else { 40.0 };
-            egui::ScrollArea::vertical()
-                .id_salt("tool_library_editor")
-                .auto_shrink([false, false])
-                .max_height((ui.available_height() - footer_h).max(80.0))
-                .show(ui, |ui| match *tab {
-                    ToolEditorTab::Tool => shape = tool_tab::draw(ui, state),
-                    ToolEditorTab::Recipes => recipes_tab::draw(ui, state),
-                    ToolEditorTab::Details => details_tab::draw(ui, state),
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
+                    ui.set_width(rows_w);
+                    ui.set_max_height(col_h);
+                    shape = tabs(ui, state, &mut face.tab, col_h);
                 });
+                // A plain separator would take the whole height left in
+                // the window and push Apply out of it: this one is col_h.
+                ui.add_sized([8.0, col_h], egui::Separator::default().vertical());
+                ui.vertical(|ui| {
+                    ui.set_width(preview_w);
+                    preview::draw(ui, state, face, egui::Vec2::new(preview_w, col_h));
+                });
+            });
             footer(ui, state, &name);
             if shape { After::Shape(name) } else { After::None }
         })
@@ -148,6 +182,30 @@ fn editor(ui: &mut Ui, state: &mut State) {
         After::Gone => state.close_tool_in_library(),
         After::Shape(name) => open_shape(state, &name),
     }
+}
+
+/// The tab row and the chosen tab's rows in a scroll area of `col_h`.
+/// Gives whether "Edit tool shape" was clicked.
+fn tabs(ui: &mut Ui, state: &mut State, tab: &mut ToolEditorTab, col_h: f32) -> bool {
+    let mut shape = false;
+    ui.horizontal(|ui| {
+        ui.selectable_value(tab, ToolEditorTab::Tool, "Tool").on_hover_text("type, geometry and the rows the tool's kind reads");
+        ui.selectable_value(tab, ToolEditorTab::Recipes, recipes_tab::TAB)
+            .on_hover_text("speeds and feeds for each workpiece material");
+        ui.selectable_value(tab, ToolEditorTab::Details, "Details")
+            .on_hover_text("material group, catalog facts and the tool number");
+    });
+    ui.separator();
+    egui::ScrollArea::vertical()
+        .id_salt("tool_library_editor")
+        .auto_shrink([false, false])
+        .max_height((col_h - 44.0).max(80.0))
+        .show(ui, |ui| match *tab {
+            ToolEditorTab::Tool => shape = tool_tab::draw(ui, state),
+            ToolEditorTab::Recipes => recipes_tab::draw(ui, state),
+            ToolEditorTab::Details => details_tab::draw(ui, state),
+        });
+    shape
 }
 
 /// Apply, with the Tool pane's refusal above it. One Apply queues the

@@ -7,6 +7,7 @@
 
 use super::page_layout_windows::assert_window_layout;
 use crate::egui_app::tool_library_dialog::recipes_tab::{MARK, SUGGEST, TAB};
+use crate::egui_app::tool_library_dialog::{categories, preview};
 use super::*;
 use egui_kittest::kittest::NodeT;
 
@@ -20,7 +21,8 @@ fn library_window(h: &H) -> egui::Rect {
 }
 
 /// The tool library is its own window: the file buttons first, then the
-/// source row, then the Document list. It floats beside the dock and
+/// source row, then the Document list (#3897: with the categories on its
+/// left). It floats beside the dock and
 /// leaves the Properties pane free, so both can be used at once.
 #[test]
 fn layout_window_tool_library() {
@@ -35,6 +37,14 @@ fn layout_window_tool_library() {
         &["New tool…", "Import tool holders", "Document", "Recipes"],
     );
     let win = library_window(&h);
+    // #3897: the categories stand left of the rows.
+    let node = h
+        .query_all_by_role(egui::accesskit::Role::Window)
+        .find(|n| n.accesskit_node().label().as_deref() == Some("Tool library"))
+        .unwrap_or_else(|| panic!("the Tool library window is not open"));
+    let rect = |l: &str| node.query_all_by_label(l).next().unwrap_or_else(|| panic!("no {l:?} in the window")).rect();
+    let all = rect(categories::ALL);
+    assert!(all.right() < rect("Recipes").left(), "the categories {all:?} stand left of the rows");
     let Some(props) = super::layout::leaf_rect(&h.state().dock, &Tab::Properties) else {
         panic!("the Properties leaf is not laid out");
     };
@@ -67,9 +77,10 @@ fn the_tool_library_window_closes_and_opens_again() {
 }
 
 /// #3893: a tool open in the window. The list folds into a rail on the
-/// left; the editor stands right of it: the heading, the preview's 3D /
-/// Side toggle (#3894), the Tool and Details tabs, the rows, then Apply at
-/// the foot. #3896: the Recipes tab stands between Tool and Details, and
+/// left; the editor stands right of it: the heading, the Tool and Details
+/// tabs, the rows, then Apply at the foot. #3897: the preview (its 3D /
+/// Side toggle and the Dimensions and Holder toggles) stands right of the
+/// rows, under the heading. #3896: the Recipes tab stands between Tool and Details, and
 /// its Suggest row stands under the tabs. The window still leaves the
 /// Properties pane free. Queries stay inside the window, because a tool
 /// can be open in Properties too.
@@ -100,7 +111,7 @@ fn layout_window_tool_editor() {
     };
     let heading = format!("Tool: {name}");
     let mut last: Option<(&str, f32)> = None;
-    for a in [heading.as_str(), "3D", "Details", "Diameter", "Apply"] {
+    for a in [heading.as_str(), "Details", "Diameter", "Apply"] {
         let r = rect(a);
         assert!(win.expand(1.0).contains_rect(r), "{a:?} {r:?} leaves the window {win:?}");
         if let Some((prev, y)) = last {
@@ -113,6 +124,11 @@ fn layout_window_tool_editor() {
     let group = rect(crate::egui_app::tool_library_dialog::assembly_group::HEADING);
     assert!(group.top() > rect("Diameter").top(), "the assembly group {group:?} stands under the geometry rows");
     assert!(group.left() >= win.left() - 1.0 && group.right() <= win.right() + 1.0, "the group {group:?} keeps to the window's width");
+    let (view, dims, holder) = (rect("3D"), rect(preview::DIMS), rect(preview::HOLDER));
+    assert!(view.top() > rect(&heading).top(), "the preview {view:?} stands under the heading");
+    assert!(view.left() > rect("Diameter").right(), "the preview {view:?} stands right of the rows");
+    assert!(dims.left() > view.left() && holder.left() > dims.left(), "3D, Dimensions, Holder on one row");
+    assert!(win.expand(1.0).contains_rect(holder), "the toggles {holder:?} stay in the window {win:?}");
     let rail = rect("All tools");
     let row = rect(&name);
     assert!(rail.right() < rect("Diameter").left() && row.right() < rect(&heading).left(), "the rail {rail:?} stands left of the editor");

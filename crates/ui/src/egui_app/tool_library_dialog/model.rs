@@ -12,6 +12,8 @@
 //! that path refuses keeps the landed body and carries the refusal. The
 //! Apply-holder refusal is judged on the stored tool, as the command
 //! judges it; the draft numbers' own verdict is a separate draft note.
+//! #3897 (U6): the model also keeps the tool without its holder (`bare`)
+//! for the preview's Holder toggle, built with the rest.
 //! Frame cost (`crates/ui/AGENTS.md`): the model is built when its input
 //! changes - the draft tool value, the document's tool, the landed cutter
 //! and the landed body (its mesh by identity) - never on `doc_version`.
@@ -67,6 +69,10 @@ pub(crate) struct ToolModel {
     pub mesh: Arc<[Triangle]>,
     /// The mesh's box with the origin (low and high corner), for the view.
     pub bounds: ([f64; 3], [f64; 3]),
+    /// #3897: the cutter and the shank only (the Holder toggle off), and
+    /// its box.
+    pub bare: Arc<[Triangle]>,
+    pub bare_bounds: ([f64; 3], [f64; 3]),
     /// The landed body's source, when the holder is a body.
     pub body: Option<String>,
     pub dims: Dims,
@@ -206,6 +212,8 @@ fn build(k: &Key) -> ToolModel {
         steel.iter().copied().filter(|&(z, r)| z.is_finite() && r.is_finite() && z < zs - 1e-9).collect();
     prof.extend([(zs, rs), (top, rs), (top, 0.0)]);
     let mut mesh = revolve(&prof);
+    let bare_bounds = crate::egui_app::tool_model_view::bounds(&mesh);
+    let bare: Arc<[Triangle]> = Arc::from(mesh.clone());
     let holder = match (&body, profile) {
         (Some(b), p) => {
             mesh.extend(b.facets.iter().copied());
@@ -232,7 +240,19 @@ fn build(k: &Key) -> ToolModel {
         holder,
     };
     let bounds = crate::egui_app::tool_model_view::bounds(&mesh);
-    ToolModel { tool: t.clone(), steel, bands, bounds, mesh: Arc::from(mesh), body: body.as_ref().map(|b| b.source.clone()), dims, holder_err, draft_err }
+    ToolModel {
+        tool: t.clone(),
+        steel,
+        bands,
+        bounds,
+        mesh: Arc::from(mesh),
+        bare,
+        bare_bounds,
+        body: body.as_ref().map(|b| b.source.clone()),
+        dims,
+        holder_err,
+        draft_err,
+    }
 }
 
 /// A `(z, r)` meridian spun about +Z into triangles; rings at r = 0 close

@@ -3,6 +3,9 @@
 //! at the size of the editor, with dimension lines: the diameter, the
 //! flute length, the shank, the stick-out, the gauge length and the
 //! holder's diameter and length. No flute helix is painted. Display only.
+//! #3897 (U6): the preview's toggles hide the dimension lines (`dims`)
+//! and the holder (`holder`: the cutter and the shank alone, and no holder
+//! dimension).
 //! Provenance: our own drawing after general technical-drawing practice
 //! (extension lines, a dimension line with end ticks, the value beside
 //! it); no HSMWorks material involved.
@@ -25,8 +28,15 @@ const BOTTOM: f32 = 26.0;
 /// The gap between the drawing and a dimension line, and between two lines.
 const GAP: f32 = 12.0;
 
+/// What the side view draws besides the steel (#3897).
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Show {
+    pub dims: bool,
+    pub holder: bool,
+}
+
 /// The side view of `m` in a `size` area.
-pub(super) fn draw(ui: &mut Ui, m: &ToolModel, u: Unit, size: Vec2) {
+pub(super) fn draw(ui: &mut Ui, m: &ToolModel, u: Unit, size: Vec2, show: Show) {
     let (resp, painter) = ui.allocate_painter(size, Sense::hover());
     let rect = resp.rect;
     painter.rect_filled(rect, 4.0, BG);
@@ -34,21 +44,25 @@ pub(super) fn draw(ui: &mut Ui, m: &ToolModel, u: Unit, size: Vec2) {
     if inner.width() < 20.0 || inner.height() < 20.0 {
         return;
     }
-    let Some(s) = tool_preview::paint(&painter, inner, &m.tool, Some(&m.bands), Some(&m.steel)) else {
+    let bands: &[(f64, f64, f64)] = if show.holder { &m.bands } else { &[] };
+    let Some(s) = tool_preview::paint(&painter, inner, &m.tool, Some(bands), Some(&m.steel)) else {
         return;
     };
-    painter.text(rect.min + Vec2::new(6.0, 6.0), Align2::LEFT_TOP, format!("dimensions in {}", u.suffix()), font(), NOTE);
-    dims(&painter, &s, m, u);
+    if show.dims {
+        painter.text(rect.min + Vec2::new(6.0, 6.0), Align2::LEFT_TOP, format!("dimensions in {}", u.suffix()), font(), NOTE);
+        dims(&painter, &s, m, u, show.holder);
+    }
 }
 
 fn font() -> FontId {
     FontId::proportional(11.0)
 }
 
-fn dims(p: &Painter, s: &Scale, m: &ToolModel, u: Unit) {
+fn dims(p: &Painter, s: &Scale, m: &ToolModel, u: Unit, holder: bool) {
     let d = &m.dims;
     let len = |v: f64| units::len(v, u, 2);
-    let r_max = m.steel.iter().map(|q| q.1).chain(m.bands.iter().map(|b| b.2)).filter(|r| r.is_finite()).fold(0.0, f64::max);
+    let bands: &[(f64, f64, f64)] = if holder { &m.bands } else { &[] };
+    let r_max = m.steel.iter().map(|q| q.1).chain(bands.iter().map(|b| b.2)).filter(|r| r.is_finite()).fold(0.0, f64::max);
     // The diameter under the tip.
     let r = d.diameter.max(0.0) * 0.5;
     let y = s.base_y + GAP;
@@ -71,7 +85,7 @@ fn dims(p: &Painter, s: &Scale, m: &ToolModel, u: Unit) {
     if let Some(mid) = vertical(p, s, xl, 0.0, d.stick_out, false) {
         p.text(Pos2::new(xt, mid), Align2::RIGHT_CENTER, format!("stick-out {}", len(d.stick_out)), font(), NOTE);
     }
-    if let Some((hd, hl)) = d.holder {
+    if let Some((hd, hl)) = d.holder.filter(|_| holder) {
         if vertical(p, s, xl - GAP, 0.0, d.gauge, false).is_some() {
             let y = s.at(d.gauge, 0.0).y + 8.0;
             p.text(Pos2::new(xt, y), Align2::RIGHT_CENTER, format!("gauge {}", len(d.gauge)), font(), NOTE);
