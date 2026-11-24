@@ -208,7 +208,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         let cond = wire.ok_or_else(|| unreached("wire condition"))?;
         let k = cond.0.wire_diameter * 0.5 + cond.0.gap;
         let picks = if let Some(sketch) = &wire_sketch {
-            Some((vec![sketch.straight_ring(op).map_err(GenError::Invalid)?], Vec::new()))
+            Some((vec![sketch.nominal_ring(op).map_err(GenError::Invalid)?], Vec::new()))
         } else {
             contour_sel.take().transpose()?.map(|(loops, chains, _)| (loops, chains))
         };

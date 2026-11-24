@@ -4,8 +4,13 @@ use std::path::{Path, PathBuf};
 
 mod contour;
 mod cutoff;
+mod group;
+mod round_profile;
 mod spacing;
+pub use crate::agie_setup::Quality;
 pub use crate::agie_setup::valid_stem as valid_name;
+pub use group::export_group_with_review;
+pub use round_profile::export_round_with_review;
 
 /// The retained side of a closed contour, or the kerf side of a directed open
 /// cut. The control applies the wire offset toward the waste: outside a punch,
@@ -96,6 +101,67 @@ pub fn export_with_review(
     };
     let setup = setup.map_err(|error| error.to_string())?;
     let iso_name = format!("{program}.ISO");
+    let files = [
+        (iso_name.clone(), iso(&iso_name, &points)),
+        (format!("{program}.SBR"), setup.sbr),
+        (format!("{program}.SBL"), setup.sbl),
+    ];
+    Ok(ExportedJob {
+        files: publish(destination, &files)?,
+        controller_review: setup.controller_review,
+    })
+}
+
+/// Publish one closed punch with the requested work quality (#2966).
+/// [`Quality::Ccb030`] writes the bytes of [`export_with_review`].
+/// [`Quality::Ccb035`] is qualified for one polygon punch on a 20 mm plate only:
+/// a die, an open cut, a group and a DXF arc punch keep CCB030.
+///
+/// # Errors
+/// The errors of [`export_with_review`], a side other than a punch, and a
+/// thickness that the quality has no measured offsets for.
+pub fn export_punch_with_review(
+    job: &AgieJob,
+    quality: Quality,
+    destination: &Path,
+    program: &str,
+    separation_length_mm: f64,
+) -> Result<ExportedJob, String> {
+    if quality == Quality::Ccb030 {
+        return export_with_review(job, destination, program, separation_length_mm);
+    }
+    if job.side != AgieSide::Punch {
+        return Err(format!(
+            "Quality {} is qualified for one closed punch only. Select AGIE_QN2 for a die opening or an open cutoff",
+            quality.name()
+        ));
+    }
+    if separation_length_mm != 1.0 {
+        return Err("Set the separation cut length (separationLengthMm) to 1.0 mm for this closed contour. A zero or unspecified separation cannot pass the control formal check".into());
+    }
+    if !valid_name(program) {
+        return Err("The job program name must be a non-reserved 1–8 character DOS name starting with a letter and using uppercase letters or digits".into());
+    }
+    let (mut points, setup, _) = contour::prepare_with_reach(job, program, quality)?;
+    let seam = *points.first().ok_or("The job requires a closed contour")?;
+    points.push(seam);
+    let setup = setup
+        .encode_quality(quality)
+        .map_err(|error| error.to_string())?;
+    let iso_name = format!("{program}.ISO");
+    let files = [
+        (iso_name.clone(), iso(&iso_name, &points)),
+        (format!("{program}.SBR"), setup.sbr),
+        (format!("{program}.SBL"), setup.sbl),
+    ];
+    Ok(ExportedJob {
+        files: publish(destination, &files)?,
+        controller_review: setup.controller_review,
+    })
+}
+
+/// The nominal ISO geometry of one work, with CRLF line ends.
+fn iso(iso_name: &str, points: &[[f64; 2]]) -> String {
     let mut iso = format!("( {iso_name} )\r\n");
     for (i, point) in points.iter().enumerate() {
         let motion = if i == 0 { "G00" } else { "G01" };
@@ -107,15 +173,7 @@ pub fn export_with_review(
         ));
     }
     iso.push_str(&format!("N{:04} M02 ;\r\n", points.len() + 1));
-    let files = [
-        (iso_name, iso),
-        (format!("{program}.SBR"), setup.sbr),
-        (format!("{program}.SBL"), setup.sbl),
-    ];
-    Ok(ExportedJob {
-        files: publish(destination, &files)?,
-        controller_review: setup.controller_review,
-    })
+    iso
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -143,7 +201,7 @@ fn publish(destination: &Path, files: &[(String, String)]) -> Result<Vec<PathBuf
             ));
         }
     }
-    // The staging directory and the final name share a filesystem. The rename commits all three
+    // The staging directory and the final name share a filesystem. The rename commits all
     // files together. Its no-replace mode also protects a destination created since the check.
     let stage = tempfile::Builder::new()
         .prefix(".camcraft-agie-")
@@ -224,6 +282,12 @@ mod cutoff_tests;
 #[cfg(test)]
 mod die_tests;
 #[cfg(test)]
+mod group_tests;
+#[cfg(test)]
+mod quality_tests;
+#[cfg(test)]
 mod reentrant_tests;
+#[cfg(test)]
+mod round_profile_tests;
 #[cfg(test)]
 mod tests;

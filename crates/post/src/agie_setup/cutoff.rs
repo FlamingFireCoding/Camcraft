@@ -76,11 +76,15 @@ impl CutoffSetup20<'_> {
             CutoffSide::Left => WorkSide::Left,
             CutoffSide::Right => WorkSide::Right,
         };
-        let work = piece::Work {
+        let piece = piece::Piece {
             stem: self.stem,
             stock_min_um: self.stock_min_um,
             stock_max_um: self.stock_max_um,
             height_um: self.height_um,
+            quality: super::Quality::Ccb030,
+        };
+        let work = piece::Work {
+            geometry: self.stem,
             side: side.native(),
             start_um: self.entry_um,
             exit_um: Some(self.exit_um),
@@ -93,9 +97,10 @@ impl CutoffSetup20<'_> {
             side.native()
         );
         Ok(setup_files(
+            &piece,
             &work,
             "geometry, entry point and exit point",
-            offsets,
+            &offsets,
             &side_check,
         ))
     }
