@@ -191,6 +191,41 @@ fn the_link_folder_is_the_users_own() {
 }
 
 #[test]
+fn false_server_on_stale_entry_is_refused_with_no_tool_calls_sent() {
+    let dir = fresh_dir("false-server");
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind false server");
+    let addr = listener.local_addr().expect("addr");
+
+    // A stale entry pointing to our false server port with current process id so pid_alive passes
+    let stale_entry = Entry {
+        format: link::FORMAT,
+        pid: std::process::id(),
+        transport: "tcp".into(),
+        address: addr.to_string(),
+        token: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+        project: None,
+        app_version: "0.26.0".into(),
+    };
+    write_entry(&dir, &stale_entry);
+
+    // False server thread: accepts connection, sends generic HELLO_OK without proving token
+    let false_server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept");
+        let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
+        let mut line = String::new();
+        reader.read_line(&mut line).expect("read hello");
+        let _ = writeln!(stream, "{}", link::HELLO_OK);
+        let _ = stream.flush();
+
+        // Read to see if the CLI sends any subsequent tool calls
+        line.clear();
+        let bytes_read = reader.read_line(&mut line).unwrap_or(0);
+        (bytes_read, line)
+    });
+
+    let result = link_call(&dir, &Select::Only, "get_job", &json!({}));
+    assert!(result.is_err(), "false server must be rejected");
+
     let (bytes_read, line) = false_server.join().expect("server thread");
     assert_eq!(bytes_read, 0, "CLI must not send any tool call to unproven server: {line}");
     let _ = std::fs::remove_dir_all(&dir);
@@ -232,7 +267,5 @@ fn a_second_ui_call_during_a_slow_call_reports_busy_and_exits_4() {
     let _ = finish_tx.send(());
     let _ = client1.join();
     drop(inbox);
-    let _ = std::fs::remove_dir_all(&dir);
-}
     let _ = std::fs::remove_dir_all(&dir);
 }
