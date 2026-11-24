@@ -363,3 +363,28 @@ fn a_viewport_in_a_float_is_refused() {
         state.status
     );
 }
+
+/// #3892: the tool library left the dock for its own window. A setup saved
+/// with the old "Tool library" tab (beside Properties and in a float) still
+/// loads; the retired tab, and the float that held only it, are dropped.
+#[test]
+fn a_saved_setup_with_the_old_tool_library_tab_still_loads() {
+    let path = store("old-tools-tab");
+    let mut dock = build_dock();
+    if let Some(props) = dock.find_tab(&Tab::Properties)
+        && let Ok(leaf) = dock.leaf_mut(props.node_path())
+    {
+        leaf.append_tab(Tab::AiChat);
+        leaf.append_tab(Tab::Tools);
+    }
+    dock.add_window(vec![Tab::Tools]);
+    let setup = SavedSetup { name: String::from("Old"), dock: layout::setups::encode(&dock).expect("a dock is writable") };
+    let saved = PanelSetups { auto_load: true, last: Some(String::from("Old")), setups: vec![setup] };
+    prefs::save_setups(&path, &saved).expect("the file lands on disk");
+    let mut state = State::new();
+    state.load_panel_setups_from(path);
+    let started = layout::setups::start_dock(&mut state);
+    assert!(started.find_tab(&Tab::Tools).is_none(), "the retired tab is dropped on load");
+    assert!(floats(&started).is_empty(), "the float that held only the old tab goes too");
+    assert!(started.find_tab(&Tab::AiChat).is_some(), "the saved setup loaded, not the default: {}", state.status);
+}

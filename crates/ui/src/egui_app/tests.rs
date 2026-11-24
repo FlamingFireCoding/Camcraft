@@ -125,6 +125,8 @@ mod transport_precalc;
 mod sim_op_steps;
 mod page_layout;
 mod page_layout_windows;
+// #3892: the tool library window (page_layout.rs is full).
+mod page_layout_tool_library;
 mod anchors;
 mod stock_fit;
 mod stock_source_default;
