@@ -66,8 +66,9 @@ fn the_tool_library_window_closes_and_opens_again() {
 }
 
 /// #3893: a tool open in the window. The list folds into a rail on the
-/// left; the editor stands right of it: the heading, the Tool and Details
-/// tabs, the rows, then Apply at the foot. The window still leaves the
+/// left; the editor stands right of it: the heading, the preview's 3D /
+/// Side toggle (#3894), the Tool and Details tabs, the rows, then Apply at
+/// the foot. The window still leaves the
 /// Properties pane free. Queries stay inside the window, because a tool
 /// can be open in Properties too.
 #[test]
@@ -97,7 +98,7 @@ fn layout_window_tool_editor() {
     };
     let heading = format!("Tool: {name}");
     let mut last: Option<(&str, f32)> = None;
-    for a in [heading.as_str(), "Details", "Diameter", "Apply"] {
+    for a in [heading.as_str(), "3D", "Details", "Diameter", "Apply"] {
         let r = rect(a);
         assert!(win.expand(1.0).contains_rect(r), "{a:?} {r:?} leaves the window {win:?}");
         if let Some((prev, y)) = last {
