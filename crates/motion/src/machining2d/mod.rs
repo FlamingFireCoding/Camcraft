@@ -80,12 +80,15 @@ mod lead_ext;
 mod lead_fit;
 mod lead_seam;
 mod ladder_links;
+mod level_flanks;
 mod level_order;
 mod level_ramp_entry;
 mod level_rings;
 mod levels;
 mod microlift;
 mod pass_start;
+mod ring_fill;
+mod ring_side;
 mod pocket;
 mod pocket_plan;
 mod pocket_emit;
@@ -119,6 +122,7 @@ mod trace_avoid;
 mod slot_ends;
 mod slot_lap;
 mod slot_room;
+mod slot_turns;
 mod undercut;
 mod unreached;
 mod vcarve;
@@ -126,6 +130,7 @@ mod vcarve_axis;
 mod vcarve_walk;
 mod waterscan;
 mod pocket_avoid;
+mod pocket_avoid_level;
 mod corner_relief;
 mod corner_relief_spur;
 
@@ -177,14 +182,18 @@ pub use pass_start::{PASS_START_NOTE, PASS_START_REST_NOTE, PASS_START_ZIGZAG_NO
 pub use pocket::{
     pocket, pocket_entered, pocket_entered_with_relief, pocket_started, pocket_started_on, PocketParams, PocketStrategy,
 };
-pub use pocket_avoid::{pocket_avoid, pocket_avoid_started, pocket_avoid_started_on, pocket_avoid_with_relief};
+pub use pocket_avoid::{
+    pocket_avoid, pocket_avoid_entered_started, pocket_avoid_entered_with_relief, pocket_avoid_started,
+    pocket_avoid_started_on, pocket_avoid_with_relief,
+};
 pub use predrilled::PreHole;
 pub use rest2d::{
-    rest_plan, rest_pocket, rest_pocket_with_relief, rest_strategy, RestParams, RestPlan, RestSource, REST_FILM,
-    REST_MARGIN, REST_NEEDS_STOCK, REST_REACH,
+    rest_plan, rest_pocket, rest_pocket_avoid_with_relief, rest_pocket_with_relief, rest_strategy, RestParams,
+    RestPlan, RestSource, REST_FILM, REST_MARGIN, REST_NEEDS_STOCK, REST_REACH,
 };
 pub use rest_prior::{
-    rest_plan_stock, rest_pocket_previous, rest_pocket_previous_with_relief, rest_stock_from_columns, PRIOR_Z_TOL,
+    rest_plan_stock, rest_pocket_previous, rest_pocket_previous_avoid_with_relief, rest_pocket_previous_with_relief,
+    rest_stock_from_columns, PRIOR_Z_TOL,
 };
 pub use rest_prior_adaptive::{rest_adaptive_previous, REST_ADAPTIVE_ENTERED, REST_ADAPTIVE_NO_STOCK};
 pub use ring::{on_boundary, ring_is_circular};
@@ -208,7 +217,8 @@ pub use trochoid_slot::{
 };
 pub use thread_mill::{thread_mill, PassSchedule, ThreadHole, ThreadParams, ThreadPasses, MAX_SPRING_PASSES, EXTERNAL_THREAD_DEPTH_PER_PITCH, THREAD_DEPTH_PER_PITCH};
 pub(crate) use pocket::plan_passes;
-pub(crate) use pocket_zigzag::rest_passes as zigzag_ringed_passes;
+pub(crate) use pocket_zigzag::{SeamWrap, ringed_passes as zigzag_ringed_passes};
+pub use pocket_zigzag::boundary_rings_probe;
 pub(crate) use adaptive_troch_level::{TrochLevel, WHO_3D, plan_troch_level, refusal_text as troch_refusal_text};
 pub(crate) use adaptive::PLAN_SAG;
 // The HSM planner's door, its arc proofs and its microlift link, read
