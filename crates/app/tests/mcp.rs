@@ -10,6 +10,8 @@
 //! app::operation (detect_holes, #312), app::mcp::pockets (detect_pockets, #35).
 
 mod common;
+#[path = "mcp/background_generate.rs"]
+mod background_generate;
 #[path = "mcp/approach_distance.rs"]
 mod mcp_approach_distance;
 #[path = "mcp/finish3d_direction.rs"]
