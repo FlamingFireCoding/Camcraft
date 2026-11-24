@@ -14,6 +14,30 @@ this page and `AGENTS.md` differ, `AGENTS.md` is right.
 Questions and coordination happen on the
 [CamCraft Discord](https://discord.gg/bBWjkAgX5).
 
+## Your first hour
+
+1. **Say hello** on the [CamCraft Discord](https://discord.gg/bBWjkAgX5): what
+   machine you have (CNC or computer), and what you would like to work on.
+2. **What you need:**
+   - a GitHub account, and the [GitHub CLI](https://cli.github.com/) logged
+     in (`gh auth login`) - agents use it to read issues and open PRs;
+   - [Rust](https://rustup.rs/) stable, and `git`; on Linux the GUI build
+     also needs `pkg-config`, `libwayland-dev`, `libxkbcommon-dev` and
+     `libx11-dev` (Debian/Ubuntu names);
+   - an AI coding agent. Claude Code needs a paid Claude plan or API credits;
+     a Pro plan is enough to start, heavier use wants a Max plan. Other agents
+     (Codex and the like) work too - they read the same `AGENTS.md`;
+   - free disk: about 30 GB to start, more per extra worktree (see below).
+3. **Fork, clone, build:** fork `NeoTech/Camcraft` on GitHub, clone your fork,
+   add the original as `upstream`, and run `cargo xtask gate quick` once to
+   warm the build (the first build takes a while). The `/fork-sync` skill
+   keeps your fork's `main` and process files in step with the project.
+4. **Find a first issue:** open, unclaimed bugs with a small effort label -
+   [P3/P7 bugs, effort low or medium](https://github.com/NeoTech/Camcraft/issues?q=is%3Aopen+label%3Abug+-label%3Aclaimed+-label%3Ain-review+label%3Aeffort%3Alow%2Ceffort%3Amedium).
+   Read the issue and its comments, then claim it with a comment.
+5. **Ask your agent to do it:** in Claude Code, `/work-issue <number>` runs the
+   whole flow below. Read its draft PR before you mark it ready.
+
 ## Getting started with Claude Code
 
 1. Install [Claude Code](https://claude.com/claude-code) and a Rust stable
