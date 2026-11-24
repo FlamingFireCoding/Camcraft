@@ -70,7 +70,7 @@ pub(super) fn draw(ui: &mut Ui, state: &mut State) {
             None => ui.label("-").on_hover_text("needs a spindle speed and a stated flute count"),
         };
         if is_marked(row, doc, named) {
-            ui.label(RichText::new(MARK).strong())
+            ui.label(RichText::new(MARK).italics().color(ui.visuals().text_color()))
                 .on_hover_text("the row that operations on the document's workpiece material run");
         } else {
             ui.label("");
