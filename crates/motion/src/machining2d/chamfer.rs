@@ -266,7 +266,12 @@ pub fn chamfer_open_runs(
         for pair in pts.windows(2) {
             tangent(pair[0], pair[1])?;
         }
-        let run = simple(pts)?;
+        let run = simple(pts).map_err(|e| match e {
+            GenError::Empty(_) => {
+                GenError::Empty("a chamfer edge collapses to one point - re-pick the edge".into())
+            }
+            other => other,
+        })?;
         let mut levels = Vec::new();
         for at in [corner_z + probe, p.top_z - probe] {
             if let Some(region) = section(at)?
@@ -283,7 +288,10 @@ pub fn chamfer_open_runs(
         })?;
         let pass = if p.minimum_cone_radius == 0.0 {
             let mut pass = run.clone();
-            // Keep the legacy zero-radius route byte-for-byte.
+            // Keep the legacy zero-radius route byte-for-byte. Material
+            // stays on the RIGHT for climb, as on every loop. The model
+            // read above supplies the side that a feature chain's
+            // arbitrary storage direction otherwise cannot.
             if p.climb == material_left {
                 pass.reverse();
             }
@@ -317,8 +325,10 @@ pub fn chamfer_open_runs(
             }
             pass
         };
+        // Guard: simple() gives the ideal-tip pass at least two points. A
+        // shorter tip-offset pass is refused here, never posted.
         let (Some(&first), Some(&second), Some(&last), Some(&before_last)) =
-            (pass.first(), pass.get(1), pass.last(), pass.get(pass.len() - 2))
+            (pass.first(), pass.get(1), pass.last(), pass.get(pass.len().saturating_sub(2)))
         else {
             return Err(GenError::Empty("a chamfer edge needs at least two points".into()));
         };

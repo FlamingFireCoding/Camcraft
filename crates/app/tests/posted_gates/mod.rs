@@ -89,10 +89,12 @@ fn region_law(t: &Toolpath, region: &Region, tool: &ToolGeom, mode: Mode, top: f
             cutter: None,
             mode,
             stock_top_z: top,
+            rim_top_z: None,
             clearance_z: clear,
             stock_to_leave: leave,
             gouge_tol: 0.01,
             model_excess: 0.0,
+            file_tolerance: false,
             z_tol: 1e-6,
             finish_tol: None,
             fixtures: &[],
@@ -120,7 +122,7 @@ fn slot_op(a: Point2, b: Point2, width: f64) -> OpParams {
         plunge_feed: 100.0,
         climb: true,
         entry: Entry3D::Plunge,
-        helix_radius: 1.0,
+        helix_radius: 1.0, blend_turns: false, blend_radius: None,
         tilt: None,
         extend_start: 0.0,
         extend_end: 0.0,
@@ -143,7 +145,7 @@ fn slot_params(d: f64, width: f64, bottom: f64, stepdown: f64, stepover: f64) ->
         plunge_feed: 100.0,
         climb: true,
         entry: Entry3D::Plunge,
-        helix_radius: 1.0,
+        helix_radius: 1.0, blend_turns: false, blend_radius: None,
     }
 }
 
@@ -286,6 +288,7 @@ pub fn sinker_gouge_cells() -> usize {
         pass: camcraft_app::operation::SinkerPass::Single,
         cavity_x: 0.0,
         cavity_y: 0.0,
+        cavity_outline: Vec::new(),
         orbit: None,
         layer: None,
         wear_lost: None,

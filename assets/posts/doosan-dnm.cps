@@ -47,6 +47,7 @@ afterModes = true; // reads PARAM AfterOperation (#110): the engine refuses a st
 workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
 workOffsetMax = 6;      // G54..G59; G54.1 P extended offsets are an option not verified here (#931)
 wcsRotation = true;        // #760: writes G68 X0. Y0. R / G69 in Control mode from PARAM WcsYaw & WcsRotationMode
+uprightReturn = true;      // #3477: uprightAfterTilt() retracts (G28 Z or G53 Z) and writes the rotaries to zero at each section after a tilted section (#3466); pinned by upright_after_tilt.rs
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
 endUnits = "G20 G21";     // #2189: switches end units before M30 when asked
 
@@ -197,6 +198,23 @@ function eps() { return inch ? "0.0001" : "0.001"; } // one output step, the pro
 function ni(v) { return has(v) ? String(Math.round(v)) : "0"; } // integer word (rpm)
 function w(letter, v) { return has(v) ? letter + fu(v) : ""; }
 function fw(v) { return has(v) ? "F" + ff(v) : ""; }
+// #3699: a tap feed is pitch x rpm, kept at 0.001 mm/min by the stream, and
+// the control cuts the pitch F / S. G84 writes the feed at three mm or four
+// inch decimals, with its point; a tap whose written F and S do not hold
+// the pitch to 0.01 percent is refused by name.
+function tapFeed(v) { return pt(fn(v)); }
+function tapPitchHolds(feed) {
+  var speed = Math.round(sRpm);
+  var written = Number(fn(feed)) * (inch ? 25.4 : 1);
+  var want = sRpm > 0 ? feed / sRpm : 0;
+  var got = speed > 0 ? written / speed : 0;
+  if (!(want > 0 && Math.abs(got - want) / want <= 1e-4)) {
+    msg("canned cycle G84 (tap)" + (coolantOp ? " in operation " + coolantOp : "") + " feed " + feed + " mm/min at " + sRpm +
+      " rpm posts as F" + tapFeed(feed) + " S" + speed + " - refused: the written pitch differs by more than 0.01 percent");
+    return false;
+  }
+  return true;
+}
 function wa(letter, v) { return has(v) ? letter + fa(v) : ""; } // an angle word
 var seqNum = 0;
 var seqNextForce = false;
@@ -286,6 +304,7 @@ function retractHome(xyToo) {
 }
 function xyz(p) { return [wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ)]; }
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }  // axis word, origin-relative
+function arcWord(k, v) { return wo(k, v, k === "X" ? orgX : (k === "Y" ? orgY : orgZ)); }  // #3442: a position word as written, for arcFate
 function msg(s) {  // counted warning where the host offers message()
   if (typeof message === "function") message(s); else writeln("; " + s);
 }
@@ -678,6 +697,8 @@ function joinDash(parts) {
   return a.join(" - ");
 }
 function note(s) { block(["(" + s + ")"]); }
+// Program notes use this dialect without truncating the stated bound.
+function onComment(s) { note(commentText(s)); }
 function commentParam(name, value) {
   if (name === "SetupName") setupName = clean(value);
   else if (name === "OperationName") opName = clean(value);
@@ -781,6 +802,58 @@ function onToolChange(number, name) {
   rotaryAClamped = true;
 }
 
+// #3466: a section that follows a tilted (or indexed) one starts upright.
+// The angle words are modal and a tilted section's exit keeps its lean, so
+// a section whose moves state no angle would cut under the old one. Each
+// rotary the control holds (rotAt) away from zero is commanded back to
+// zero - after G49 (the preamble's line), at the reference height, before
+// the tool change and the first X/Y traverse, which states its height
+// again. A turning A is unclamped and clamped around it, as onRapid does.
+function uprightAfterTilt() {
+  if (!heldRotaries().length) return;
+  retractHome(false);
+  if (optStr("safeRetract", "G28") !== "G53") block(["G90"]);
+  rotariesToZero();
+  xyUnknown = true;
+}
+// The rotaries the control holds away from zero (rotAt).
+function heldRotaries() {
+  var held = [], ls = ["A", "B", "C"];
+  for (var i = 0; i < ls.length; i++) {
+    var v = rotAt[ls[i]];
+    if (has(v) && Math.abs(v) > 1e-9 && statesRotary(ls[i])) held.push(ls[i]);
+  }
+  return held;
+}
+// One block that turns each held rotary to zero; no X/Y/Z word. A
+// turning A is unclamped before it and clamped after it.
+function rotariesToZero() {
+  var held = heldRotaries(), words = [];
+  for (var i = 0; i < held.length; i++) { words.push(angleWord(held[i], 0)); rotAt[held[i]] = 0; }
+  if (!words.length) return;
+  var turnsA = held.indexOf("A") >= 0;
+  if (turnsA) ensureRotaryUnclamped();
+  block(["G00"].concat(words));
+  if (turnsA) ensureRotaryClamped();
+}
+
+// #3540: the program ends upright too, so the operator unloads at zero
+// and the next program does not start under the old lean. Same order as
+// the return above: G49 (TCPM and the length offset off), Z to the
+// reference height, the angles to zero, then X/Y home - incremental
+// (G91 G28), so the via point is the current position, never work X0 Y0.
+// A trailing Go home already lifted Z (homedAt): only the angles follow.
+function uprightAtEnd() {
+  if (!heldRotaries().length) return false;
+  var homed = linesWritten() === homedAt;
+  var g28 = optStr("safeRetract", "G28") !== "G53";
+  if (!homed) { block(["G49"]); retractHome(false); }
+  if (g28 && !homed) block(["G90"]);  // a Go home wrote its own G90
+  rotariesToZero();
+  if (!homed && g28) block(["G91", "G28", "X0", "Y0"]);
+  return true;
+}
+
 // ----------------------------------------------------------- Preamble
 function startPreamble() {
   if (sectionOpen) return;
@@ -791,6 +864,7 @@ function startPreamble() {
   // #1649: the operator reads why every sign on a flipped axis is the other one.
   if (wcsFlip) note("WCS " + wcsFlip.split("").join(" AND ") + " FLIPPED - PROGRAM MIRRORED");
   block(["G90", "G17", wcsWord, "G40", "G49", "G80"]);
+  uprightAfterTilt();
   if (toolWait) {
     if (secStarted > 0 && optBool("optionalStop", false)) block(["M1"]);
     toolNote();
@@ -1061,6 +1135,9 @@ function onLinear() {
 function onCircular() {
   startPreamble();
   compRefuse("an arc");
+  // #3442: an arc whose written ends coincide is no arc block (arcFate, PRELUDE).
+  var fate = arcFate(arcWord, arcIncOf(fu));  // #3474: I J K are increments from the start
+  if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   enableSmoothing();
   var aChanged = has(properties.A) && (!has(lastA) || properties.A !== lastA);
   var tw = tilt(properties);
@@ -1259,6 +1336,7 @@ function onCycle() {
     return;
   }
   if (spindleStopped("canned cycle " + g)) return;
+  if (g === "G84" && !tapPitchHolds(Number(p.FeedRate))) return;
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
@@ -1275,7 +1353,7 @@ function onCycle() {
       words.push(w("Q", p.Q));
     }
     if (ms > 0 && g !== "G73" && g !== "G84") words.push("P" + ms);
-    words.push(fw(p.FeedRate));
+    words.push(g === "G84" ? "F" + tapFeed(p.FeedRate) : fw(p.FeedRate));
     block(words);
     cycleSig = sig;
   }
@@ -1423,7 +1501,7 @@ function onClose() {
     }
     chipConveyorStarted = false;
   }
-  if (linesWritten() !== homedAt) {
+  if (!uprightAtEnd() && linesWritten() !== homedAt) {
     retractHome(true);
   }
   var u = endUnitsWord();

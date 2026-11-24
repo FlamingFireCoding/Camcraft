@@ -64,6 +64,32 @@ fn same_angle(a: f64, b: f64) -> bool {
     d.min(std::f64::consts::TAU - d) <= SAME_WALL_RAD
 }
 
+/// Repair a four-way contact whose faces did not link over plain edges.
+/// Opposite edge directions can pair, except coincident opposed walls
+/// (a zero-width wedge). Keep an existing two-use body together. Return
+/// pairs of use indices only when exactly one complete matching remains.
+/// This is only a proposed link: callers must recheck `solids_touch` on
+/// every shared edge after all links, then check closure and volume.
+#[must_use]
+pub fn fragment_pairs(lo: Point3, hi: Point3, uses: &[EdgeUse]) -> Option<[(usize, usize); 2]> {
+    if uses.len() != 4 {
+        return None;
+    }
+    let f: Vec<_> = (0..4).filter(|&i| uses[i].forward).collect();
+    let b: Vec<_> = (0..4).filter(|&i| !uses[i].forward).collect();
+    let ([f0, f1], [b0, b1]) = (f.as_slice(), b.as_slice()) else { return None };
+    let angle = angles(lo, hi, uses)?;
+    let count = |i: usize| uses.iter().filter(|u| u.body == uses[i].body).count();
+    let allowed = |i: usize, j: usize| {
+        !same_angle(angle[i], angle[j])
+            && ((uses[i].body == uses[j].body && count(i) == 2) || (count(i) == 1 && count(j) == 1))
+    };
+    let candidates = [[(*f0, *b0), (*f1, *b1)], [(*f0, *b1), (*f1, *b0)]];
+    let mut valid = candidates.into_iter().filter(|pairs| pairs.iter().all(|&(i, j)| allowed(i, j)));
+    let pairs = valid.next()?;
+    valid.next().is_none().then_some(pairs)
+}
+
 /// The angle of each facet about the edge, or `None` for a zero edge or
 /// an apex on the edge line (a sliver, not a wall).
 fn angles(lo: Point3, hi: Point3, uses: &[EdgeUse]) -> Option<Vec<f64>> {
@@ -102,6 +128,41 @@ mod tests {
 
     const LO: Point3 = Point3 { x: 0.0, y: 0.0, z: 0.0 };
     const HI: Point3 = Point3 { x: 0.0, y: 0.0, z: 1.0 };
+
+    #[test]
+    fn contact_fragments_have_exactly_one_nonzero_wedge_matching() {
+        let uses = [u(0, false, 1.0, 0.0), u(1, true, 0.0, 1.0), u(2, true, 1.0, 0.0), u(3, false, 0.0, -1.0)];
+        let pairs = fragment_pairs(LO, HI, &uses).expect("one complete matching");
+        assert!(pairs.contains(&(1, 0)) && pairs.contains(&(2, 3)), "{pairs:?}");
+        let mut linked = uses;
+        for (i, j) in pairs {
+            linked[j].body = linked[i].body;
+        }
+        assert!(solids_touch(LO, HI, &linked));
+    }
+
+    #[test]
+    fn ambiguous_faulty_or_degenerate_fragments_never_link() {
+        let line = [u(0, false, 1.0, 0.0), u(1, true, 0.0, 1.0), u(2, false, -1.0, 0.0), u(3, true, 0.0, -1.0)];
+        assert!(fragment_pairs(LO, HI, &line).is_none(), "two matchings for line-only contact");
+        let good = [u(0, false, 1.0, 0.0), u(1, true, 0.0, 1.0), u(2, true, 1.0, 0.0), u(3, false, 0.0, -1.0)];
+        assert!(fragment_pairs(LO, HI, &good[..3]).is_none(), "odd edge use");
+        assert!(fragment_pairs(LO, LO, &good).is_none(), "zero edge");
+        let mut bad = good;
+        bad[0].forward = true;
+        assert!(fragment_pairs(LO, HI, &bad).is_none(), "unbalanced edge use");
+        let mut bad = good;
+        bad[3].apex = Point3::new(0.0, 0.0, 0.5);
+        assert!(fragment_pairs(LO, HI, &bad).is_none(), "apex on edge line");
+        let mut bad = good;
+        bad[3].apex.x = f64::NAN;
+        assert!(fragment_pairs(LO, HI, &bad).is_none(), "non-finite apex");
+        let mut bad = good;
+        bad[0].body = 1;
+        assert!(fragment_pairs(LO, HI, &bad).is_some(), "keep an existing two-use body");
+        bad[2].body = 1;
+        assert!(fragment_pairs(LO, HI, &bad).is_none(), "a pinched three-use body cannot split");
+    }
 
     /// Two boxes face to face (A in y > 0, B in y < 0, both x in 0..1):
     /// at the contact face's edge their walls y = 0 lie on one plane.

@@ -21,8 +21,8 @@
 //! stack of its `ToolGeom` - never smaller than the real cutter - and
 //! the operation layer's depth law via [`solid_hits`], with the tool's
 //! own tip. A cutting move that enters the solid is a [`Warning::Gouge`];
-//! a rapid that does is a [`Warning::RapidInStock`] - the part is stock
-//! too, and steel at rapid feed is a crash.
+//! a rapid that does is a [`Warning::RapidInPart`] - steel at rapid feed
+//! is a crash.
 
 use super::corner_relief::CornerReliefZone;
 use super::hole_wall::HoleAxis;
@@ -129,7 +129,7 @@ pub fn solid_hits_relieved(
 /// under the edge): a cutting move whose shank or holder enters the
 /// solid is a [`Warning::ShankHit`] on the part whatever its edge does,
 /// and a rapid that enters it with any of the assembly a
-/// [`Warning::RapidInStock`]. The edge of a cutting move is not judged
+/// [`Warning::RapidInPart`]. The edge of a cutting move is not judged
 /// here. One pose more is excused, and only that pose: on a straight
 /// retract UP the tool's own axis from where a cutting move left it, the
 /// edge where it already stands - the kerf that move made, which the
@@ -183,6 +183,7 @@ fn judged(path: &Toolpath, facets: &[Triangle], cutter: &Cutter, law: &SolidLaw,
     // its ends, interval by interval; every other move pays nothing.
     let poses = midpose::poses(path);
     let reach = atoms.iter().map(|a| a.z1).fold(0.0, f64::max);
+    let stopped = super::fine_bore::stopped_rapids(path, cutter.radius, cutter.shank_radius);
     let mut out = Vec::new();
     for (i, m) in path.moves.iter().enumerate() {
         if !(m.from.is_finite() && m.to.is_finite()) {
@@ -211,6 +212,15 @@ fn judged(path: &Toolpath, facets: &[Triangle], cutter: &Cutter, law: &SolidLaw,
                 }))
         };
         if m.kind == MoveKind::Rapid {
+            if stopped.contains(&i) {
+                // #1445: a fine bore's stopped rapid. Its edge zone stays in
+                // the cylinder the feed in cut ([`super::fine_bore`]); the
+                // shank and holder are read where the shift puts them.
+                if hits(&body) {
+                    out.push(Warning::RapidInPart { at: i });
+                }
+                continue;
+            }
             let lifts = stack_only && axis.is_none() && m.arc.is_none() && m.from.x == m.to.x && m.from.y == m.to.y && m.to.z >= m.from.z;
             let from_cut = i.checked_sub(1).and_then(|j| path.moves.get(j)).is_some_and(|c| c.kind != MoveKind::Rapid && c.to == m.from);
             if lifts && from_cut {
@@ -218,12 +228,12 @@ fn judged(path: &Toolpath, facets: &[Triangle], cutter: &Cutter, law: &SolidLaw,
                 // the caller's; everything the lift enters is ours.
                 let (fr, column) = (Frame::new(m.from, None), rise(&edge, m.to.z - m.from.z));
                 if hits(&body) || (!column.is_empty() && index.hits(&fr, [0.0; 3], &column, allow, 0.0, &[], &[], &[])) {
-                    out.push(Warning::RapidInStock { at: i });
+                    out.push(Warning::RapidInPart { at: i });
                 }
                 continue;
             }
             if hits(&atoms) {
-                out.push(Warning::RapidInStock { at: i });
+                out.push(Warning::RapidInPart { at: i });
             }
         } else if !stack_only && hits(&edge) {
             out.push(Warning::Gouge { at: i });
@@ -249,7 +259,7 @@ fn rise(edge: &[Atom], h: f64) -> Vec<Atom> {
     if edge.is_empty() || !(h > 0.0 && r > 0.0) {
         return Vec::new();
     }
-    vec![Atom { z0: top, z1: top + h, prof: Prof::Flat(r) }]
+    vec![Atom { z0: top, z1: top + h, prof: Prof::Flat(r), cap: false }]
 }
 
 /// The holes' axes in `fr`'s XY: those running along its tool axis.

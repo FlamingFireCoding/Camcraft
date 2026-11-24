@@ -10,7 +10,17 @@
 //! app::operation (detect_holes, #312), app::mcp::pockets (detect_pockets, #35).
 
 mod common;
+#[path = "mcp/approach_distance.rs"]
+mod mcp_approach_distance;
+#[path = "mcp/finish3d_direction.rs"]
+mod mcp_finish3d_direction;
+#[path = "mcp/finish3d_pass_start.rs"]
+mod mcp_finish3d_pass_start;
 mod mcp_open;
+#[path = "mcp/slot_tool_fit.rs"]
+mod slot_tool_fit;
+#[path = "mcp/trochoid_pass_start.rs"]
+mod trochoid_pass_start;
 
 use camcraft_app::mcp::{self, Server};
 
@@ -239,6 +249,33 @@ fn bad_input_is_a_tool_error_never_a_panic() {
     assert_eq!(bad_call["error"]["code"], json!(-32602));
     assert!(c.server.handle(&json!([1, 2])).is_some_and(|r| r["error"]["code"] == json!(-32600)));
     assert!(c.server.handle_line("   ").is_none());
+}
+
+#[test]
+fn slot_refuses_a_pass_start_with_its_reason_without_editing_the_job() {
+    const REASON: &str = "Slot has no pass order. Each depth has one continuous pass. A tool-width cut follows the centerline. A wider cut connects rows.";
+    let mut c = Client::new();
+    c.ok("set_stock", json!({ "box": { "dx": 50.0, "dy": 50.0, "dz": 10.0 } }));
+    c.ok("add_tool", json!({ "catalog": "EM-0400-2FL" }));
+    c.ok("add_operation", json!({ "kind": "Slot", "tool": "EM-0400-2FL", "name": "Slot1" }));
+    let before = c.ok("get_job", json!({}));
+    let params = &before["operations"][0]["params"]["slot"];
+    assert!(params.is_object() && params.get("pass_start").is_none(), "{before}");
+
+    for value in [json!("inside"), json!("outside"), json!("auto"), Value::Null] {
+        let message = c.refused("edit_operation", json!({
+            "name": "Slot1", "params": { "pass_start": value, "width": 10.0 }
+        }));
+        assert!(message.contains(REASON), "{value}: {message}");
+        let message = c.refused("add_operation", json!({
+            "kind": "Slot", "tool": "EM-0400-2FL", "name": "Slot2", "params": { "pass_start": value }
+        }));
+        assert!(message.contains(REASON), "{value}: {message}");
+    }
+    assert_eq!(c.ok("get_job", json!({})), before);
+    c.ok("undo", json!({}));
+    let after_undo = c.ok("get_job", json!({}));
+    assert_eq!(after_undo["operations"], json!([]), "no rejected patch entered the history");
 }
 
 #[test]
@@ -738,5 +775,58 @@ fn gap_link_rides_the_params_door_and_undoes() {
         json!("jump"),
         "undo restores the jump: {job}"
     );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn waterlines_rides_list_add_edit_generate_and_undo() {
+    let dir = tmp_dir("waterlines_mcp");
+    let stl = dir.join("block.stl");
+    write_box_stl(&stl);
+    let mut c = Client::new();
+    c.request("initialize", json!({ "protocolVersion": "2025-06-18" }));
+    let kinds = c.ok("list_operation_types", json!({ "kind": "3D Finish" }));
+    let fields = kinds["kinds"][0]["fields"].as_array().expect("fields array");
+    let wf = fields.iter().find(|f| f["name"] == "waterlines").expect("waterlines listed");
+    assert_eq!(wf["type"], json!("boolean"));
+    assert_eq!(wf["default"], json!(true));
+
+    c.ok("import_model", json!({ "path": stl.display().to_string() }));
+    c.ok("set_stock", json!({ "box": { "dx": 60.0, "dy": 60.0, "dz": 20.0 } }));
+    c.ok("add_tool", json!({ "catalog": "BN-0600" }));
+    let add = c.ok("add_operation", json!({ "kind": "3D Finish", "tool": "BN-0600" }));
+    let op = add["operation"].as_str().expect("op name").to_string();
+    let job = c.ok("get_job", json!({}));
+    assert_eq!(job["operations"][0]["params"]["finish3d"]["waterlines"], json!(true));
+
+    let edit = c.ok("edit_operation", json!({ "name": op, "params": { "waterlines": false } }));
+    assert_eq!(edit["params"]["finish3d"]["waterlines"], json!(false));
+    let bad = c.refused("edit_operation", json!({ "name": op, "params": { "waterlines": "off" } }));
+    assert!(!bad.is_empty());
+
+    let generated = c.ok("generate", json!({}));
+    assert_eq!(generated["generated"][0]["status"], json!("ok"), "{generated}");
+    let notes = generated["generated"][0]["notes"]
+        .as_array()
+        .expect("notes exposed in generate output");
+    assert!(
+        notes.iter().any(|n| n.as_str().is_some_and(|s| s.starts_with(camcraft_app::finishing3d::WATERLINES_OFF_NOTE))),
+        "uncut steep flanks note must surface in generate output: {notes:?}"
+    );
+
+    c.ok("undo", json!({}));
+    c.ok("undo", json!({}));
+    let job = c.ok("get_job", json!({}));
+    assert_eq!(job["operations"][0]["params"]["finish3d"]["waterlines"], json!(true));
+
+    let add_off = c.ok("add_operation", json!({
+        "kind": "3D Finish",
+        "name": "FinishOff",
+        "tool": "BN-0600",
+        "params": { "waterlines": false }
+    }));
+    assert_eq!(add_off["operation"], json!("FinishOff"));
+    let job = c.ok("get_job", json!({}));
+    assert_eq!(job["operations"][1]["params"]["finish3d"]["waterlines"], json!(false));
     let _ = std::fs::remove_dir_all(&dir);
 }

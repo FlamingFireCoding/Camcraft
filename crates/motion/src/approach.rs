@@ -113,6 +113,12 @@ pub struct Approach {
     /// traverse plane, as every pre-M11.3 path did; the default is
     /// [`DEFAULT_PLUNGE_HEIGHT`].
     pub plunge_height: f64,
+    /// Approach distance (mm, #3745): how far outside the stock boundary
+    /// the entry of a pass that starts Inside or Outside descends, in air,
+    /// before it moves in the cut plane onto the first ring. The entry
+    /// sub-issue of #3741 reads it; the default is
+    /// [`DEFAULT_APPROACH_DISTANCE`].
+    pub approach_distance: f64,
     /// The top of the setup's stock in the generator's frame, when the
     /// application knows it (#2004): the input of the level law. Above
     /// Top Z, the law keeps a level at Top Z (`machining2d::cut_levels_under`).
@@ -121,6 +127,11 @@ pub struct Approach {
     /// [`Approach::material_top`], #1559, set only where the entry carries
     /// stock).
     pub stock_top: Option<f64>,
+    /// The depth ladder's mode (#2012): `true` cuts the same number of
+    /// levels in equal steps (`machining2d::equal_stepdown`); `false` -
+    /// the default, every earlier file - steps by the full stepdown and
+    /// keeps the remainder in the last step.
+    pub equal_steps: bool,
     // --- D: feeds and engagement at entry ---
     /// Feed of ramp, helix and arc descents (mm/min); `0` is the cutting
     /// feed.
@@ -208,6 +219,15 @@ pub const DEFAULT_AXIS_TOL: f64 = 1.0;
 /// feeds only that last stretch, never tens of millimetres of air.
 pub const DEFAULT_PLUNGE_HEIGHT: f64 = 2.0;
 
+/// The default approach distance (#3745, the maintainer: "starting outside
+/// the stock boundary with a given value"): 2 mm of clear air between the
+/// tool's edge and the stock boundary, the same clearance as
+/// [`DEFAULT_PLUNGE_HEIGHT`] keeps above the material.
+pub const DEFAULT_APPROACH_DISTANCE: f64 = 2.0;
+
+/// The refusal of an approach distance that is negative or not finite.
+pub const APPROACH_DISTANCE_REFUSAL: &str = "the approach distance outside the stock must be zero or a positive length in mm";
+
 impl Default for Approach {
     fn default() -> Self {
         Self::DEFAULT
@@ -232,7 +252,9 @@ impl Approach {
         arc_xy: false,
         predrilled: false,
         plunge_height: DEFAULT_PLUNGE_HEIGHT,
+        approach_distance: DEFAULT_APPROACH_DISTANCE,
         stock_top: None,
+        equal_steps: false,
         ramp_feed: 0.0,
         plunge_feed: 0.0,
         lead_feed_pct: 100.0,
@@ -274,6 +296,14 @@ impl Approach {
         *self == Self::DEFAULT
     }
 
+    /// The approach distance outside the stock (#3745), refused by name
+    /// when it is negative, not finite or past 10 m.
+    #[must_use]
+    pub fn approach_distance_refusal(&self) -> Option<&'static str> {
+        let d = self.approach_distance;
+        (!(d.is_finite() && (0.0..=10_000.0).contains(&d))).then_some(APPROACH_DISTANCE_REFUSAL)
+    }
+
     /// Door sanity: `Err` names the field.
     pub fn validate(&self) -> Result<(), &'static str> {
         let len = |v: f64| v.is_finite() && (0.0..=10_000.0).contains(&v);
@@ -299,6 +329,9 @@ impl Approach {
         }
         if !len(self.plunge_height) || !len(self.lead_height) || !len(self.overlap) {
             return Err("the plunge height, vertical lead-in height and overlap must be zero or positive");
+        }
+        if let Some(why) = self.approach_distance_refusal() {
+            return Err(why);
         }
         if !len(self.ext_in) || !len(self.ext_out) {
             return Err("the lead extensions must be zero or positive");

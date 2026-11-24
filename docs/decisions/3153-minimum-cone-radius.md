@@ -14,7 +14,7 @@ of moving the cone into material.
 
 The zero-radius branch bypasses every geometric offset call. The
 operation therefore keeps the former point order, move positions and
-staleness bytes. Project v74 omits a zero `minimum_cone_radius` and
+staleness bytes. Project v79 omits a zero `minimum_cone_radius` and
 requires a newer reader only because a positive value changes a posted
 path.
 

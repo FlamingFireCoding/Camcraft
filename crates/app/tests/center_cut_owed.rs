@@ -49,7 +49,7 @@ fn a_stock_face_enters_from_air_for_a_tool_that_is_not_centre_cutting() {
     let (world, _h) = world_with("EM-0800-4FL");
     for (top_z, stepdown) in [(None, None), (Some(Height::fixed(20.0)), Some(1.0))] {
         let face = OpParams::Face { holes: Default::default(),
-            blend_turns: false,
+            blend_turns: false, blend_radius: None,
             tilt: None,
             stepover: 4.0,
             clearance_z: Height::fixed(30.0),
@@ -96,7 +96,7 @@ fn an_inner_patch_face_runs_its_entry_out_to_air_for_a_tool_that_is_not_centre_c
         [(None, None, true), (None, None, false), (Some(Height::fixed(20.0)), Some(1.0), true)]
     {
         let params = OpParams::Face { holes: Default::default(),
-            blend_turns: false,
+            blend_turns: false, blend_radius: None,
             tilt: None,
             stepover: 4.0,
             clearance_z: Height::fixed(30.0),
@@ -111,7 +111,7 @@ fn an_inner_patch_face_runs_its_entry_out_to_air_for_a_tool_that_is_not_centre_c
         let (cc, cc_w) = operation::generate(&world, &on_part("EM-0800-4FL"), "F").expect("cc face");
         // The centre-cutting path is the facer's own, byte for byte, and
         // its plain entry is the one that lands on the stock.
-        let own = face(
+        let mut own = face(
             &Region::new(vec![Loop::new(vec![
                 Point2::new(-10.0, -10.0),
                 Point2::new(10.0, -10.0),
@@ -130,11 +130,13 @@ fn an_inner_patch_face_runs_its_entry_out_to_air_for_a_tool_that_is_not_centre_c
                 feed: 1200.0,
                 plunge_feed: 300.0,
                 climb,
-                blend_turns: false,
+                blend_turns: false, blend_radius: None,
                 stock_top: None,
             },
         )
         .expect("face");
+        // #2901: generate seats the opening rapid over its entry.
+        own.seat_approach(Point3::new(0.0, 0.0, 30.0));
         assert_eq!(cc.moves, own.moves, "centre-cutting output unchanged");
         assert!(audit(&cc, false, 4.0, &solid, "the facing entry").is_err(), "the plain entry is over stock");
 

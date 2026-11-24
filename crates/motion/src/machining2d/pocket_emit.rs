@@ -20,7 +20,8 @@ use super::corner_relief_spur::inject_relief_spurs;
 use super::face::GenError;
 use super::fillet::Legal;
 use super::fillet_tally::corner_arc_radius;
-use super::levels::{Cert, Motion, cut_levels_under, run_level_walks};
+use super::equal_steps::cut_levels_for;
+use super::levels::{Cert, Motion, run_level_walks};
 use super::pocket::{PocketParams, PocketStrategy};
 use super::pocket_hsm::EntryRoom;
 use super::predrilled::PreHole;
@@ -36,6 +37,13 @@ pub(super) struct PocketWalks<'a> {
     pub(super) hold_crossings: bool,
     pub(super) holes: &'a [PreHole],
     pub(super) corner_reliefs: &'a [ResolvedRelief],
+    /// #3316: the start-side plan - its keep-down pass links must run
+    /// through cut material, and no pre-drilled hole re-seats its order.
+    pub(super) cleared_links: bool,
+    /// #3567: the plan's dead-end starts, entered by a ramp along the pass.
+    pub(super) ramp_starts: Vec<Point2>,
+    /// #3747: the ring law of an area round a part.
+    pub(super) ring_links: Option<super::ring_links::RingLinks>,
 }
 
 /// Fit, optionally fillet, descend, link, and post `walks` across all Z levels.
@@ -54,6 +62,9 @@ pub(super) fn emit_pocket_passes(
         hold_crossings,
         holes,
         corner_reliefs,
+        cleared_links,
+        ramp_starts,
+        ring_links,
     } = walks;
     // The horizontal arc entry (M11.3) lands on the first pass: a closed
     // first ring starts mid its longest edge, where an arc has room.
@@ -67,9 +78,9 @@ pub(super) fn emit_pocket_passes(
         passes,
         holes,
         center,
-        p.links.approach.predrilled && room.is_none(),
+        p.links.approach.predrilled && room.is_none() && !cleared_links,
     );
-    let zs = cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
+    let zs = cut_levels_for(p.top_z, &p.links.approach, p.bottom_z, p.stepdown)?;
     let fit = match strategy {
         PocketStrategy::Zigzag | PocketStrategy::Auto => None,
         PocketStrategy::Waterline | PocketStrategy::OffsetRings => Some(ARC_FIT_TOL),
@@ -94,7 +105,10 @@ pub(super) fn emit_pocket_passes(
         .with_xy_arc(p.links.approach.arc_xy)
         .with_microlift(joins)
         .with_holes(holes)
-        .with_solid_restart();
+        .with_solid_restart()
+        .with_cleared_links(cleared_links)
+        .with_ramp_starts(ramp_starts)
+        .with_ring_links(ring_links);
     let fitted: Option<Vec<Vec<Seg>>> = fit.map(|tol| passes.iter().map(|p| fit_pass(p, tol)).collect());
     // #1733: the corner arcs asked for. They round the walks as fitted
     // (a pass with no fit: its own chords).
@@ -257,6 +271,9 @@ mod tests {
                 hold_crossings: false,
                 holes: &[],
                 corner_reliefs: &[],
+                cleared_links: false,
+                ramp_starts: Vec::new(),
+                ring_links: None,
             },
         ) else {
             panic!("emit_pocket_passes")

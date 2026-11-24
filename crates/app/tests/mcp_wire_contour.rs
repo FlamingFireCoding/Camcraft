@@ -96,8 +96,12 @@ fn prism(pts: &[(f64, f64)]) -> Mesh {
 /// A document with the synthetic wire EDM mounted from its file and a
 /// 40 x 20 slug imported.
 fn wire_job(tag: &str) -> Client {
+    wire_job_on(tag, WIRE)
+}
+
+fn wire_job_on(tag: &str, template: &str) -> Client {
     let dir = tmp_dir(tag);
-    let mut v: Value = serde_json::from_str(WIRE).expect("template json");
+    let mut v: Value = serde_json::from_str(template).expect("template json");
     v["edm"]["conditions"] = serde_json::from_str(TABLE).expect("conditions json");
     let mch = dir.join("wire.mch");
     std::fs::write(&mch, v.to_string()).expect("write mch");
@@ -148,6 +152,15 @@ fn wire_contour_is_added_with_a_wire_tool_edited_generated_undone_and_redone() {
         c.ok("redo", json!({}));
     }
     assert_eq!(c.side("W"), json!("punch"));
+}
+
+#[test]
+fn agiecut_template_refuses_a_wire_job_without_an_installed_condition() {
+    let mut client = wire_job("agiecut-template");
+    client.ok("load_machine", json!({ "builtin": "AGIECUT Classic 2S (template)" }));
+    let why = client.refused("add_operation", wire_args("C110"));
+    assert!(why.contains("states no EDM condition") && why.contains("edm.conditions"), "{why}");
+    assert_eq!(client.ok("get_job", json!({}))["operations"], json!([]));
 }
 
 #[test]
@@ -209,4 +222,118 @@ fn a_taper_edit_the_machine_cannot_post_is_a_tool_error() {
     let job = c.ok("get_job", json!({}));
     let op = job["operations"][0].to_string();
     assert!(!op.contains("\"taper_deg\":3"), "the refused taper never lands: {op}");
+}
+
+#[test]
+fn wire_contour_accepts_an_explicit_zero_taper_on_add_and_edit() {
+    let mut c = wire_job_on("zero-taper", include_str!("edm/wire-iso-fixture.mch"));
+    let mut args = wire_args("C110");
+    args["params"]["taper_deg"] = json!(0);
+    c.ok("add_operation", args);
+    let tapered = c.ok("edit_operation", json!({ "name": "W", "params": { "taper_deg": 3 } }));
+    assert_eq!(tapered["params"]["wire_contour"]["taper_deg"], json!(3.0));
+    let vertical = c.ok("edit_operation", json!({ "name": "W", "params": { "taper_deg": 0.0 } }));
+    assert!(vertical["params"]["wire_contour"].as_object().expect("wire parameters").get("taper_deg").is_none());
+
+    let why = c.refused("edit_operation", json!({ "name": "W", "params": { "taper_dge": 0 } }));
+    assert!(why.contains("unknown field taper_dge"), "{why}");
+    let why = c.refused("add_operation", json!({ "kind": "Face", "tool": "EDM-W025", "params": { "taper_deg": 0 } }));
+    assert!(why.contains("unknown field taper_deg"), "{why}");
+}
+
+#[test]
+fn list_operation_types_and_skill_match_wire_contour_dto_and_tool_law() {
+    use camcraft_app::project::{
+        WireContourDto, WireFourAxisDto, WirePairingDto, WireSideDto, WireSkimDto, WireSyncDto, WireTabsDto,
+        WireWideningDto,
+    };
+    use std::collections::BTreeSet;
+
+    let mut c = Client { server: Server::new(), next: 1 };
+    let reply = c.ok("list_operation_types", json!({ "kind": "wire_contour" }));
+    assert!(reply.to_string().chars().count() <= 4_000, "compact budget: {reply}");
+    let wire = &reply["kinds"][0];
+    assert_eq!(wire["key"], json!("wire_contour"));
+    assert_eq!(wire["mounts_tool"], json!(true));
+    assert_eq!(wire["tool_kinds"], json!(["Wire"]));
+
+    let listed: BTreeSet<String> = wire["fields"]
+        .as_array()
+        .expect("fields array")
+        .iter()
+        .map(|f| f["name"].as_str().expect("field name").to_owned())
+        .collect();
+
+    // Populate every WireContourDto field with a non-default value so
+    // `skip_serializing_if` omits none of them.
+    let populated = WireContourDto {
+        top_z: serde_json::from_value(json!({ "reference": "fixed", "offset": 12.0 })).expect("top_z"),
+        bottom_z: serde_json::from_value(json!({ "reference": "fixed", "offset": 0.0 })).expect("bottom_z"),
+        condition: "C110".into(),
+        side: WireSideDto::Die,
+        start: Some([0.0, 0.0]),
+        tabs: Some(WireTabsDto {
+            count: Some(1),
+            width: Some(1.0),
+            at: vec![[5.0, 0.0]],
+            cutoff_condition: "C120".into(),
+        }),
+        capture: true,
+        taper_deg: 2.0,
+        burnout_clearance: Some(1.0),
+        clearance: 2.5,
+        skims: vec![WireSkimDto { condition: "C111".into(), reverse: false }],
+        four_axis: Some(WireFourAxisDto {
+            pairing: WirePairingDto::ArcLength,
+            sync: vec![WireSyncDto { upper: Some([0.0, 0.0]), lower: Some([0.0, 0.0]) }],
+            tolerance: 0.05,
+            widening: WireWideningDto::Uniform,
+            verify_tolerance: 0.01,
+        }),
+        sharp_corners: true,
+    };
+    let dto_keys: BTreeSet<String> = serde_json::to_value(&populated)
+        .expect("serialize WireContourDto")
+        .as_object()
+        .expect("object")
+        .keys()
+        .cloned()
+        .collect();
+    assert_eq!(listed, dto_keys, "list_operation_types wire_contour fields must match WireContourDto");
+
+    // Pin the skill documentation against the live fields, tool law, machines and posts.
+    let skill_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.claude/skills/camcraft-mcp/SKILL.md");
+    let skill = std::fs::read_to_string(&skill_path).expect("read camcraft-mcp SKILL.md");
+    for field in &dto_keys {
+        assert!(skill.contains(&format!("`{field}`")), "SKILL.md missing Wire Contour field `{field}`");
+    }
+    for required in [
+        "EDM-W025",
+        "Sodick ALC400G",
+        "AGIECUT Classic 2S (template)",
+        "Generic ISO Wire EDM",
+        "Sodick Wire EDM (Mark 21)",
+        "Native wire EDM job files",
+        "AGIE_QN2",
+    ] {
+        assert!(skill.contains(required), "SKILL.md missing `{required}`");
+    }
+    assert!(!skill.contains("today the Wire Contour"), "SKILL.md still claims Wire Contour mounts no tool");
+    assert!(!skill.contains("the wire post is #533"), "SKILL.md still claims wire post does not exist");
+    // #3537: the old post name is a hidden alias, never a listed name.
+    assert!(!skill.contains("Agie native wire EDM"), "SKILL.md still lists the hidden alias post name");
+
+    // Omitting `tool` on add_operation for Wire Contour must refuse by name,
+    // and listed fields are accepted by edit_operation.
+    let mut job = wire_job("missing-tool");
+    let missing = job.refused(
+        "add_operation",
+        json!({ "kind": "Wire Contour", "source": "slug", "params": { "condition": "C110", "side": "die" } }),
+    );
+    assert!(missing.contains("tool"), "{missing}");
+    job.ok("add_operation", wire_args("C110"));
+    job.ok(
+        "edit_operation",
+        json!({ "name": "W", "params": { "burnout_clearance": 1.0, "sharp_corners": true, "capture": true, "clearance": 2.0 } }),
+    );
 }

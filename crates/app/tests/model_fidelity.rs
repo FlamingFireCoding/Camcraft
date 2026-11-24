@@ -27,8 +27,8 @@ use flecs_ecs::prelude::World;
 use serde_json::{json, Value};
 
 const MILL: &str = "EM-1000-4FL";
-/// A chord error that leaves a positive tolerance (excess 0.007 of 0.01),
-/// and one that leaves none.
+/// A chord error that leaves a positive tolerance (past DEV_TOL, so #2996
+/// takes only the promised 0.005 of 0.01), and one that leaves none.
 const TIGHT: f64 = 0.012;
 const TOO_COARSE: f64 = 0.03;
 
@@ -52,7 +52,7 @@ fn face() -> OpParams {
         feed: 1200.0,
         plunge_feed: 300.0,
         climb: true,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
     }
 }
 
@@ -98,6 +98,7 @@ fn an_over_budget_step_import_is_flagged_and_one_that_fits_is_not() {
     assert_eq!(model_fidelity::excess_of(&world, "full"), 0.0);
 
     let coarse = step::with_facet_budget(2_000, || ImportModel::new(&path)).expect("imports at reduced fidelity");
+    assert!(!coarse.file_tolerance, "a facet budget cannot opt in to the wider law");
     let chord = coarse.coarse_mm.expect("the kept mesh's own chord error rides the command");
     assert!(chord > step::CHORD_CAP && chord.is_finite(), "{chord}");
     h.execute(&world, coarse.renamed("coarse"));
@@ -213,6 +214,7 @@ fn the_program_verdict_tightens_by_the_excess_while_a_tolerance_is_left() {
     // Reduced fidelity with a tolerance left: an exactly finished flat
     // face still posts clean - and the same 0.006 mm is now convicted.
     let tight = faced_brick(Some(TIGHT));
+    // The missing cause record keeps the original budget-model law.
     let tol = model_fidelity::verdict_tol(&tight).expect("a positive tolerance is left");
     assert!((tol - (DEV_TOL - (TIGHT - step::CHORD_CAP))).abs() < 1e-12 && tol > 0.0, "{tol}");
     let e = model::find_by_name(&tight, "OP").expect("op");
@@ -229,7 +231,7 @@ fn the_program_verdict_tightens_by_the_excess_while_a_tolerance_is_left() {
 fn a_model_too_coarse_to_verify_is_refused_by_name_with_no_gouge_verdict() {
     let world = faced_brick(Some(TOO_COARSE));
     assert!(model_fidelity::verdict_tol(&world).is_err());
-    let refusal = "OP: model 'brick' was imported too coarsely to verify; re-import with a larger STEP facet budget (surfaces are approximated to within 0.030 mm)";
+    let refusal = "OP: model 'brick' was imported too coarsely to verify; re-import with a larger STEP facet budget, or export the file again with a tighter tolerance (surfaces are approximated to within 0.030 mm)";
     // The exactly finished flat face: refused by name, not called a gouge.
     let report = posting::verification_report(&world);
     assert_eq!(report.problems, vec![refusal.to_string()], "{:?}", report.problems);
@@ -273,7 +275,7 @@ fn a_kind_whose_laws_do_not_read_the_excess_is_refused_on_any_reduced_model() {
     assert_eq!(op(None), None);
     let why = op(Some(TIGHT)).expect("refused");
     assert!(why.starts_with("CH: model 'brick' was imported at reduced fidelity (surfaces are approximated to within 0.012 mm)"), "{why}");
-    assert!(why.ends_with("re-import with a larger STEP facet budget"), "{why}");
+    assert!(why.ends_with("re-import with a larger STEP facet budget, or export the file again with a tighter tolerance"), "{why}");
 }
 
 #[test]
@@ -332,6 +334,11 @@ fn mcp_reports_a_reduced_fidelity_import_and_says_nothing_of_a_normal_one() {
     let note = facts["note"].as_str().expect("a sentence");
     assert!(note.starts_with("Reduced fidelity: surfaces are approximated to within "), "{note}");
     assert!(!note.contains("chord") && !note.contains("sagitta"), "plain words: {note}");
+    // #2976: the document does not record the cause, so both remedies.
+    assert!(
+        note.ends_with("Re-import with a larger STEP facet budget, or export the file again with a tighter tolerance, to clear this."),
+        "{note}"
+    );
 
     // The model read tool carries the same facts, on that model only.
     let job = c.ok("get_job", json!({}));

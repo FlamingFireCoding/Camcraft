@@ -10,8 +10,8 @@
 //! `rotary_contour` is the waterline rung ladder about the axis -
 //! the same rings `contour5d` cuts, posed radially: on a cylinder
 //! the tool stands square to the wall and its axis MEETS the
-//! rotation axis, the defining posture of rotary work. Heights read
-//! as axial stations: a world height H maps to the station
+//! rotation axis, the defining posture of rotary work. Away from the
+//! horizontal stance, a world height H maps to the axial station
 //! `(H - o.z) / u.z` along the axis, the exact stage-B identity when
 //! the part stands on its axis (the lathe case) and the honest
 //! station reading when it leans.
@@ -24,9 +24,9 @@
 //! generatrices the kind is named for. No new pattern kernel; the
 //! same two ladders of stages A-D, composed. A bar standing nearly
 //! on end refuses (its parallel passes are the contour's rings) and
-//! a bar lying nearly flat refuses the contour's height law (its
-//! rings are the parallel passes) - each kind says so by name
-//! rather than invent a frame the parameters cannot speak in.
+//! a bar lying nearly flat reads contour top/bottom as axial ball-center
+//! stations, and clearance/retract as radii about the fitted axis.
+//! Its rings use radial links through [`flat`], without dividing by Z.
 //! The raster's links do not survive the laying-down: its Z lifts are
 //! rebuilt RADIAL - out along the radius to the retract cylinder,
 //! index, back in - by [`super::rotary_links`], and both kinds open on
@@ -59,9 +59,14 @@ use super::retip::{along, radial_at, tip_of};
 use super::{rotary_ends, rotary_links, rotary_pick};
 use super::tilt::{command_axis, AxisControl};
 
-/// The axis' tilt below which "standing" and "laid" trade places:
-/// one sine for both refusals, so the pair cannot disagree about
-/// where the boundary sits (sin 1 degree).
+mod flat;
+mod gaps;
+mod halves;
+#[cfg(test)]
+mod single_frame_tests;
+
+/// The stance boundary (sin 1 degree): near horizontal, contour
+/// uses explicit stations; near vertical, parallel refuses its raster.
 const LEAN_MIN: f64 = 0.0175;
 /// World up, spelled once (Point3::new is not a const fn, so the
 /// literal stands in for it).
@@ -81,9 +86,11 @@ pub fn rotary_contour(
     let ax = axis::fit(facets)?;
     let lean = ax.dir.dot(UP).abs();
     if lean < LEAN_MIN {
-        return Err(GenError::Invalid(
-            "the work's axis lies flat on the table - a laid bar is finished with passes along it: Rotary Parallel".into(),
-        ));
+        let f = frame(&ax)?;
+        let r = p.tool_diameter * 0.5;
+        let base = flat::plan(&f.local_facets(facets), p)
+            .map_err(|e| to_world(e, &f, &ax, c, r))?;
+        return posed(&f, &base, &ax, c, r);
     }
     let f = frame(&ax)?;
     let local = f.local_facets(facets);
@@ -168,7 +175,27 @@ pub fn rotary_parallel_over(
     q.ramp = false;
     q.entry_ramp = false;
     let r = p.tool_diameter * 0.5;
-    let base = finishing3d::swarf(&local, &q, 1.0, 0.0).map_err(|e| to_world(e, &f, &ax, c, r))?;
+    // #2970: the laid raster finishes the bar from above only. Half B
+    // is the same frame turned half a turn about the axis; each half
+    // keeps the cut over its own upper half, B carried back into A's
+    // frame ([`halves::both`] states the seam).
+    let fb = TiltedFrame { v: [-v.x, -v.y, -v.z], axis: [-up.x, -up.y, -up.z], ..f };
+    let local_b = fb.local_facets(facets);
+    let mut qb = stations(&local_b, p, &fb, &|h| h - ax.origin.z);
+    (qb.ramp, qb.entry_ramp) = (false, false);
+    // The pass spacing the halves read their reach by: the stepover, or
+    // the scallop step of the ball at the tolerance, the larger.
+    let spacing = p.stepover.unwrap_or(0.0).max((8.0 * r * p.tolerance).max(0.0).sqrt());
+    let half_a = finishing3d::swarf(&local, &q, 1.0, 0.0).map_err(|e| to_world(e, &f, &ax, c, r));
+    let half_b = finishing3d::swarf(&local_b, &qb, 1.0, 0.0).map_err(|e| to_world(e, &fb, &ax, c, r));
+    let base = match (half_a, half_b) {
+        (Ok(a), Ok(b)) => halves::both(&a, &b, &local, r, spacing, q.bottom_z, p.tolerance),
+        // A half with no surface under it (an open shell over one side
+        // only) leaves the other half's whole cut, as before.
+        (Ok(a), Err(GenError::Empty(_))) => a,
+        (Err(GenError::Empty(_)), Ok(b)) => halves::only_b(&b, &local, r, spacing, q.bottom_z, p.tolerance),
+        (Err(e), _) | (_, Err(e)) => return Err(e),
+    };
     // #2343: a held end's face is inside the bar - the cut keeps to
     // the model's side of its plane, before the links are built.
     let local_stock = stock.map(|s| f.local_facets(s));
@@ -206,9 +233,9 @@ pub fn rotary_parallel_over(
     let base = rotary_links::radial_relink(&base, r, q.clearance_z, hop, rho, p.feed, p.plunge_feed, ramp)
         .map_err(|e| to_world(e, &f, &ax, c, r))?;
     let mut out = posed(&f, &base, &ax, c, r)?;
-    if ramp.is_some() {
-        out.notes.extend(base.notes.iter().filter(|n| n.starts_with("Rotary Parallel:")).cloned());
-    }
+    // #2970: the raster's and the rings' notes (samples refused, rest
+    // reported not cut) reach the path - never only the ramp's.
+    out.notes.extend(base.notes.iter().cloned());
     for e in window.iter().flat_map(|w| &w.ends) {
         let at = f.to_world(Point3::new(e.station, 0.0, 0.0));
         out.notes.push(format!(

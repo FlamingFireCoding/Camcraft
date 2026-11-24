@@ -99,7 +99,7 @@ fn a_trochoidal_slot_under_stock_over_top_z_keeps_the_level_at_top_z() {
 fn a_staged_face_under_stock_over_top_z_keeps_the_level_at_top_z() {
     let t = generated(OpParams::Face {
         holes: Default::default(),
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         tilt: None,
         stepover: 4.0,
         clearance_z: Height::fixed(30.0),
@@ -118,6 +118,7 @@ fn a_staged_face_under_stock_over_top_z_keeps_the_level_at_top_z() {
 #[test]
 fn a_vault_under_stock_over_top_z_cuts_its_rim_ring_at_top_z() {
     let t = generated(OpParams::Circular {
+        pass_start: Default::default(),
         links: camcraft_app::links::Links::PLANAR,
         center: Point2::new(0.0, 0.0),
         radius: 12.0,
@@ -145,7 +146,7 @@ fn indexed_face(tilt: camcraft_app::operation::Tilt, stock_top: f64) {
     let top = stock_top - 2.0;
     let t = generated(OpParams::Face {
         holes: Default::default(),
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         tilt: Some(tilt),
         stepover: 4.0,
         clearance_z: Height::fixed(70.0),

@@ -375,7 +375,7 @@ fn tools_and_generated_operations_round_trip() {
             "Face1",
             "EM-0400-2FL",
             SrcRef::Stock,
-            OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false,
+            OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false, blend_radius: None,
                 stepover: 3.0,
                 clearance_z: Height::fixed(25.0),
                 cut_z: Height::fixed(19.5),
@@ -490,8 +490,9 @@ fn arc_move_round_trips() {
                 tab_height: 0.0,
                 entry: camcraft_app::machining3d::Entry3D::Plunge,
                 helix_radius: 1.0,
-                blend_turns: false,
+                blend_turns: false, blend_radius: None,
                 links: camcraft_app::links::Links::PLANAR,
+                chain_overrides: Vec::new(),
             },
         )
         .expect("create"),
@@ -550,7 +551,7 @@ fn a_stated_pose_round_trips_verbatim() {
             "Face1",
             "EM-0400-2FL",
             SrcRef::Stock,
-            OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false,
+            OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false, blend_radius: None,
                 stepover: 5.0,
                 clearance_z: Height::fixed(15.0),
                 cut_z: Height::fixed(9.0),
@@ -966,7 +967,7 @@ fn v5_roundtrips_retract_and_auto() {
             "Pocket1",
             "EM-0400-2FL",
             SrcRef::Stock,
-            OpParams::Pocket { rest: None, blend_radius: None, tilt: None,
+            OpParams::Pocket { pass_start: Default::default(), rest: None, blend_radius: None, tilt: None,
                 links: camcraft_app::links::Links::PLANAR,
                 stepover: 1.0,
                 stock_to_leave: 0.0,
@@ -1074,7 +1075,7 @@ fn patch_selection_round_trips() {
                 entity: "boss".into(),
                 feature: FeatureSel::Patch(pid),
             }]),
-            OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false,
+            OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false, blend_radius: None,
                 stepover: 3.0,
                 clearance_z: Height::fixed(25.0),
                 cut_z: Height::fixed(4.5),
@@ -1167,8 +1168,9 @@ fn a_selection_round_trips_and_stays_ok() {
         tab_height: 0.0,
         entry: camcraft_app::machining3d::Entry3D::Plunge,
         helix_radius: 1.0,
-        blend_turns: false,
+        blend_turns: false, blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     };
     history.execute(
         &world,
@@ -2679,8 +2681,9 @@ fn level_link_choice_round_trips_and_the_default_writes_no_key() {
             tab_height: 0.0,
             entry: camcraft_app::machining3d::Entry3D::Plunge,
             helix_radius: 1.0,
-            blend_turns: false,
+            blend_turns: false, blend_radius: None,
             links,
+            chain_overrides: Vec::new(),
         };
         history.execute(
             &world,
@@ -2767,8 +2770,9 @@ fn side_choice_round_trips_and_a_hand_edited_inside_refuses_at_generate() {
                 tab_height: 0.0,
                 entry: camcraft_app::machining3d::Entry3D::Plunge,
                 helix_radius: 1.0,
-                blend_turns: false,
+                blend_turns: false, blend_radius: None,
                 links: camcraft_app::links::Links::PLANAR,
+                chain_overrides: Vec::new(),
             },
         )
         .expect("create"),
@@ -2841,8 +2845,9 @@ fn side_choice_round_trips_and_a_hand_edited_inside_refuses_at_generate() {
                 tab_height: 0.0,
                 entry: camcraft_app::machining3d::Entry3D::Plunge,
                 helix_radius: 1.0,
-                blend_turns: false,
+                blend_turns: false, blend_radius: None,
                 links: camcraft_app::links::Links::PLANAR,
+                chain_overrides: Vec::new(),
             },
         )
         .expect("create C2"),
@@ -5492,4 +5497,161 @@ fn finish3d_file_without_gap_link_reads_jump() {
     let world = new_world();
     project::open(&world, &finish3d_text("")).expect("a pre-gap-link finish3d file must read");
     assert_eq!(gap_link_of(&world), camcraft_app::finishing3d::GapLink::Jump, "absent means jump");
+}
+
+fn waterlines_of(world: &flecs_ecs::prelude::World) -> bool {
+    let e = model::find_by_name(world, "F1").expect("op");
+    let o = model::operation_of(world, &e).expect("operation");
+    let OpParams::Finish3D { waterlines, .. } = &o.params else {
+        panic!("finish3d params expected, got {:?}", o.params);
+    };
+    *waterlines
+}
+
+#[test]
+fn finish3d_waterlines_round_trips_through_save_and_load() {
+    for flag in [false, true] {
+        let world = new_world();
+        let extra = format!(", \"waterlines\": {flag}");
+        project::open(&world, &finish3d_text(&extra)).expect("the waterlines key must read");
+        assert_eq!(waterlines_of(&world), flag);
+        let path = tmp_path(&format!("waterlines_{flag}_rt"));
+        project::save(&world, &path).expect("save");
+        let first = std::fs::read_to_string(&path).expect("read");
+        let world2 = new_world();
+        project::load(&world2, &path).expect("reload");
+        project::save(&world2, &path).expect("resave");
+        let second = std::fs::read_to_string(&path).expect("reread");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(waterlines_of(&world2), flag, "{flag} saves and loads as {flag}");
+        assert!(first.contains(&format!("\"waterlines\": {flag}")), "{first}");
+        assert_eq!(first, second, "waterlines={flag} round-trips byte-identically");
+    }
+}
+
+#[test]
+fn finish3d_file_without_waterlines_reads_true() {
+    let world = new_world();
+    project::open(&world, &finish3d_text("")).expect("an older finish3d file must read");
+    assert!(waterlines_of(&world), "absent waterlines key defaults to true");
+}
+
+// ---- Atomic project save: a failed save keeps the old file whole ----
+
+/// An empty folder of its own for one atomic-save test.
+fn atomic_dir(tag: &str) -> PathBuf {
+    let d = std::env::temp_dir().join(format!("camcraft_proj_atomic_{tag}_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).expect("make the test folder");
+    d
+}
+
+#[test]
+fn a_project_save_replaces_the_file_and_leaves_no_temp_file() {
+    let d = atomic_dir("replace");
+    let path = d.join("job.camproj");
+    project::save(&populated_world(), &path).expect("first save");
+    let second = new_world();
+    project::save(&second, &path).expect("a save over the first file");
+    let want = project::save_text(&second).expect("text");
+    assert_eq!(std::fs::read_to_string(&path).expect("read"), want, "the second save replaced the file");
+    let names: Vec<String> = std::fs::read_dir(&d)
+        .expect("list")
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, ["job.camproj"], "no temp file left behind");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
+fn a_failed_project_save_keeps_the_old_file() {
+    let d = atomic_dir("failed");
+    let path = d.join("job.camproj");
+    project::save(&populated_world(), &path).expect("first save");
+    let before = std::fs::read(&path).expect("read");
+    // A folder in the temp file's place: the write fails before the rename.
+    let tmp = machine::store::temp_path_for(&path).expect("temp path");
+    std::fs::create_dir_all(&tmp).expect("block the temp file");
+    let err = project::save(&new_world(), &path).expect_err("the save must fail");
+    assert!(matches!(err, ProjectError::Io(_)), "{err}");
+    assert_eq!(std::fs::read(&path).expect("read"), before, "the old project is whole");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
+fn a_project_save_into_a_missing_folder_is_refused_and_makes_no_folder() {
+    let d = atomic_dir("missing");
+    let missing = d.join("missing");
+    let err = project::save(&populated_world(), &missing.join("job.camproj")).expect_err("refused");
+    assert!(matches!(err, ProjectError::Io(_)), "{err}");
+    assert!(err.to_string().contains("does not exist"), "the refusal names the folder: {err}");
+    assert!(!missing.exists(), "the save makes no folder");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
+fn a_read_only_project_file_is_refused_and_kept() {
+    let d = atomic_dir("readonly");
+    let path = d.join("job.camproj");
+    project::save(&populated_world(), &path).expect("first save");
+    let before = std::fs::read(&path).expect("read");
+    let original = std::fs::metadata(&path).expect("metadata").permissions();
+    let mut read_only = original.clone();
+    read_only.set_readonly(true);
+    std::fs::set_permissions(&path, read_only).expect("make the file read-only");
+    let result = project::save(&new_world(), &path);
+    let after = std::fs::read(&path).expect("read");
+    std::fs::set_permissions(&path, original).expect("make the file writable again");
+    let err = result.expect_err("a read-only project file is refused");
+    assert!(matches!(err, ProjectError::Io(_)), "{err}");
+    assert!(err.to_string().contains("read-only"), "the refusal says read-only: {err}");
+    assert_eq!(after, before, "the read-only project is whole");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_project_save_over_a_unix_socket_is_refused_and_kept() {
+    use std::os::unix::fs::FileTypeExt;
+    let d = atomic_dir("socket");
+    let path = d.join("job.camproj");
+    // A node that cannot be opened for writing, with a write bit in its
+    // mode: `readonly()` is false, so only the write probe refuses it.
+    let _socket = std::os::unix::net::UnixListener::bind(&path).expect("bind the socket");
+    let before = std::fs::metadata(&path).expect("metadata").len();
+    let err = project::save(&populated_world(), &path).expect_err("a socket is not a writable project");
+    let after = std::fs::metadata(&path).expect("the socket stays");
+    let _ = std::fs::remove_dir_all(&d);
+    assert!(matches!(err, ProjectError::Io(_)), "{err}");
+    assert!(after.file_type().is_socket(), "the socket is kept, not replaced by the project");
+    assert_eq!(after.len(), before, "the socket node is unchanged");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_project_save_into_a_folder_without_write_access_is_refused_and_kept() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = atomic_dir("nowritefolder");
+    let path = d.join("job.camproj");
+    project::save(&populated_world(), &path).expect("first save");
+    let before = std::fs::read(&path).expect("read");
+    let original = std::fs::metadata(&d).expect("metadata").permissions();
+    let mut locked = original.clone();
+    locked.set_mode(0o555);
+    std::fs::set_permissions(&d, locked).expect("lock the folder");
+    // A process with CAP_DAC_OVERRIDE (root) ignores the folder mode.
+    let bypass = std::fs::write(d.join("probe"), b"x").is_ok();
+    let result = if bypass { Ok(()) } else { project::save(&new_world(), &path) };
+    let _ = std::fs::remove_file(d.join("probe"));
+    std::fs::set_permissions(&d, original).expect("unlock the folder");
+    let after = std::fs::read(&path).expect("read");
+    if bypass {
+        let _ = std::fs::remove_dir_all(&d);
+        return;
+    }
+    let err = result.expect_err("a folder without write access is refused");
+    assert!(matches!(err, ProjectError::Io(_)), "{err}");
+    assert_eq!(after, before, "the old project is whole");
+    let _ = std::fs::remove_dir_all(&d);
 }

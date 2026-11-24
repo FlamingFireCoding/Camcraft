@@ -81,10 +81,17 @@ pub(super) fn assert_case_layout(case: &CatalogCase) {
         case.family,
         case.name
     );
+    // #2856: a refusal case records its refusal lines, not a program.
+    let refused = super::refusal::expects_refusal(&case.dir);
+    let result = if refused { "refusal.txt".to_owned() } else { format!("{}.nc", case.name) };
+    if refused {
+        let nc = case.dir.join(format!("{}.nc", case.name));
+        assert!(!nc.exists(), "{}/{}: a refusal case has no {}", case.family, case.name, nc.display());
+    }
     for req in [
         "build.camscript".to_owned(),
         format!("{}.camproj", case.name),
-        format!("{}.nc", case.name),
+        result,
         "README.md".to_owned(),
     ] {
         let p = case.dir.join(&req);
@@ -105,7 +112,7 @@ pub(super) fn assert_case_layout(case: &CatalogCase) {
     }
 }
 
-fn copy_dir_all(src: &Path, dst: &Path) {
+pub(super) fn copy_dir_all(src: &Path, dst: &Path) {
     fs::create_dir_all(dst).unwrap_or_else(|e| panic!("mkdir {}: {e}", dst.display()));
     for entry in fs::read_dir(src).unwrap_or_else(|e| panic!("read {}: {e}", src.display())) {
         let entry = entry.expect("dir entry");
@@ -122,10 +129,11 @@ fn copy_dir_all(src: &Path, dst: &Path) {
 
 // Portable examples embed their meshes. A relative source link makes the UI
 // reopen a file from the process directory instead of the case directory.
-fn assert_portable_models(case: &CatalogCase, w: &flecs_ecs::prelude::World) {
+pub(super) fn assert_portable_models(case: &CatalogCase, w: &flecs_ecs::prelude::World) {
     let names: &[&str] = match (case.family.as_str(), case.name.as_str()) {
         ("2d", "contour-tabs") => &["contour-tabs"],
         ("turning", "cone-thread") => &["cone-blank", "cone-thread"],
+        ("2d", "drill-overfeed") => &["drill-overfeed"],
         _ => return,
     };
     for name in names {
@@ -146,6 +154,9 @@ fn assert_portable_models(case: &CatalogCase, w: &flecs_ecs::prelude::World) {
 }
 
 pub(super) fn regenerate(case: &CatalogCase) {
+    if super::refusal::expects_refusal(&case.dir) {
+        return super::refusal::regenerate(case);
+    }
     let label = format!("{}/{}", case.family, case.name);
     let proj_path = case.dir.join(format!("{}.camproj", case.name));
     let nc_path = case.dir.join(format!("{}.nc", case.name));
@@ -210,6 +221,9 @@ pub(super) fn regenerate(case: &CatalogCase) {
 }
 
 pub(super) fn rebuild(case: &CatalogCase) {
+    if super::refusal::expects_refusal(&case.dir) {
+        return super::refusal::rebuild(case);
+    }
     let label = format!("{}/{}", case.family, case.name);
     let work = std::env::temp_dir()
         .join(format!("camcraft-catalog-test-{}", std::process::id()))
@@ -286,17 +300,29 @@ pub(super) fn within(label: &str, budget: std::time::Duration, f: impl FnOnce() 
     });
     let result = rx.recv_timeout(budget.saturating_sub(start.elapsed()));
     // Direct stderr keeps successful timings visible with libtest capture on.
-    let _ = writeln!(
-        std::io::stderr(),
-        "catalog {label} elapsed={:.3}s budget={:.3}s",
-        start.elapsed().as_secs_f64(),
-        budget.as_secs_f64()
-    );
+    // One write for the whole line (#3043): stderr has no buffer, so a
+    // formatted write goes out in pieces, and the panic message of a parallel
+    // case thread can split the line between those pieces.
+    let line = timing_line(label, start.elapsed(), budget);
+    let _ = std::io::stderr().lock().write_all(line.as_bytes());
     match result {
         Ok(Ok(())) => {}
         Ok(Err(payload)) => resume_unwind(payload),
         Err(_) => panic!("{label}: did not finish within {budget:?}; move this case to app heavy: example_catalog or reduce its model"),
     }
+}
+
+// The full timing line of one case, with its newline, for one stderr write.
+fn timing_line(
+    label: &str,
+    elapsed: std::time::Duration,
+    budget: std::time::Duration,
+) -> String {
+    format!(
+        "catalog {label} elapsed={:.3}s budget={:.3}s\n",
+        elapsed.as_secs_f64(),
+        budget.as_secs_f64()
+    )
 }
 
 pub(super) fn run_case(family: &str, name: &str, action: &str, run: fn(&CatalogCase)) {
@@ -338,4 +364,18 @@ fn a_case_over_its_budget_fails_by_name() {
         "{message}"
     );
     assert!(message.contains("app heavy: example_catalog"), "{message}");
+}
+
+#[test]
+fn timing_line_is_one_whole_line() {
+    let line = timing_line(
+        "2d/first-part regenerates",
+        std::time::Duration::from_millis(1234),
+        std::time::Duration::from_secs(60),
+    );
+    assert_eq!(
+        line,
+        "catalog 2d/first-part regenerates elapsed=1.234s budget=60.000s\n"
+    );
+    assert_eq!(line.matches('\n').count(), 1, "{line:?}");
 }

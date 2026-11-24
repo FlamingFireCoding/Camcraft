@@ -35,6 +35,7 @@ COMMANDS:
               cam.d.ts types them; every world write rides the commands)
     process   headless project processing: load, generate, and - with
               -o - post; verify's verdict is the exit code
+    export-agie-inspection    write one zero-step Classic 2S inspection setup
     mcp       a Model Context Protocol server on stdio (JSON-RPC 2.0):
               an AI agent drives one headless document through tools;
               with --connect, a stdio bridge to a running app started
@@ -81,7 +82,7 @@ Exit: 0 stood, 1 refused, 2 usage.
 ";
 
 const MCP_USAGE: &str = "\
-camcraft-cli mcp [--connect <host:port>]
+camcraft-cli mcp [--connect <host:port> | reference | prompt]
 
     a Model Context Protocol server on stdio (JSON-RPC 2.0): an AI agent
     drives one headless document through tools. Stdout carries the
@@ -90,19 +91,34 @@ camcraft-cli mcp [--connect <host:port>]
 OPTIONS:
     --connect <host:port>   bridge stdio to a running app started with
                             --mcp-port (the agent drives the open window)
+    reference               print the Markdown tool reference, generated
+                            from the live tool table, and exit 0
+    prompt                  print the compact prompt for a local model
+                            (rules and one line per tool), and exit 0
     -h, --help              print this usage and exit 0
 
 Exit: 0 stood, 1 session ended with an error, 2 usage.
+";
+
+const AGIE_INSPECTION_USAGE: &str = "\
+camcraft-cli export-agie-inspection <job.camproj> <operation> <new-directory>
+
+    Export one nominal 10 mm die opening with a 3 mm threading hole and zero working steps.
+    Physical stock XY is unknown. Native length and width are zero.
+
+OPTIONS:
+    -h, --help        print this usage and exit 0
 ";
 
 /// Every lane that takes `--help`: its name paired with its usage
 /// text. The one list `command_usage` reads and the help test walks,
 /// so a lane added here is checked and a lane added elsewhere is
 /// caught by the test's cross-check against the top-level COMMANDS.
-pub const HELP_LANES: [(&str, &str); 3] = [
+pub const HELP_LANES: [(&str, &str); 4] = [
     ("script", SCRIPT_USAGE),
     ("process", PROCESS_USAGE),
     ("mcp", MCP_USAGE),
+    ("export-agie-inspection", AGIE_INSPECTION_USAGE),
 ];
 
 /// The top-level usage text (`camcraft-cli help`).
@@ -195,6 +211,7 @@ pub fn run(args: &[String]) -> i32 {
             _ => match lane {
                 "script" => lane_script(&args[1..]),
                 "process" => lane_process(&args[1..]),
+                "export-agie-inspection" => lane_agie_inspection(&args[1..]),
                 "mcp" => lane_mcp(&args[1..]),
                 other => {
                     eprintln!("camcraft-cli: unknown command {other:?} (try help)");
@@ -203,6 +220,16 @@ pub fn run(args: &[String]) -> i32 {
             },
         },
     }
+}
+
+fn lane_agie_inspection(args: &[String]) -> i32 {
+    let [project, operation, directory] = args else {
+        eprintln!("Use export-agie-inspection <job.camproj> <operation> <new-directory>");
+        return 2;
+    };
+    let call = json!({"operation":operation, "directory":directory});
+    let source = format!("cam.load({});\ncam.call(\"export_agie_inspection\", {call})", json!(project));
+    report(&script::run(&source), true)
 }
 
 fn read_source(path: &Path) -> Option<String> {
@@ -314,6 +341,15 @@ fn lane_process(args: &[String]) -> i32 {
 fn lane_mcp(args: &[String]) -> i32 {
     match args {
         [] => {}
+        // #1947: the generated agent docs, from the same tool table.
+        [word] if word == "reference" => {
+            print!("{}", crate::mcp::catalog::reference_markdown());
+            return 0;
+        }
+        [word] if word == "prompt" => {
+            print!("{}", crate::mcp::catalog::local_prompt());
+            return 0;
+        }
         // #183: bridge stdio to a running app's live session.
         [flag, addr] if flag == "--connect" => {
             return match crate::mcp::bridge(addr, std::io::stdin(), std::io::stdout().lock()) {
@@ -325,7 +361,7 @@ fn lane_mcp(args: &[String]) -> i32 {
             };
         }
         _ => {
-            eprintln!("camcraft-cli: mcp takes no arguments, or --connect <host:port>");
+            eprintln!("camcraft-cli: mcp takes no arguments, --connect <host:port>, reference or prompt");
             return 2;
         }
     }

@@ -1,7 +1,7 @@
 //! #3153 operation-layer pins for the 2D Chamfer cone band.
 //!
 //! Gate map (#3153): covers app::operation (generate, params, staleness),
-//! app::project (ParamsDto and v74 migration), app::posting, and
+//! app::project (ParamsDto and v79 migration), app::posting, and
 //! motion::machining2d::chamfer through the public application seam.
 
 use camcraft_app::cl::MoveKind;
@@ -271,18 +271,18 @@ fn seed_stamp_json_and_project_keep_zero_compatible_and_positive_exact() {
     let (legacy_world, mut legacy_history) = world(taper(6.0, 3.0));
     generate(&legacy_world, &mut legacy_history, "ZERO", params(0.0));
     let legacy =
-        std::env::temp_dir().join(format!("camcraft-3153-v73-{}.camproj", std::process::id()));
+        std::env::temp_dir().join(format!("camcraft-3153-v78-{}.camproj", std::process::id()));
     project::save(&legacy_world, &legacy).expect("save zero project");
     let mut json: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&legacy).expect("read")).expect("JSON");
-    json["version"] = serde_json::json!(73);
+    json["version"] = serde_json::json!(78);
     std::fs::write(
         &legacy,
         serde_json::to_vec_pretty(&json).expect("serialize"),
     )
-    .expect("v73");
+    .expect("v78");
     let old = new_world();
-    project::load(&old, &legacy).expect("v73 Chamfer without a radius migrates");
+    project::load(&old, &legacy).expect("v78 Chamfer without a radius migrates");
     let before = model::toolpath_of(
         &legacy_world,
         &model::find_by_name(&legacy_world, "ZERO").expect("zero operation"),
@@ -297,7 +297,7 @@ fn seed_stamp_json_and_project_keep_zero_compatible_and_positive_exact() {
     .path;
     assert_eq!(
         before, after,
-        "the v73 zero-radius path is byte/path identical"
+        "the v78 zero-radius path is byte/path identical"
     );
     let _ = std::fs::remove_file(&legacy);
 }

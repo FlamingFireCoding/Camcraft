@@ -91,6 +91,7 @@ fn read_one(file: &str, unit: f64, truck: &Truck) -> Reading {
     }
     match truck {
         Truck::Refused(e) => println!("  truck      (recorded) Err {e}"),
+        Truck::NotRecorded => println!("  truck      not recorded (fixture added after #2790)"),
         Truck::Read {
             shells,
             volume,
@@ -162,10 +163,16 @@ per_file! {
     step_empty_list => "empty_list.step",
     step_fig8 => "fig8.step",
     step_fillet_corner => "fillet_corner.step",
+    step_hole_on_pocket_wall => "hole_on_pocket_wall.step",
     step_lathe_holder_offset => "lathe_holder_offset.step",
     step_modular_clamp_unit => "modular_clamp_unit.step",
     step_modular_lathe_head => "modular_lathe_head.step",
+    step_q02_3d_mold => "q02_3d_mold.step",
     step_sample_ap214 => "sample_ap214.step",
+    step_short_units_degree_cone => "short_units_degree_cone.step",
+    step_short_units_inch => "short_units_inch.step",
+    step_short_units_metre => "short_units_metre.step",
+    step_sphere_quarter_pole => "sphere_quarter_pole.step",
     step_spline_revolved => "spline_revolved.step",
     step_tool_csys_box_iso13399 => "tool_csys_box_iso13399.step",
     step_tool_csys_degenerate => "tool_csys_degenerate.step",
@@ -203,6 +210,12 @@ fn recorded_truck_readings_keep_their_findings() {
         }
         _ => panic!("bspline_discontinuous.step: the runaway face is not a recorded refusal"),
     }
+    for file in ["short_units_inch.step", "short_units_metre.step"] {
+        assert!(
+            matches!(truck(file), Some(Truck::Refused("a shell's mesh is not finite"))),
+            "{file}: the recorded short-name refusal changed"
+        );
+    }
     assert!(
         matches!(truck("bspline_dome.step"), Some(Truck::Read { volume, .. }) if *volume > 0.0),
         "bspline_dome.step: the smooth B-spline is not a recorded mesh"
@@ -220,6 +233,11 @@ fn recorded_truck_readings_keep_their_findings() {
     for row in ROWS {
         match &row.truck {
             Truck::Refused(e) => assert!(!e.is_empty(), "{}: a refusal with no reason", row.file),
+            Truck::NotRecorded => assert!(
+                row.import.starts_with("no truck reading") || row.import.starts_with("solidcore refuses"),
+                "{}: a fixture with no truck reading has a truck verdict",
+                row.file
+            ),
             Truck::Read {
                 shells,
                 volume,
