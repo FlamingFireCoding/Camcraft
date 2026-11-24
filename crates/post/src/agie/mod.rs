@@ -280,6 +280,8 @@ fn publish(_: &Path, _: &[(String, String)]) -> Result<Vec<PathBuf>, String> {
 #[cfg(test)]
 mod cutoff_tests;
 #[cfg(test)]
+mod die_group_tests;
+#[cfg(test)]
 mod die_tests;
 #[cfg(test)]
 mod group_tests;

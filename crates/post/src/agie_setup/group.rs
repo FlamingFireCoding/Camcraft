@@ -1,5 +1,5 @@
-//! Setup-only group of captured punches on one 20 mm plate, from the Agie Processor work format
-//! and CamCraft's offline control checks of #2961.
+//! Setup-only group of two captured punches or two die openings on one 20 mm plate, from the
+//! Agie Processor work format and CamCraft's offline control checks of #2961 and #2977.
 
 use super::{SetupError, SetupFiles, WorkSide, piece, qn2_offsets_um, resources, valid_stem};
 
@@ -9,7 +9,8 @@ pub const GROUP_HEIGHT_UM: i32 = 20_000;
 /// The number of works in the control-checked punch group (#2961).
 const GROUP_WORKS: usize = 2;
 
-/// One captured punch of a group: its own ISO geometry and its own start hole.
+/// One work of a group (a captured punch or a die opening): its own ISO
+/// geometry and its own start hole.
 #[derive(Debug, Clone, Copy)]
 pub struct GroupPunch<'a> {
     /// DOS stem of this work's ISO geometry (for example, `PAIR201`).
@@ -48,6 +49,21 @@ impl PunchGroup20<'_> {
     /// positions, any thickness other than 20 mm, and any number of works
     /// other than two.
     pub fn encode(&self) -> Result<SetupFiles, SetupError> {
+        self.encode_side(WorkSide::Punch)
+    }
+
+    /// Encode one native group with one die-opening work (`ID_PUNCH,c_die`)
+    /// for each entry, with zero erosion steps on import (#2977). Each entry
+    /// is one through-opening of the same retained plate. Apart from the side
+    /// and the operator review, the records are those of [`Self::encode`].
+    ///
+    /// # Errors
+    /// The errors of [`Self::encode`].
+    pub fn encode_die(&self) -> Result<SetupFiles, SetupError> {
+        self.encode_side(WorkSide::Die)
+    }
+
+    fn encode_side(&self, side: WorkSide) -> Result<SetupFiles, SetupError> {
         if !valid_stem(self.stem) {
             return Err(SetupError::InvalidStem);
         }
@@ -94,7 +110,7 @@ impl PunchGroup20<'_> {
             .iter()
             .map(|punch| piece::Work {
                 geometry: punch.iso_stem,
-                side: WorkSide::Punch.native(),
+                side: side.native(),
                 start_um: punch.start_hole_um,
                 exit_um: None,
             })
@@ -106,6 +122,20 @@ impl PunchGroup20<'_> {
             .collect::<Vec<_>>()
             .join(", ");
         let [rough, trim1, trim2, trim3] = offsets;
+        // The punch text is unchanged. A die group names its side, keeps each
+        // offset inside its own opening and supports each slug (#2977).
+        let side_check = match side {
+            WorkSide::Die => concat!(
+                "Confirm c_die on each work and that each offset is inside its own opening. ",
+                "Confirm that the main cut, the separation and the trims of each work stay inside ",
+                "its opening, and that no cutting move crosses the plate between the openings. ",
+                "Support each slug before the control releases its separation section.",
+            ),
+            _ => concat!(
+                "Confirm c_punch on each work, and that no cut or threading move of one work enters ",
+                "the other punch. Support each punch before the control releases its separation section.",
+            ),
+        };
         Ok(SetupFiles {
             sbl: piece::piece(&piece, &works),
             sbr: resources(&works),
@@ -119,8 +149,7 @@ impl PunchGroup20<'_> {
                     "Tkm 1.00 and three disabled options. Check the effective values and both visible options ",
                     "on each work. Assign the matching TECCUT row to each work. Check offsets of {rough}, ",
                     "{trim1}, {trim2} and {trim3} µm in order on each work before GRAFICHECK and FORMALCHECK. ",
-                    "Confirm c_punch on each work, and that no cut or threading move of one work enters ",
-                    "the other punch. Support each punch before the control releases its separation section.",
+                    "{side_check}",
                 ),
                 names = names,
                 height = self.height_um / 1000,
@@ -128,6 +157,7 @@ impl PunchGroup20<'_> {
                 trim1 = trim1,
                 trim2 = trim2,
                 trim3 = trim3,
+                side_check = side_check,
             ),
         })
     }

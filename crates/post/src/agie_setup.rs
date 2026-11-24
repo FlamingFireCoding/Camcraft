@@ -3,6 +3,8 @@
 //! This encoder references an existing ISO geometry file for one closed punch
 //! ([`PunchSetup20::encode`]) or one convex die opening on a 20 mm plate
 //! ([`PunchSetup20::encode_die`]). The two differ only in the work side.
+//! [`PunchGroup20::encode`] and [`PunchGroup20::encode_die`] write two
+//! punches or two die openings of one 20 mm plate as one native group.
 //! [`CutoffSetup20::encode`] writes one straight open cut on a 20 mm plate,
 //! with a left or right side and two air endpoints instead of a start hole.
 //! The caller must verify the nominal contour, its lead from the threading hole,
@@ -121,11 +123,11 @@ pub enum SetupError {
     )]
     CutoffEndpoints,
     #[error(
-        "Use a 20 mm plate for a punch group. The control checked the punch group at 20 mm only."
+        "Use a 20 mm plate for a work group. The control checked the punch and die groups at 20 mm only."
     )]
     UnqualifiedGroupHeight,
     #[error(
-        "Use two punch works with distinct ISO stems. The control checked a group of two punches only."
+        "Use two works with distinct ISO stems. The control checked groups of two punches or two die openings only."
     )]
     GroupWorks,
 }
