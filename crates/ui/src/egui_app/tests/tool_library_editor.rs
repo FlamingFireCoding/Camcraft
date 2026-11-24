@@ -172,8 +172,10 @@ fn the_tip_form_row_shows_for_a_taper() {
     open_in_window(&mut h, name);
     {
         let win = library_window(&h);
-        let combo = win.get_by_role_and_label(Role::ComboBox, "Tip form");
-        assert_eq!(combo.value().as_deref(), Some("Sharp"), "a catalog chamfer mill is sharp");
+        assert!(win.query_all_by_label("Tip form").next().is_some(), "a chamfer mill has the Tip form row");
+        let Some(combo) = win.query_all_by(|n| n.role() == Role::ComboBox && n.value().as_deref() == Some("Sharp")).next() else {
+            panic!("the Tip form combo shows Sharp for a catalog chamfer mill");
+        };
         assert!(!combo.accesskit_node().is_disabled(), "the tip form can be chosen");
         assert!(win.query_all_by_label("Tip diameter").next().is_none(), "a sharp tip states no diameter");
     }
