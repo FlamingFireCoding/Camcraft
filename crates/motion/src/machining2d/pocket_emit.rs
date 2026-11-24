@@ -225,6 +225,92 @@ mod tests {
     use crate::links::Links;
 
     #[test]
+    fn missed_relief_notes_name_and_deduplicate_boundary_corners() {
+        // The pass stays in the second component. No legal detour can
+        // reach the relief starts in the first component.
+        let squares = [0.0, 20.0].map(|offset| {
+            Loop::new(vec![
+                Point2::new(offset, offset),
+                Point2::new(offset + 10.0, offset),
+                Point2::new(offset + 10.0, offset + 10.0),
+                Point2::new(offset, offset + 10.0),
+            ])
+            .expect("square loop")
+        });
+        let center = Region::new(squares.to_vec()).expect("disconnected center region");
+        let reliefs = [
+            ResolvedRelief {
+                corner: Point2::new(0.0, 0.0),
+                start: Point2::new(3.0, 3.0),
+                end: Point2::new(2.0, 3.0),
+                radius: 3.0,
+            },
+            ResolvedRelief {
+                corner: Point2::new(0.0, 0.0),
+                start: Point2::new(4.0, 3.0),
+                end: Point2::new(2.0, 3.0),
+                radius: 3.0,
+            },
+            ResolvedRelief {
+                corner: Point2::new(10.0, 0.0),
+                start: Point2::new(3.0, 3.0),
+                end: Point2::new(8.0, 3.0),
+                radius: 3.0,
+            },
+        ];
+        let pp = PocketParams {
+            tool_diameter: 6.0,
+            stepover: 3.0,
+            stock_to_leave: 0.0,
+            clearance_z: 25.0,
+            retract_z: None,
+            top_z: 20.0,
+            bottom_z: 16.0,
+            stepdown: 2.0,
+            feed: 2400.0,
+            plunge_feed: 500.0,
+            climb: true,
+            strategy: PocketStrategy::Zigzag,
+            entry: Entry3D::Helix,
+            helix_radius: 1.0,
+            optimal_load: 0.25,
+            blend_turns: false,
+            blend_radius: None,
+            links: Links::PLANAR,
+        };
+        let path = emit_pocket_passes(
+            PathBuilder::approached(Point3::new(23.0, 23.0, pp.clearance_z)),
+            &pp,
+            PocketWalks {
+                center: &center,
+                links_center: &center,
+                strategy: pp.strategy,
+                passes: vec![vec![Point2::new(23.0, 23.0), Point2::new(27.0, 23.0)]],
+                room: None,
+                joins: Vec::new(),
+                hold_crossings: false,
+                holes: &[],
+                corner_reliefs: &reliefs,
+            },
+        )
+        .expect("emit disconnected pocket passes");
+        let notes: Vec<_> = path
+            .notes
+            .iter()
+            .filter(|note| note.starts_with("corner relief at"))
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            notes,
+            [
+                "corner relief at (0.000, 0.000) is not cut: no pass vertex reaches the relief spur",
+                "corner relief at (10.000, 0.000) is not cut: no pass vertex reaches the relief spur",
+            ],
+            "each boundary corner gets one note, independent of the cutter-center starts"
+        );
+    }
+
+    #[test]
     fn offset_rings_across_one_micron_vertex_step_post_crossing_free() {
         // A circular pass with a 1e-6 mm step along its circumference (as
         // produced by Clipper2 integer offsets on STEP-faceted circles like
