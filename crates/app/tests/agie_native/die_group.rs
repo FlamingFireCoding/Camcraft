@@ -82,11 +82,29 @@ fn a_missing_shared_or_unsafe_die_work_writes_nothing() {
                 "cam.import(\"examples/agie/pair-right.obj\", \"extra\");\ncam.generate();",
             ),
         ),
-        ("slug not captured", SCRIPT.replace("capture: true", "capture: false")),
+        (
+            "slug not captured",
+            SCRIPT.replace("capture: true", "capture: false"),
+        ),
+        // A die group holds two openings: punch groups of up to nine do not raise it (#2980).
+        (
+            "three die works",
+            SCRIPT.replace(
+                "{name: \"DieR\", x: 24.5}]",
+                "{name: \"DieR\", x: 24.5}, {name: \"DieR2\", x: 24.5}]",
+            ),
+        ),
     ] {
         let temp = tempfile::tempdir().unwrap();
         let result = run(temp.path(), &script);
         assert!(!result.status.success(), "{case}");
         assert!(!temp.path().join("DUODI20").exists(), "{case}");
+        if case == "three die works" {
+            let message = String::from_utf8_lossy(&result.stderr);
+            assert!(
+                message.contains("die groups of two openings only"),
+                "{message}"
+            );
+        }
     }
 }

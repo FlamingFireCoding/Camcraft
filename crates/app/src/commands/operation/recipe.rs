@@ -51,7 +51,7 @@ impl ApplyCutRecipe {
                 "cut recipe '{r}' contains saved geometry - supply geometry for the new source in a new operation"
             )));
         }
-        CreateOperation::new(world, name, &recipe.tool, src, recipe.params.clone()).map(Self)
+        CreateOperation::with_named_entry(world, name, &recipe.tool, src, recipe.params.clone(), true).map(Self)
     }
 }
 

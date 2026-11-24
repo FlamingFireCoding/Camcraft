@@ -52,9 +52,10 @@ saved file would become unreadable for older builds for a feature most
 files do not use); no step (an older build reads a flat tip as sharp).
 
 **Decided: the `.camtools` library steps to `TIP_FORM_VERSION` (6) for a
-non-sharp tip only.** Version 5 is kept for the drawn cutter of PR #3906
-(`CUTTER_VERSION`), which is open. The reader accepts 1 to 4 and 6. The
-PR that merges second adds the other number to the accepted list.
+non-sharp tip only.** Version 5 is the drawn cutter of PR #3906
+(`CUTTER_VERSION`). PR #3906 merged first, so the merge-time refresh of
+this PR added 6 to the accepted list: the reader accepts 1 to 6, and a
+library with both a cutter and a non-sharp tip says 6.
 
 **Decided: three catalog tools.** `CM-0600-90-F10` (a 6 mm 90-degree
 chamfer mill with a 1 mm flat tip), `TE-0250-03-F10` (a tapered flat end

@@ -6,7 +6,7 @@ use super::*;
 
 /// The slot of `die_tests` centred at X`center`, threaded 5.5 mm left of
 /// its centre, on the 130 × 70 mm stock of the die pair.
-fn opening(center: f64) -> AgieJob {
+pub(super) fn opening(center: f64) -> AgieJob {
     AgieJob {
         side: AgieSide::Die,
         contour: slot().into_iter().map(|[x, y]| [x + center, y]).collect(),
