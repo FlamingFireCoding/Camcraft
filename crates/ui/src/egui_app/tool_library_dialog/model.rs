@@ -9,7 +9,9 @@
 //! #3895 (U4): a holder pick of the window's draft (entry, gauge length,
 //! projection) is drawn in place of the landed body, built by the same
 //! path as Apply holder (`tool_body::build_library`, then `fits`); a pick
-//! that path refuses keeps the landed body and carries the refusal.
+//! that path refuses keeps the landed body and carries the refusal. The
+//! Apply-holder refusal is judged on the stored tool, as the command
+//! judges it; the draft numbers' own verdict is a separate draft note.
 //! Frame cost (`crates/ui/AGENTS.md`): the model is built when its input
 //! changes - the draft tool value, the document's tool, the landed cutter
 //! and the landed body (its mesh by identity) - never on `doc_version`.
@@ -68,8 +70,12 @@ pub(crate) struct ToolModel {
     /// The landed body's source, when the holder is a body.
     pub body: Option<String>,
     pub dims: Dims,
-    /// #3895: why the draft's holder pick cannot land, by name.
+    /// #3895: why Apply holder refuses the draft's holder pick, by name -
+    /// judged on the stored tool, as the command judges it.
     pub holder_err: Option<String>,
+    /// What the same checks say of the unapplied draft numbers, when that
+    /// differs from `holder_err` - a draft note, not the command's verdict.
+    pub draft_err: Option<String>,
 }
 
 /// What the model is built from. The body compares by its mesh identity
@@ -162,8 +168,19 @@ pub(crate) fn draft_body(t: &Tool, entry: &str, gauge: f64, projection: f64) -> 
 
 fn build(k: &Key) -> ToolModel {
     let t = &k.tool;
-    let drafted = k.holder.as_ref().map(|(n, g, p)| draft_body(t, n, *g, *p));
-    let holder_err = drafted.as_ref().and_then(|r| r.as_ref().err().cloned());
+    let judge = |tool: &Tool| k.holder.as_ref().map(|(n, g, p)| draft_body(tool, n, *g, *p));
+    let refusal = |r: &Option<Result<ToolBody, String>>| r.as_ref().and_then(|r| r.as_ref().err().cloned());
+    let drafted = judge(t);
+    let draft_refusal = refusal(&drafted);
+    // Apply holder (`SetToolBody::library`) judges the STORED tool, not
+    // the unapplied draft numbers: its verdict comes from `k.doc`. The
+    // draft's own verdict is only a separate note (review of #3931).
+    let holder_err = match &k.doc {
+        Some(doc) if doc != t => refusal(&judge(doc)),
+        Some(_) => draft_refusal.clone(),
+        None => None,
+    };
+    let draft_err = draft_refusal.filter(|e| holder_err.as_ref() != Some(e));
     let body = drafted.and_then(Result::ok).or_else(|| k.body.clone());
     let zs = t.flute_len.max(0.0) + t.shank_len.max(0.0);
     let rs = t.shank_d.max(0.0) * 0.5;
@@ -215,7 +232,7 @@ fn build(k: &Key) -> ToolModel {
         holder,
     };
     let bounds = crate::egui_app::tool_model_view::bounds(&mesh);
-    ToolModel { tool: t.clone(), steel, bands, bounds, mesh: Arc::from(mesh), body: body.as_ref().map(|b| b.source.clone()), dims, holder_err }
+    ToolModel { tool: t.clone(), steel, bands, bounds, mesh: Arc::from(mesh), body: body.as_ref().map(|b| b.source.clone()), dims, holder_err, draft_err }
 }
 
 /// A `(z, r)` meridian spun about +Z into triangles; rings at r = 0 close

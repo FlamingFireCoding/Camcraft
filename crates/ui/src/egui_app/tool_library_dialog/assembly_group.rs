@@ -73,7 +73,17 @@ fn notes(ui: &mut Ui, state: &State, u: Unit) {
     let shank_ok = stored.as_ref().is_some_and(|t| {
         holder_library::resolve(&entry, t.shank_d).and_then(|e| e.fits_shank(t.shank_d)).is_ok()
     });
-    if shank_ok && let Some(err) = super::model::of(state).holder_err.clone() {
+    // Both verdicts come from the cached preview model (built when its
+    // inputs change). The refusal is the command's, on the stored tool;
+    // the draft note judges the unapplied tool numbers only.
+    let m = super::model::of(state);
+    if shank_ok && let Some(err) = m.holder_err.clone() {
         ui.colored_label(BAD, format!("Apply holder refuses this: {err}"));
+    }
+    if let Some(note) = m.draft_err.clone() {
+        ui.colored_label(
+            WARN,
+            format!("Draft note: the unapplied tool numbers do not take this holder ({note}). Apply holder checks the stored tool."),
+        );
     }
 }
