@@ -5,7 +5,7 @@ pub(super) fn punch() -> AgieJob {
     AgieJob {
         side: AgieSide::Punch,
         contour: vec![[-20., -10.], [20., -10.], [20., 10.], [-20., 10.]],
-        start: [-30., 0.],
+        start: Some([-30., 0.]),
         stock_min: [-40., -30., -20.],
         stock_max: [40., 30., 0.],
     }
@@ -61,11 +61,11 @@ fn final_rename_cannot_replace_an_empty_directory() {
 #[test]
 fn stock_hole_and_entry_are_validated_before_output() {
     let mut job = punch();
-    job.start = [0., 0.];
+    job.start = Some([0., 0.]);
     assert!(contour::prepare(&job, "PUNCH40").is_err());
-    job.start = [-20.5, 0.];
+    job.start = Some([-20.5, 0.]);
     assert!(contour::prepare(&job, "PUNCH40").is_err());
-    job.start = [-39.5, 0.];
+    job.start = Some([-39.5, 0.]);
     assert!(contour::prepare(&job, "PUNCH40").is_err());
     job = punch();
     job.contour.swap(0, 1);
@@ -85,13 +85,13 @@ pub(super) fn points(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
 #[test]
 fn separation_needs_three_millimetres_on_each_side_of_the_entry() {
     let mut job = punch();
-    job.start = [-30., 9.5];
+    job.start = Some([-30., 9.5]);
     assert!(
         points(&job)
             .unwrap_err()
             .contains("straight face on both sides")
     );
-    job.start = [-30., 7.];
+    job.start = Some([-30., 7.]);
     assert!(points(&job).is_ok());
 }
 
@@ -106,7 +106,7 @@ fn pentagon(left_top_x: f64) -> AgieJob {
             [18., 10.],
             [left_top_x, 10.],
         ],
-        start: [-20.5, 6.],
+        start: Some([-20.5, 6.]),
         ..punch()
     }
 }
@@ -122,9 +122,9 @@ fn oblique_punch_preserves_nominal_vertices_and_perpendicular_seam() {
 
     // 3.125 mm along the 3:4 face, even though each coordinate difference
     // is smaller than 3 mm. A 2.5 mm length cannot hold the transition.
-    job.start = [-26.125, -1.5];
+    job.start = Some([-26.125, -1.5]);
     assert_eq!(points(&job).unwrap()[0], [-18.125, -7.5]);
-    job.start = [-26.5, -2.];
+    job.start = Some([-26.5, -2.]);
     assert!(points(&job).is_err());
 }
 
@@ -177,7 +177,7 @@ fn oblique_seam_rounds_to_the_exterior_without_moving_nominal_vertices() {
     assert_eq!(points(&job).unwrap(), prepared);
 
     // Nearest-coordinate rounding here would cut inside the punch.
-    job.start[1] = 6.003;
+    job.start = job.start.map(|[x, _]| [x, 6.003]);
     assert_eq!(points(&job).unwrap()[0], [-12.64625, 0.50537]);
 }
 
@@ -191,7 +191,7 @@ fn outward_rounding_cannot_consume_the_required_lead_clearance() {
         [18., 10.],
         [-5.99933, 10.],
     ];
-    job.start = [-15.5, 1.659];
+    job.start = Some([-15.5, 1.659]);
     // The exact approach measures 3.000002716 mm. Every exterior seam
     // inside the ISO rounding budget leaves less than 3 mm to a new face.
     let why = points(&job).unwrap_err();
@@ -318,11 +318,11 @@ fn stock_origin_and_fractional_setup_coordinates_are_refused_before_publication(
     for vertex in &mut displaced.contour {
         vertex[0] += 340.0;
     }
-    displaced.start[0] += 340.0;
+    displaced.start = displaced.start.map(|[x, y]| [x + 340.0, y]);
     displaced.stock_min[0] += 340.0;
     displaced.stock_max[0] += 340.0;
     let mut fractional = punch();
-    fractional.start[1] = 0.0004;
+    fractional.start = fractional.start.map(|[x, _]| [x, 0.0004]);
     for (job, why) in [
         (displaced, "stock and work origin"),
         (fractional, "0.001 mm"),

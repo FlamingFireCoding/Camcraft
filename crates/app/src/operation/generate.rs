@@ -44,6 +44,25 @@ pub fn strategy_fallback(path: &Toolpath) -> Option<Warning> {
     Some(Warning::StrategyFallback { at, areas, cause })
 }
 
+/// #3748: the start-side pass whose user selected a Helix, Ramp or Plunge
+/// lead-in where the Arc entry from the air applies - one advisory
+/// warning that names the selected type, the recommended Arc and the
+/// reason. The ladder writes the advice note only where that air room
+/// exists (`machining2d::entry_advice`); the entry runs as selected.
+#[must_use]
+pub fn entry_not_recommended(path: &Toolpath) -> Option<Warning> {
+    use crate::machining2d::{PassStart, advised, entry_advice};
+    use crate::machining3d::Entry3D;
+    let starts = [PassStart::Inside, PassStart::Outside];
+    let kinds = [Entry3D::Helix, Entry3D::Ramp, Entry3D::Plunge];
+    let (entry, inside) = starts.iter().flat_map(|&s| kinds.iter().map(move |&k| (s, k))).find_map(|(s, k)| {
+        let note = entry_advice(s, k)?;
+        path.notes.iter().any(|n| n.contains(note)).then(|| advised(s, k)).flatten()
+    })?;
+    let at = path.moves.iter().position(|m| m.kind != crate::cl::MoveKind::Rapid).unwrap_or(0);
+    Some(Warning::EntryNotRecommended { at, entry, inside })
+}
+
 /// [`run_job`]'s body: every arm, unchanged.
 fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     let GenJob {
@@ -188,7 +207,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         let cond = wire.ok_or_else(|| unreached("wire condition"))?;
         let k = cond.0.wire_diameter * 0.5 + cond.0.gap;
         let picks = if let Some(sketch) = &wire_sketch {
-            Some((vec![sketch.straight_ring(op).map_err(GenError::Invalid)?], Vec::new()))
+            Some((vec![sketch.nominal_ring(op).map_err(GenError::Invalid)?], Vec::new()))
         } else {
             contour_sel.take().transpose()?.map(|(loops, chains, _)| (loops, chains))
         };
@@ -3760,6 +3779,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 // about the spindle its kernel fitted.
                 lathe_axis: super::turning_axis::lathe_axis_of(&params, &geom, &material.facets),
                 corner_reliefs: &relief_zones,
+                // #3679: the plunge depth law reads the op's own
+                // stepdown; None keeps the kinds that cut no levels
+                // silent.
+                plunge_stepdown: crate::cutting_rows::plunge_stepdown(&params),
             };
             // The picks' touching bodies, read as their union
             // (M13.11); empty for one body.
@@ -3767,15 +3790,18 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #1091: a dive convicted against the stock's highest point is re-read under the tool.
             super::stock_top_law::acquit(&path, mode, judged_stock.filter(|_| stock_fidelity_known), &material.facets, &geom, material.excess, &mut warns);
             // The program ahead cut too (#96 review): a dive the column
-            // convicted against the raw block is re-read against what
-            // the setup's earlier operations left standing.
-            // Cut only when a rapid was convicted: the simulation is
-            // the costly half, and a clean path needs no second word.
-            if warns.iter().any(|w| matches!(w, Warning::RapidInStock { .. }))
+            // convicted against the raw block, and a feed plunge the
+            // depth law convicted against this op's own floor (#3679),
+            // are re-read against what the setup's earlier operations
+            // left standing. Cut only when one of the two laws
+            // convicted: the simulation is the costly half, and a
+            // clean path needs no second word.
+            if warns.iter().any(|w| matches!(w, Warning::RapidInStock { .. } | Warning::PlungeTooDeep { .. }))
                 && let Some(dex) = verify_prior.get()
             {
                 let prior = crate::stock_sim::Columns::of_grid(dex);
                 verify::acquit_by_prior(&path, &prior, geom.radius, Z_TOL, &mut warns);
+                verify::acquit_plunge_by_prior(&path, &prior, geom.radius, Z_TOL, &mut warns);
             }
             // #1444: an undercut answers to the part's solid with the
             // cutter's real head and neck (a stock source: the kept
@@ -4034,6 +4060,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #3035: Adaptive areas cut by Offset rings - a warning, not
             // only a note; advisory (the rings are verified above).
             warns.extend(strategy_fallback(&path));
+            // #3748: a selected entry that is not the recommended Arc on a
+            // start-side pass - one advisory warning, the entry kept.
+            warns.extend(entry_not_recommended(&path));
             // The rotary kinds' bands and rapids (M13): `Mode::Rotary`
             // stood the vertical-column laws down; the radial field
             // reads rest material in the frame the work turns in.
@@ -4165,6 +4194,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     // No envelope runs in a plane's frame (finish_tol None).
                     lathe_axis: None,
                     corner_reliefs: &relief_zones,
+                    // #3679: the plunge law reads world-Z axial descents;
+                    // a tilted plane's descents answer to its own entry
+                    // law, not to the column - so the law stays silent
+                    // here.
+                    plunge_stepdown: None,
                 },
                 &m_gen.bodies,
             );

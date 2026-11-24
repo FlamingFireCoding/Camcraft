@@ -99,7 +99,7 @@ fn bad_ui_arguments_are_usage_errors() {
     }
     let o = cli_ui(&dir, &["--help"]);
     assert_eq!(o.status.code(), Some(0));
-    assert!(String::from_utf8_lossy(&o.stdout).contains("Exit: 0 stood, 1 refused, 2 usage, 3 no running window"));
+    assert!(String::from_utf8_lossy(&o.stdout).contains("Exit: 0 stood, 1 refused, 2 usage, 3 no running window, 4 window busy"));
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -187,4 +187,43 @@ fn the_link_folder_is_the_users_own() {
     assert!(link::enabled(None));
     assert!(link::enabled(Some("on")));
     assert!(!link::enabled(Some(" OFF ")));
+}
+
+#[test]
+fn a_second_ui_call_during_a_slow_call_reports_busy_and_exits_4() {
+    let dir = fresh_dir("busy");
+    let inbox = Inbox::link(&dir, Box::new(|| {})).expect("open the link");
+    let entry = inbox.link_entry().expect("a link entry").clone();
+
+    // Client 1 connects directly to the socket to occupy the session
+    let addr = entry.address.clone();
+    let transport = entry.transport.clone();
+    let (connected_tx, connected_rx) = std::sync::mpsc::channel();
+    let (finish_tx, finish_rx) = std::sync::mpsc::channel();
+
+    let client1 = std::thread::spawn(move || {
+        let stream = match transport.as_str() {
+            "tcp" => Box::new(std::net::TcpStream::connect(&addr).expect("tcp")) as Box<dyn std::io::Read + Send>,
+            #[cfg(unix)]
+            "unix" => Box::new(std::os::unix::net::UnixStream::connect(&addr).expect("unix")) as Box<dyn std::io::Read + Send>,
+            other => panic!("unknown: {other}"),
+        };
+        let _ = connected_tx.send(());
+        let _ = finish_rx.recv();
+        drop(stream);
+    });
+
+    connected_rx.recv().expect("client 1 connected");
+    std::thread::sleep(Duration::from_millis(50));
+
+    // Client 2 attempts to call a tool via cli_ui; times out waiting on busy window
+    let o = cli_ui(&dir, &["call", "get_job"]);
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(4), "{err}");
+    assert!(err.contains("is busy with another call"), "{err}");
+
+    let _ = finish_tx.send(());
+    let _ = client1.join();
+    drop(inbox);
+    let _ = std::fs::remove_dir_all(&dir);
 }
