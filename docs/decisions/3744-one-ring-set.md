@@ -59,3 +59,22 @@ the part, and Auto offset both edges (`waterline_passes`).
 **Cost to change later.** The rule lives in `ring_side::resolve`; a
 different Auto rule changes one function and its pin
 (`auto_picks_one_side_of_the_one_ring_set`).
+
+## #3788 (c) - the planner names each full-width cut by the flanks law
+
+**Decided.** `level_order::order` judges a full-width cut by the law of the
+full-width meter of the op tests (`level_flanks`): both flank points, 0.9
+tool radii either side of the walk, stand in material (the stock footprint
+inside the area that the disc may sweep) that no earlier cut and no part of
+the walk's own disc more than 2.5 radii back reached. A piece with such a
+sample counts in the narrow note, which also names a merge of two rings now.
+
+**Why.** The review of #3790 found the 495 waist cuts of fig8 Outside
+silent: the old law (no cut within 1.9 radii of the centre) passed them.
+The coordinator's decision (maintainer away): every full-width cut is named
+by the meter's own law. The pins are `fig8_outside_offset_cuts_no_move_at_full_width`
+(the note names the meter's first place) and
+`fig8_inside_offset_names_each_full_width_cut`.
+
+**Dropped.** A note for each place: the note names the count and the first
+place, as before.
