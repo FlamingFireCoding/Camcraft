@@ -229,6 +229,38 @@ project free to use and share. In practice:
   "this is how it should look" example, we cannot read it. Describe the
   behaviour you want in your own words instead.
 
+## Your agent helps with more than code
+
+Ask it, in plain words, whenever something is in the way:
+
+- **Explain a step.** "What does this review comment ask me to do?", "What
+  does this error mean?", "Walk me through this issue."
+- **Screenshots.** It can crop a screenshot to the part that matters, or
+  render a CamCraft panel headlessly through the UI test harness - handy for
+  the before/after images a UI change needs.
+- **Write it up.** Turn what you saw into a clear bug report, a PR
+  description or a comment, with the details reviewers look for.
+- **Read the manual for you.** Find the part of your controller's manual
+  that matters, or check a short G-code program line by line.
+- **Check before you send.** "Does my PR body have everything the
+  reviewers want?"
+
+## If something is unclear
+
+1. Ask your agent first - it has read the project rules.
+2. Ask on the [CamCraft Discord](https://discord.gg/bBWjkAgX5). No question
+   is too small.
+3. If this page or the guide is unclear, that is a bug: say so on Discord or
+   open an issue. We would rather fix the docs than lose a helper.
+
+## We are all volunteers
+
+Everyone here gives their own time, and every bit helps: a comment, a test
+on your machine, a typo fix, a model that shows a bug, a PR. Be patient -
+a review can take a few hours or a day. Be kind - assume good intent,
+thank people, and keep feedback about the work, not the person. New
+helpers are always welcome.
+
 ## FAQ
 
 **I don't know Rust. Can I still help?**
