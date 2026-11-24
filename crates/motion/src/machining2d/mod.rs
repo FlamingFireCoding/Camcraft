@@ -200,6 +200,7 @@ pub use rest_prior::{
 pub use rest_prior_adaptive::{rest_adaptive_previous, REST_ADAPTIVE_ENTERED, REST_ADAPTIVE_NO_STOCK};
 pub use ring::{on_boundary, ring_is_circular};
 pub use slot_band::slot_centre_band;
+pub use pocket_plan::pocket_tool_fits;
 pub use slots::{chord_clears, slot, trace, SlotParams, TraceParams};
 pub use trace_avoid::trace_avoid;
 pub use slot_ends::extended_ends as slot_extended_ends;

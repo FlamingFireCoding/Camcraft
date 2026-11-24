@@ -281,6 +281,9 @@ mod stock_top_law;
 // #266: a tap judged at its thread's core.
 mod tap_core;
 pub use clearance_stock::{CLEARANCE_STOCK_WARNING, creation_advice as clearance_in_stock_advice};
+// #3631: a 2D Pocket's tool that no position in its region fits, said at edit time.
+mod pocket_fit;
+pub use pocket_fit::pocket_fit_advice;
 pub use top_stock::{CARRIED_STOCK_NOTE, TOP_STOCK_WARNING};
 mod turning_credit;
 mod g76_start;
