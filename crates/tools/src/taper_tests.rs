@@ -145,3 +145,34 @@ fn the_words_round_trip() {
     assert_eq!(TaperTip::from_word("round"), None);
     assert_eq!(TaperTip::default(), TaperTip::Sharp);
 }
+
+/// The widest radius the drawn profile reaches at the flute top, and the
+/// last point of the meridian: a short flute ends on the cone, and both
+/// must step out to the full radius there.
+fn flute_top_radii(t: &Tool) -> (f64, (f64, f64)) {
+    let fl = t.flute_len;
+    let prof = t.profile().into_iter().filter(|q| near(q.0, fl)).fold(0.0, |m: f64, q| m.max(q.1));
+    let m = t.meridian().unwrap_or_else(|e| panic!("{t:?}: {e}"));
+    let last = m.points().last().map(|p| (p.z, p.r)).unwrap_or_default();
+    (prof, last)
+}
+
+#[test]
+fn short_flat_profile_and_meridian_agree() {
+    // The cone of a 1 mm flat tip reaches the 3 mm radius 2.5 mm up; the
+    // flute ends 1 mm up, on the cone.
+    let t = taper(6.0, 90.0, 1.0, TaperTip::Flat, 1.0, 0.0);
+    assert_eq!(t.why_not_sane(), None);
+    let (prof, last) = flute_top_radii(&t);
+    assert!(near(prof, 3.0), "the profile's flute top: {prof}");
+    assert!(near(last.0, 1.0) && near(last.1, prof), "the meridian ends at {last:?}, the profile at r {prof}");
+}
+
+#[test]
+fn short_ball_profile_and_meridian_agree() {
+    let t = taper(6.0, 90.0, 1.0, TaperTip::Ball, 0.0, 0.5);
+    assert_eq!(t.why_not_sane(), None);
+    let (prof, last) = flute_top_radii(&t);
+    assert!(near(prof, 3.0), "the profile's flute top: {prof}");
+    assert!(near(last.0, 1.0) && near(last.1, prof), "the meridian ends at {last:?}, the profile at r {prof}");
+}

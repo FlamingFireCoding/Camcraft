@@ -259,10 +259,15 @@ pub(crate) fn meridian_points(t: &Tool, r: f64, fl: f64) -> Option<Vec<SpunPoint
         p.push(SpunPoint::line(g.z_t, g.r_t));
     }
     let top = g.cone_z(r).min(fl);
+    let mut top_r = 0.0;
     if top > g.z_t {
-        p.push(SpunPoint::line(top, (g.r0 + top * g.tan_half).min(r)));
+        top_r = (g.r0 + top * g.tan_half).min(r);
+        p.push(SpunPoint::line(top, top_r));
     }
-    if fl > top {
+    // A flute that ends on the cone steps out to the full radius at its
+    // top, as `Tool::profile` draws it (#3929 review): the straight side
+    // above the cone, or the radial shoulder of a short flute.
+    if fl > top || r - top_r > 1e-9 {
         p.push(SpunPoint::line(fl, r));
     }
     Some(p)

@@ -354,6 +354,9 @@ fn a_flat_and_a_ball_taper_meridian_agrees_with_the_profile() {
         Tool { tip_form: TaperTip::Flat, tip_diameter: 4.0, ..mill(ToolKind::Taper, 10.0, 0.5, 60.0, 15.0) },
         Tool { tip_form: TaperTip::Ball, ..mill(ToolKind::Taper, 1.7, 0.5, 2.0, 20.0) },
         Tool { tip_form: TaperTip::Ball, ..mill(ToolKind::Taper, 6.0, 1.0, 90.0, 8.0) },
+        // Short flutes that end on the cone (#3929 review): the radial shoulder.
+        Tool { tip_form: TaperTip::Flat, tip_diameter: 1.0, ..mill(ToolKind::Taper, 6.0, 0.0, 90.0, 1.0) },
+        Tool { tip_form: TaperTip::Ball, ..mill(ToolKind::Taper, 6.0, 0.5, 90.0, 1.0) },
     ];
     for t in tools {
         let m = t.meridian().unwrap_or_else(|e| panic!("{t:?}: {e}"));
