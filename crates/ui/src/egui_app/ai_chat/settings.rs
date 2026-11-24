@@ -1,9 +1,11 @@
 //! Provenance: issue #3781; transient credential controls over our existing provider APIs.
 
 use std::sync::{Arc, mpsc};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use camcraft_app::ai::ApiKey;
+// The clock seam (#31): the std clock panics on wasm32.
+use camcraft_app::clock::Instant;
 
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct SettingsRequest {
@@ -11,6 +13,8 @@ pub(crate) struct SettingsRequest {
     pub model: String,
     pub offline_only: bool,
 }
+
+const MODEL_CHANGED: &str = "Model changed. Click Test to test this model.";
 
 pub(crate) enum SettingsAction {
     Check,
@@ -33,6 +37,8 @@ pub(crate) struct Settings {
     needs_check: bool,
     check_after: Option<Instant>,
     tested_model: Option<String>,
+    /// The status shows the result of a Test of `request.model`.
+    shows_test_result: bool,
 }
 
 impl Default for Settings {
@@ -47,6 +53,7 @@ impl Default for Settings {
             needs_check: false,
             check_after: None,
             tested_model: None,
+            shows_test_result: false,
         }
     }
 }
@@ -86,6 +93,11 @@ impl Settings {
                 self.needs_check = true;
                 // Coalesce local Model keystrokes. Provider switches check immediately.
                 self.check_after = same_provider.then(|| now + Duration::from_millis(500));
+                self.shows_test_result = false;
+            } else if self.shows_test_result {
+                // The Test result is for the previous model. Do not show it for this one.
+                self.status = MODEL_CHANGED.into();
+                self.shows_test_result = false;
             }
         }
         if let Some(rx) = &self.pending {
@@ -105,8 +117,9 @@ impl Settings {
                         .is_none_or(|model| Some(model) == current_model)
                     {
                         self.status = result.unwrap_or_else(|message| message);
+                        self.shows_test_result = self.tested_model.is_some();
                     } else {
-                        self.status = "Model changed. Click Test to test this model.".into();
+                        self.status = MODEL_CHANGED.into();
                     }
                 }
                 self.tested_model = None;
@@ -162,6 +175,7 @@ impl Settings {
                 self.status = "Checking provider...".into();
                 self.pending = Some(rx);
                 self.tested_model = tested_model;
+                self.shows_test_result = false;
                 self.needs_check = false;
                 self.check_after = None;
             }

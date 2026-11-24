@@ -218,3 +218,61 @@ fn cloud_model_edit_discards_an_in_flight_test_for_the_previous_model() {
         Some(&("anthropic".into(), "new".into(), "test"))
     );
 }
+
+#[test]
+fn cloud_model_edit_after_a_finished_test_asks_for_a_new_test() {
+    let backend = Arc::new(RecordingSettings::default());
+    let mut settings = Settings::default();
+    settings.backend = backend.clone();
+    let now = Instant::now();
+    let mut current = request("anthropic", "old");
+    settings.sync_at(current.clone(), now);
+    finish(&mut settings, &current, now);
+    settings.start(SettingsAction::Test);
+    finish(&mut settings, &current, now);
+    assert_eq!(settings.status, "Ready");
+
+    current.model = "new".into();
+    settings.sync_at(current.clone(), now);
+    assert_eq!(
+        settings.status,
+        "Model changed. Click Test to test this model."
+    );
+    assert!(!settings.has_work());
+    assert_eq!(backend.calls.lock().expect("calls").len(), 2);
+
+    settings.start(SettingsAction::Test);
+    finish(&mut settings, &current, now);
+    assert_eq!(settings.status, "Ready");
+    assert_eq!(
+        backend.calls.lock().expect("calls").last(),
+        Some(&("anthropic".into(), "new".into(), "test"))
+    );
+}
+
+/// wasm32 has no clock syscall: `std::time::Instant::now()` panics there.
+/// AI Chat code reads `camcraft_app::clock::Instant`. Test files are exempt.
+#[test]
+fn ai_chat_sources_read_the_clock_seam_not_std_instant() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/egui_app/ai_chat");
+    let mut scanned = 0;
+    for entry in std::fs::read_dir(&dir).expect("ai_chat sources") {
+        let path = entry.expect("entry").path();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if !name.ends_with(".rs") || name.ends_with("_tests.rs") {
+            continue;
+        }
+        scanned += 1;
+        let source = std::fs::read_to_string(&path).expect("source");
+        for (index, line) in source.lines().enumerate() {
+            assert!(
+                !(line.contains("std::time") && line.contains("Instant")),
+                "{name}:{}: use camcraft_app::clock::Instant",
+                index + 1
+            );
+        }
+    }
+    assert!(scanned >= 10, "the scan found {scanned} files");
+    let settings = std::fs::read_to_string(dir.join("settings.rs")).expect("settings");
+    assert!(settings.contains("use camcraft_app::clock::Instant;"));
+}
