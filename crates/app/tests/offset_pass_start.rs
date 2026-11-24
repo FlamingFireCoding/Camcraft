@@ -13,12 +13,15 @@
 //!
 //! Gate map: covers app::operation (generate, params digest), app::mcp
 //! (edit_operation, undo), app::project (params, params_impl),
-//! motion::machining2d (pass_start, level_rings, level_order), sim::verify.
+//! motion::machining2d (pass_start, level_rings, level_order, air_entry),
+//! sim::verify (entry_advice).
 //! Provenance: our own regression of the maintainer's report; no vendor
 //! material consulted.
 
 mod area_support;
 mod common;
+#[path = "offset_pass_start/entry_advice.rs"]
+mod entry_advice;
 #[path = "offset_pass_start/flanks.rs"]
 mod flanks;
 #[path = "offset_pass_start/lifts.rs"]
