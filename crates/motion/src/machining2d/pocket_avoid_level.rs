@@ -76,6 +76,8 @@ pub(super) fn plan_avoid_level(
                     Vec::new(),
                 )))
             } else {
+                // #3744: Auto round a part cuts the one ring set from one side.
+                let side = &super::ring_side::resolve(level_center, strategy, p.tool_diameter * 0.5, side)?;
                 let (ps, pnotes, ramps) = ring_plan_ramped(region, level_center, p, strategy, side, true)?;
                 notes.extend(pnotes.into_iter().filter(|n| !notes.contains(n)).collect::<Vec<_>>());
                 Ok(Some((ps, strategy, None, Vec::new(), level_center.clone(), ramps)))
@@ -238,6 +240,7 @@ pub(super) fn emit_rest_avoid(
             corner_reliefs: &corner_reliefs,
             cleared_links: false,
             ramp_starts: Vec::new(),
+            ring_links: None,
         },
     )
 }

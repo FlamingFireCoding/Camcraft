@@ -154,7 +154,9 @@ pub(super) fn pocket_avoid_over(
         AvoidSource::Plain { holes, .. } => holes,
         AvoidSource::Rest(_) => &[],
     };
-    let cleared_links = matches!(&src, AvoidSource::Plain { side, .. } if side.start != PassStart::Auto);
+    // #3744: Auto round a part resolves to Inside or Outside of the one
+    // ring set (`ring_side::resolve`), so it links as a start side does.
+    let cleared_links = matches!(&src, AvoidSource::Plain { side, .. } if side.start != PassStart::Auto || super::ring_side::resolves(strategy, side));
     let zs = cut_levels_for(p.top_z, &p.links.approach, p.bottom_z, p.stepdown)?;
     let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
     for n in initial_notes {
@@ -248,7 +250,13 @@ pub(super) fn pocket_avoid_over(
             .with_holes(holes)
             .with_solid_restart()
             .with_cleared_links(cleared_links)
-            .with_ramp_starts(ramp_starts);
+            .with_ramp_starts(ramp_starts)
+            .with_ring_links(match &src {
+                AvoidSource::Plain { side, .. } if cleared_links => {
+                    super::ring_links::for_side(side, p.tool_diameter * 0.5, Some(ko.union(&ko_entry)?))?
+                }
+                _ => None,
+            });
         let cert_entry = room.as_ref().map(|rm| Cert::Region(&rm.tess));
         let cert_center = Cert::Region(&level_center);
         let cert_links = Cert::Region(&links_center);
