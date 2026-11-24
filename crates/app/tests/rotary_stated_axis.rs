@@ -388,7 +388,7 @@ fn a_v77_file_opens_and_a_newer_file_is_refused() {
     // The v78 rule: an older reader must refuse this file rather than
     // drop a stated axis and turn the part about one the user never
     // named. A v77 file steps up unchanged.
-    const { assert!(project::PROJECT_VERSION >= 78, "the stated rotation axis needs project v78") };
+    const { assert!(project::PROJECT_VERSION >= 79, "the stated rotation axis needs project v79") };
     let world = world_on(bar(0), parallel(None), Some(MICROARC));
     let out = std::env::temp_dir().join(format!("camcraft_stated_version_{}.camproj", std::process::id()));
     project::save(&world, &out).expect("save");

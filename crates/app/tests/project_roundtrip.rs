@@ -5664,7 +5664,7 @@ fn v79_file_and_the_rotary_flow_grammar_round_trips() {
     // picks replace. A literal document reads back whole; the absent
     // optionals stay silent; write-parse-write is a fixed point; and
     // an impossible cone is refused at the loader, by name.
-    const { assert!(project::PROJECT_VERSION >= 79, "the flow band needs project v79") };
+    const { assert!(project::PROJECT_VERSION >= 80, "the flow band needs project v80") };
     let text = format!(
         r#"{{
         "version": {},

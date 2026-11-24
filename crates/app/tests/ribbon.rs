@@ -383,6 +383,8 @@ fn the_multiaxis_deburr_appends_its_id_and_lists_in_multiaxis() {
     assert_eq!(KindInfo::ALL[47].section, Section::MultiAxis);
     assert_eq!(KindInfo::ALL[15].ty, operation::OpType::Deburr, "the 3D Deburr keeps id 15");
     let multi: Vec<operation::OpType> = Section::MultiAxis.kinds().into_iter().map(|i| KindInfo::ALL[i].ty).collect();
-    assert_eq!(multi.last(), Some(&operation::OpType::MultiAxisDeburr), "{multi:?}");
+    // #2826: the Rotary Flow band appends behind the deburr.
+    assert_eq!(multi.last(), Some(&operation::OpType::RotaryFlow), "{multi:?}");
+    assert!(multi.contains(&operation::OpType::MultiAxisDeburr));
     assert!(multi.contains(&operation::OpType::MultiAxisContour));
 }

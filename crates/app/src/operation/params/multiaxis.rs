@@ -189,7 +189,7 @@ impl OpParams {
                     }
                 }
             }
-            // The flow band's digest (#2826, tag 46): the or-pattern
+            // The flow band's digest (#2826, tag 48): the or-pattern
             // above cannot take it - the picks replaced the station
             // window - so its bytes stand alone, one tag apart. The
             // stated axis rides only when one is stated (the twins'
