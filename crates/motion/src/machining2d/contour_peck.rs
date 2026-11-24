@@ -15,72 +15,73 @@ use super::contour_params::ContourParams;
 
 /// Height slack: a cut on the dive's own plane counts as at its depth.
 const Z_EPS: f64 = 1e-6;
-/// Chord tolerance the floor reads arcs at (mm).
-const CHORD_TOL: f64 = 0.001;
-/// Rings and points per ring the disc is sampled at, out to the rim.
-const RINGS: u32 = 6;
-const PER_RING: u32 = 72;
-/// At most this many pecks: a dive that needs more is a bad stepdown.
-const MAX_PECKS: usize = 4096;
-
-/// The highest floor under the tool disc of radius `r` at `xy`: at each
-/// sample point the lowest Z of a posted cut whose swept disc holds it -
-/// a feed at one height, or a straight plunge column - else `uncut`.
+/// A conservative floor under the complete tool disc of radius `r`.
+/// A previous cut proves clearance only if its centreline contains `xy`
+/// exactly. Then the disc swept at that centre contains the entire new
+/// disc, including its rim. Unknown coverage stays at `uncut`; samples
+/// and arc chords cannot prove that a thin crescent is clear.
 #[must_use]
 pub(super) fn disc_floor(moves: &[Move], xy: Point2, r: f64, uncut: f64) -> f64 {
     if !(r.is_finite() && r > 0.0) {
         return uncut;
     }
-    // Only the cuts within reach of the disc can hold a point of it.
-    let near: Vec<(f64, Vec<(Point2, Point2)>)> = moves
+    moves
         .iter()
         .filter(|m| m.kind != MoveKind::Rapid && m.to.z < uncut - Z_EPS)
-        .filter_map(|m| {
-            let flat = (m.from.z - m.to.z).abs() <= Z_EPS;
-            let column = m.from.x == m.to.x && m.from.y == m.to.y && m.to.z < m.from.z;
-            let chords = if flat {
-                m.chords(CHORD_TOL)
-            } else if column {
-                let c = Point2::new(m.to.x, m.to.y);
-                vec![(c, c)]
-            } else {
-                return None;
-            };
-            chords.iter().any(|&(a, b)| seg_dist(xy, a, b) <= 2.0 * r + Z_EPS).then_some((m.to.z, chords))
+        .filter(|m| {
+            let from = Point2::new(m.from.x, m.from.y);
+            let to = Point2::new(m.to.x, m.to.y);
+            let at_from = xy.x == from.x && xy.y == from.y;
+            let at_to = xy.x == to.x && xy.y == to.y;
+            let column = from == to && m.to.z < m.from.z;
+            let flat = m.from.z == m.to.z;
+            // Endpoints are on both straight and circular centreline paths.
+            // For an interior point, certify only axis-aligned straight
+            // feeds: a rounded orientation test could hide a rim crescent.
+            let on_straight = m.kind == MoveKind::Feed
+                && m.arc.is_none()
+                && ((from.x == to.x && xy.x == from.x && between(xy.y, from.y, to.y))
+                    || (from.y == to.y && xy.y == from.y && between(xy.x, from.x, to.x)));
+            (column && at_to) || (flat && (at_from || at_to || on_straight))
         })
-        .collect();
-    let floor = |q: Point2| {
-        near.iter()
-            .filter(|(_, ch)| ch.iter().any(|&(a, b)| seg_dist(q, a, b) <= r + Z_EPS))
-            .map(|(z, _)| *z)
-            .fold(uncut, f64::min)
-    };
-    let mut top = floor(xy);
-    for ring in 1..=RINGS {
-        let rr = r * f64::from(ring) / f64::from(RINGS) * 0.999;
-        for k in 0..PER_RING {
-            let t = std::f64::consts::TAU * f64::from(k) / f64::from(PER_RING);
-            top = top.max(floor(Point2::new(xy.x + rr * t.cos(), xy.y + rr * t.sin())));
-        }
-    }
-    top
+        .map(|m| m.to.z)
+        .fold(uncut, f64::min)
+}
+
+fn between(x: f64, a: f64, b: f64) -> bool {
+    x >= a.min(b) && x <= a.max(b)
 }
 
 /// The depths a dive at `xy` down to `z` stops at: one stepdown apart
 /// below the disc floor, the last one `z`. A dive within one stepdown of
 /// the floor (or with no `uncut` floor: a ring's first level) is `[z]`.
 #[must_use]
-pub(super) fn peck_depths(moves: &[Move], xy: Point2, z: f64, r: f64, step: f64, uncut: Option<f64>) -> Vec<f64> {
+pub(super) fn peck_depths(
+    moves: &[Move],
+    xy: Point2,
+    z: f64,
+    r: f64,
+    step: f64,
+    uncut: Option<f64>,
+) -> Vec<f64> {
     let Some(uncut) = uncut else { return vec![z] };
     if !(step.is_finite() && step > 0.0 && z.is_finite()) {
         return vec![z];
     }
     let floor = disc_floor(moves, xy, r, uncut);
     let mut out = Vec::new();
-    let mut d = floor - step;
-    while d > z + Z_EPS && out.len() < MAX_PECKS {
+    // The contour's level budget already bounds this span to 100,000
+    // stepdowns. Do not truncate it: an appended target after a cap can
+    // turn the last peck into a cut thousands of stepdowns deep.
+    // Compute each depth from the floor to avoid accumulated subtraction.
+    let mut index = 1_u32;
+    loop {
+        let d = floor - f64::from(index) * step;
+        if d <= z + Z_EPS {
+            break;
+        }
         out.push(d);
-        d -= step;
+        index += 1;
     }
     out.push(z);
     out
@@ -152,14 +153,6 @@ fn push_pecks(b: &mut PathBuilder, xy: Point2, depths: &[f64], retract: f64, h: 
     }
 }
 
-/// Distance from `p` to the segment `a -> b`.
-fn seg_dist(p: Point2, a: Point2, b: Point2) -> f64 {
-    let (dx, dy) = (b.x - a.x, b.y - a.y);
-    let dd = dx * dx + dy * dy;
-    let t = if dd > 0.0 && dd.is_finite() { (((p.x - a.x) * dx + (p.y - a.y) * dy) / dd).clamp(0.0, 1.0) } else { 0.0 };
-    (p.x - a.x - t * dx).hypot(p.y - a.y - t * dy)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,5 +167,54 @@ mod tests {
     fn a_dive_into_uncut_stock_pecks_one_stepdown_at_a_time() {
         let d = peck_depths(&[], Point2::new(0.0, 0.0), -18.0, 3.0, 4.5, Some(0.0));
         assert_eq!(d, vec![-4.5, -9.0, -13.5, -18.0]);
+    }
+    #[test]
+    fn an_offset_column_leaves_an_uncut_rim() {
+        // At x=-3 the new disc lies 3.002 mm from the prior column's
+        // centre. Its actual 3 mm radius cannot clear that rim point.
+        let prior = Move::new(
+            MoveKind::Plunge,
+            Point3::new(0.002, 0.0, 0.0),
+            Point3::new(0.002, 0.0, -18.0),
+            Some(100.0),
+        );
+        let xy = Point2::new(0.0, 0.0);
+        assert_eq!(disc_floor(&[prior], xy, 3.0, 0.0), 0.0);
+        assert_eq!(
+            peck_depths(&[prior], xy, -18.0, 3.0, 4.5, Some(0.0)),
+            vec![-4.5, -9.0, -13.5, -18.0]
+        );
+    }
+
+    #[test]
+    fn an_offset_straight_cut_does_not_prove_full_disc_coverage() {
+        let prior = Move::new(
+            MoveKind::Feed,
+            Point3::new(-5.0, 0.002, -18.0),
+            Point3::new(5.0, 0.002, -18.0),
+            Some(100.0),
+        );
+        // The analytic distance of (0,-3) to the segment is 3.002 mm.
+        assert_eq!(disc_floor(&[prior], Point2::new(0.0, 0.0), 3.0, 0.0), 0.0);
+        // A centre exactly on this straight cut proves the whole disc.
+        assert_eq!(
+            disc_floor(&[prior], Point2::new(0.0, 0.002), 3.0, 0.0),
+            -18.0
+        );
+    }
+
+    #[test]
+    fn a_dive_beyond_4096_pecks_preserves_every_stepdown() {
+        let depths = peck_depths(&[], Point2::new(0.0, 0.0), -50.0, 3.0, 0.01, Some(0.0));
+        assert_eq!(depths.len(), 5000);
+        let mut previous = 0.0;
+        for depth in depths {
+            assert!(
+                previous - depth <= 0.01 + 1e-10,
+                "unsafe final cut: {previous} -> {depth}"
+            );
+            previous = depth;
+        }
+        assert_eq!(previous, -50.0);
     }
 }
