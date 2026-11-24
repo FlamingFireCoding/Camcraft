@@ -88,7 +88,7 @@ fn contents(ui: &mut Ui, state: &mut State) {
     // side preview, under the fields; it draws the profile tab's draft
     // through `preview_inputs`. #2397: the Body / Profile tabs and the
     // shape editor live in their own window ("Edit tool shape").
-    let (body, steel) = super::tool_profile_page::preview_inputs(state, exists);
+    let (body, steel) = super::tool_preview_inputs::preview_inputs(state, exists);
     super::tool_preview::draw(ui, &preview_tool, u, body.as_deref(), steel.as_deref(), false);
 }
 

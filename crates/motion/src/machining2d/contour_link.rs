@@ -272,13 +272,16 @@ pub(super) fn wall_arc_hop(b: &mut PathBuilder, p: &ContourParams, hop_z: f64) {
     b.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, p.clearance_z), None);
 }
 
-/// Tab window to tab window: up over the tab, across, down.
-pub(super) fn tab_window_dive(b: &mut PathBuilder, p: &ContourParams, e2: Point2, hop_z: f64, lead_top: f64) {
+/// Tab window to tab window: up over the tab, across, down. Below a ring's
+/// first level (`uncut` is `Some`) the dive pecks where it would go more
+/// than one stepdown below the floor under the disc (#3678).
+pub(super) fn tab_window_dive(b: &mut PathBuilder, p: &ContourParams, e2: Point2, hop_z: f64, lead_top: f64, uncut: Option<f64>) {
     let cur = b.at();
     b.push(MoveKind::Feed, Point3::new(cur.x, cur.y, hop_z), Some(p.feed));
     b.push(MoveKind::Rapid, Point3::new(e2.x, e2.y, hop_z), None);
     guard(b, p, e2, lead_top, p.entry_top(), "the dive past a tab");
-    b.push(MoveKind::Plunge, Point3::new(e2.x, e2.y, lead_top), Some(p.plunge_feed));
+    let pf = p.plunge_feed;
+    super::contour_peck::dive(b, p, e2, lead_top, uncut, hop_z, pf, |b, d| b.push(MoveKind::Plunge, Point3::new(e2.x, e2.y, d), Some(pf)));
 }
 
 /// A bore-side ring that follows another one at its level, entered by the

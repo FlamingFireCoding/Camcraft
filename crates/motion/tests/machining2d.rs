@@ -753,7 +753,20 @@ fn tabs_hold_the_part_until_the_floor() {
     let t = contour(&rect(0.0, 0.0, 20.0, 20.0), &p).expect("valid");
     // Levels -3 and -4 (the tab top, #2579) run a full ring, -6 runs
     // four subpaths between tabs (#2004: no air level at Top Z 0).
-    assert_eq!(plunge_xy(&t).len(), 6);
+    // An entry ends with a plunge followed by the in-plane cut. An
+    // intermediate peck instead retracts by rapid before the next peck.
+    let entries = t.moves.windows(2).filter(|pair| {
+        pair[0].kind == MoveKind::Plunge && pair[1].kind == MoveKind::Feed && pair[1].from.z == pair[1].to.z
+    }).count();
+    assert_eq!(entries, 6);
+    assert_eq!(t.moves.iter().filter(|m| m.kind == MoveKind::Plunge && m.to.z == -6.0).count(), 4);
+    // The four window starts are inside corner arcs. Unknown full-disc
+    // coverage conservatively adds one peck at -3 before each -6 entry.
+    let pecks: Vec<_> = t.moves.windows(2).filter(|pair| {
+        pair[0].kind == MoveKind::Plunge && pair[1].kind == MoveKind::Rapid
+    }).collect();
+    assert_eq!(pecks.len(), 4);
+    assert!(pecks.iter().all(|pair| pair[0].to.z == -3.0));
     // Hop motion only at the tabbed level: three retract feeds + rapids.
     let up = t
         .moves
@@ -1067,11 +1080,12 @@ fn every_outside_ring_of_several_parts_is_entered_by_the_wall_side_ramp() {
 }
 
 /// #3888: the outside ramp's params under one compensation, with the
-/// straight lead-in that control and wear need (radius 5).
+/// straight Perpendicular lead-in that control and wear need (radius 5)
+/// - #3891 refuses the Linear shape, whose start rides the ring line.
 fn ramped_comp(side: Side, entry: Entry3D, comp: Compensation) -> ContourParams {
     let mut p = outside_ramped(entry, 5.0);
     p.side = side;
-    p.lead = Lead::Linear { length: 6.0 };
+    p.lead = Lead::Perpendicular { length: 6.0 };
     p.links.approach.compensation = comp;
     p
 }
@@ -1110,9 +1124,103 @@ fn a_wall_side_ramp_in_computer_compensation_is_unchanged() {
     let (worst, axial) = steepest_descent(&comp);
     assert!(worst > 1.0 && worst <= 5.0 + 1e-3 && axial == 0, "it ramps: {worst} {axial}");
     let mut plain = outside_ramped(Entry3D::Ramp, 5.0);
-    plain.lead = Lead::Linear { length: 6.0 };
+    plain.lead = Lead::Perpendicular { length: 6.0 };
     let plain = contour(&rect(0.0, 0.0, 30.0, 30.0), &plain).expect("default ramp");
     assert_eq!(comp.moves, plain.moves);
+}
+
+/// #3891: the XY distance of `(x, y)` from the 30 x 30 part's boundary,
+/// outside it (the wall side) or inside it (the bore side).
+fn wall_gap(x: f64, y: f64, inside: bool) -> f64 {
+    if inside {
+        x.min(30.0 - x).min(y).min(30.0 - y)
+    } else {
+        let (ox, oy) = ((0.0 - x).max(x - 30.0), (0.0 - y).max(y - 30.0));
+        ox.max(0.0).hypot(oy.max(0.0))
+    }
+}
+
+/// #3891: every cut-adjacent move before each span's engage keeps the
+/// Perpendicular lead's length beyond the ring line, so a register
+/// difference up to that length cannot reach the finished wall while
+/// G40 is active.
+fn pre_engage_gaps(t: &Toolpath, inside: bool) -> Vec<f64> {
+    let mut gaps = Vec::new();
+    let mut prev_end = 0usize;
+    for c in &t.comps {
+        for m in &t.moves[prev_end..c.first] {
+            if m.kind != MoveKind::Rapid {
+                gaps.push(wall_gap(m.to.x, m.to.y, inside));
+            }
+        }
+        prev_end = c.last + 1;
+    }
+    gaps
+}
+
+#[test]
+fn a_linear_lead_under_control_or_wear_is_refused_by_name_on_both_sides() {
+    // #3891: a Linear lead's start rides the ring's own offset line, so
+    // the Plunge's dive there (and the Arc entry's chord, tangent to the
+    // lead) stand the nominal radius off the finished wall under G40 -
+    // a register over the nominal radius cuts it. The door refuses the
+    // shape for both ends, before any geometry.
+    for comp in [Compensation::Control, Compensation::Wear] {
+        for side in [Side::Outside, Side::Inside] {
+            let want = format!("{} compensation does not ride a Linear lead-in", comp.label());
+            let mut p = ramped_comp(side, Entry3D::Plunge, comp);
+            p.lead = Lead::Linear { length: 6.0 };
+            let why = format!("{:?}", contour(&rect(0.0, 0.0, 30.0, 30.0), &p).expect_err("a Linear lead-in"));
+            assert!(why.contains(&want), "{comp:?} {side:?}: {why}");
+            // The lead-out is the same law: the cancel's withdrawal ends
+            // on the ring's own offset, past G40.
+            let mut p = ramped_comp(side, Entry3D::Plunge, comp);
+            p.links.approach.lead_out = Some(Lead::Linear { length: 6.0 });
+            let why = format!("{:?}", contour(&rect(0.0, 0.0, 30.0, 30.0), &p).expect_err("a Linear lead-out"));
+            assert!(why.contains("does not ride a Linear lead-out"), "{comp:?} {side:?}: {why}");
+            assert!(why.contains(&format!("{} compensation", comp.label())), "{comp:?} {side:?}: {why}");
+            // The same parameters in computer generate: the option only
+            // narrows the compensated modes.
+            let mut plain = ramped_comp(side, Entry3D::Plunge, comp);
+            plain.lead = Lead::Linear { length: 6.0 };
+            plain.links.approach.lead_out = Some(Lead::Linear { length: 6.0 });
+            plain.links.approach.compensation = Compensation::Computer;
+            contour(&rect(0.0, 0.0, 30.0, 30.0), &plain).expect("computer takes the Linear lead");
+        }
+    }
+}
+
+#[test]
+fn the_perpendicular_comp_entry_keeps_the_lead_length_beyond_the_ring() {
+    // #3891: with the Linear shape refused, every pre-engage move the
+    // Plunge and the Arc entry post holds at least the lead length (6,
+    // one over the radius 5) beyond the ring line - the register
+    // difference the door can vouch for. The bore side is pinned here:
+    // a whole-model source cannot post it.
+    for comp in [Compensation::Control, Compensation::Wear] {
+        for side in [Side::Outside, Side::Inside] {
+            let inside = side == Side::Inside;
+            for entry in [Entry3D::Plunge, Entry3D::Arc] {
+                let t = contour(&rect(0.0, 0.0, 30.0, 30.0), &ramped_comp(side, entry, comp))
+                    .unwrap_or_else(|e| panic!("{comp:?} {side:?} {entry:?}: {e:?}"));
+                assert!(!t.comps.is_empty(), "{comp:?} {side:?} {entry:?}: one span per level");
+                let gaps = pre_engage_gaps(&t, inside);
+                assert!(!gaps.is_empty(), "{comp:?} {side:?} {entry:?}: the descents stand");
+                let worst = gaps.iter().copied().fold(f64::INFINITY, f64::min);
+                assert!(
+                    worst + 1e-6 >= 11.0,
+                    "{comp:?} {side:?} {entry:?}: the closest pre-engage position is {worst:.3} mm off the wall, \
+                     not the radius 5 plus the lead 6"
+                );
+                // The closest position is the dive point itself: the
+                // geometry the door vouches for, nothing closer.
+                assert!(
+                    (worst - 11.0).abs() <= 0.01,
+                    "{comp:?} {side:?} {entry:?}: the dive point sits {worst:.3} mm out, not r + lead"
+                );
+            }
+        }
+    }
 }
 
 #[test]

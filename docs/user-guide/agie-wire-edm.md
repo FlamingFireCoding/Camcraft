@@ -6,7 +6,7 @@ CamCraft writes the nominal contour, resource manifest and piece script directly
 
 1. Mount **AGIECUT Classic 2S (template)** as the setup machine. In the machine editor, open **EDM** and add a condition with ID **AGIE_QN2**, role **rough**, wire diameter **0.25 mm** and preview gap **0.005 mm**. Apply this change to the mounted machine. Choose **Native wire EDM job files** in the post picker.
 2. Define axis-aligned rectangular stock at most 350 × 250 mm in plan. Choose a stock thickness of 15, 20, 40 or 80 mm. The stock and work origin together must fit that span. Verify the installed work datum and the available axis travel on Agie Control. CamCraft refuses profiles with a stated X or Y travel limit because its preview cannot check the full resident path against that limit. Put the first, unrotated work origin on the stock top. Its XY position determines the job coordinates.
-3. Use one modeled workpiece and create one **Wire Contour**. For two punches on the same stock, follow **Group two captured punches** below. For a die opening, follow **Select a die opening** below. For a punch, select the complete punch model. Use a punch with straight sides, vertical walls and flat ends at the stock planes. Angled faces are supported. Leave at least 0.4 mm of stock around the nominal polygon. Acute corners can need more stock: the post also checks the intersection of the two offset face lines and the swept wire at that corner. CamCraft checks each corner with the measured rough offset for the selected stock thickness. The stock margin includes the 0.125 mm wire radius. Some reentrant contours are supported. A tight inside corner fails if the rough offset for the selected stock thickness leaves more than 0.002 mm at the nominal vertex. Short segments and closely spaced faces fail if adjacent rough paths could meet. The punch must have a straight outer face that allows the lead to stay entirely on the waste side. Additional bodies, selected subprofiles, holes and steps are refused. Select a 0.25 mm wire and condition **AGIE_QN2**. Set the work planes to the stock top and bottom, and specify how the punch is captured. The capture setting confirms support for the punch when it is released. Keep the wire vertical. Taper, four-axis, burnout, explicit skims, tabs and fixture models are unsupported.
+3. Use one modeled workpiece and create one **Wire Contour**. For two to nine punches on the same stock, follow **Group captured punches** below. For a die opening, follow **Select a die opening** below. For two openings in one plate, follow **Group two die openings in one plate** below. For a punch, select the complete punch model. Use a punch with straight sides, vertical walls and flat ends at the stock planes. Angled faces are supported. Leave at least 0.4 mm of stock around the nominal polygon. Acute corners can need more stock: the post also checks the intersection of the two offset face lines and the swept wire at that corner. CamCraft checks each corner with the measured rough offset for the selected stock thickness. The stock margin includes the 0.125 mm wire radius. Some reentrant contours are supported. A tight inside corner fails if the rough offset for the selected stock thickness leaves more than 0.002 mm at the nominal vertex. Short segments and closely spaced faces fail if adjacent rough paths could meet. The punch must have a straight outer face that allows the lead to stay entirely on the waste side. Additional bodies, selected subprofiles, holes and steps are refused. Select a 0.25 mm wire and condition **AGIE_QN2**. Set the work planes to the stock top and bottom, and specify how the punch is captured. The capture setting confirms support for the punch when it is released. Keep the wire vertical. Taper, four-axis, burnout, explicit skims, tabs and fixture models are unsupported.
 4. Place the centre of a predrilled 2 mm threading hole in the waste. The entire hole must be inside the stock. Allow a perpendicular approach to the interior of a straight face with at least 3 mm of lead and at least 3 mm of straight face on each side of the entry. Generate the operation.
 5. Open **Post**, choose **One program** and keep the general post settings at their defaults. Under **Wire EDM technology**, set **Separation cut length (mm)** to **1.0**. For a closed contour, zero leaves the separation unspecified and blocks the post. For an open cutoff, see **Post a straight open cutoff**. This length applies to the separation segment that Agie Control generates. Check its position, trims and release sequence in the control’s job preview. Enter the parent folder and a fresh **Job folder name** such as `PUNCH40`. Use up to eight uppercase letters or digits, beginning with a letter. The post publishes the entire directory after validation. To retain an earlier job, give the new one a different name.
 
@@ -17,6 +17,20 @@ Use a 20 mm thick retained plate with one through-opening, planar caps and verti
 The opening must be convex. The control offsets a die toward the inside of the opening, so each corner of the opening is an inside corner of the plate. Each corner fails if the rough offset of the 20 mm row (0.245 mm) leaves more than 0.002 mm at the nominal vertex. A square corner fails. Fine facets, as on the faceted ends of the example, pass. Leave at least 0.4 mm of plate and stock between each wall and the stock edge.
 
 Place the complete 2 mm threading hole inside the opening. CamCraft enters the nearest straight wall that has at least 3 mm of lead from the hole and at least 3 mm of straight wall on each side of the perpendicular entry. The entry point stays at least 0.4 mm from each other wall. The ISO object lists the nominal opening counter-clockwise from the entry, and the setup script states the die side (`c_die`).
+
+### Group two die openings in one plate
+
+Use one retained plate with exactly two through-openings, one setup, 20 mm stock and the same **AGIE_QN2** wire condition for both operations. The plate must be the only model, with no placed drawing. Create one **Wire Contour** for each opening. Select each opening's upper rim, enter its own threading hole inside that opening and confirm capture for its slug. Each opening must meet the rules of **Select a die opening** above. Leave a clear band of plate along X or Y between the two cutting areas. The cutting area of each work includes the opening, its threading hole, the 3 mm lead, the furthest rough corner and the 0.125 mm wire radius. Generate both operations and post to a new job folder with a name of up to seven characters. CamCraft refuses a punch and a die in one group, the same opening selected twice, a plate with another number of openings and AGIE_BERCO_RA035.
+
+Run the original two-opening example from the project root.
+
+```sh
+cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/die-pair.camscript
+```
+
+The `DUODI20` folder contains two ISO files, one SBR and one SBL. The left work `CUT1` threads at X−35.5 Y0. The right work `CUT2` threads at X24.5 Y0. Both works state the die side (`c_die`) and refer to one CCB030 quality. Assign the TECCUT row to each work.
+
+In the offline control check, each work showed **Matrijs** and `CCB030[4]` after TECCUT, with offsets of 0.245, 0.155, 0.140 and 0.134 mm inside its opening. The formal check reported no errors. The plot cut the main pass of both openings first, then the two 1 mm separations, then the three trims of `CUT1` and the three trims of `CUT2`. No cutting move crossed the plate between the openings. Support both slugs before the control releases each separation section. Check each inward offset and the release of both slugs in the control preview before running the job.
 
 ### QN2 offsets by stock thickness
 
@@ -59,13 +73,13 @@ Run `cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/notche
 
 Run `cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/die-plate.camscript` for a die opening. The script selects the complete upper rim of a 60 × 60 × 20 mm plate in 70 × 70 × 20 mm stock. The 38-sided opening has straight walls at X±12.5 and faceted semicircular ends. The `DIE20` job enters the wall at X−12.5 Y0 from the hole at X−5.5 Y0. It opens with zero erosion steps. Its setup script is the punch setup with the die side.
 
-## Group two captured punches
+## Group captured punches
 
-Use one setup with 20 mm stock and two complete modeled punches. Create a **Wire Contour** for each punch. Select the punch model, the wire side **Punch** and the same wire tool and condition **AGIE_QN2** for both. Give each operation its own threading hole, and confirm the capture separately for each punch. Each model must be the punch of one operation. Another model, a die opening, an open cutoff or a third operation is refused.
+Use one setup with 20 mm stock and two to nine complete modeled punches. Create a **Wire Contour** for each punch. Select the punch model, the wire side **Punch** and the same wire tool and condition **AGIE_QN2** for all of them. Give each operation its own threading hole, and confirm the capture separately for each punch. Each model must be the punch of one operation. Another model, a placed drawing, a die opening, an open cutoff or a tenth operation is refused.
 
-Keep a clear band along X or Y between the complete cutting areas of the two punches. The area of each punch includes the solid, the threading hole, the 3 mm lead, the furthest rough corner of the 20 mm row and the 0.125 mm wire radius. CamCraft refuses the job when the two areas are not separated. This check can refuse some safe nested or diagonal layouts.
+Keep a clear band along X or Y between the complete cutting areas of every pair of punches, also of two punches that are not adjacent in the program. The area of each punch includes the solid, the threading hole, the 3 mm lead, the furthest rough corner of the 20 mm row and the 0.125 mm wire radius. CamCraft refuses the job when two areas are not separated, and the message names the two works. This check can refuse some safe nested or diagonal layouts.
 
-Choose a new job name of up to seven letters and digits. The post adds `1` and `2` to the name for the two ISO objects, for example `PAIR201.ISO` and `PAIR202.ISO`. The one SBR lists both ISO objects, and the one SBL has one group with the works `CUT1` and `CUT2` in program order. Both works use the stock origin and the one requested quality. Each work opens with zero erosion steps. Assign TECCUT to each work. In the control preview, check the profile and separation sequence and the threading hole of each work. The control can complete the profile passes of both punches before it starts their separation cuts.
+Choose a new job name of up to seven letters and digits. The post adds one digit to the name for each ISO object, for example `PAIR201.ISO` and `PAIR202.ISO`. The one SBR lists all ISO objects, and the one SBL has one group with the works `CUT1`, `CUT2` and so on in program order. All works use the stock origin and the one requested quality. Each work opens with zero erosion steps. Assign TECCUT to each work. In the control preview, check the profile and separation sequence and the threading hole of each work. The control can complete the profile passes of all punches before it starts their separation cuts.
 
 Run the original example from the repository root:
 
@@ -74,6 +88,13 @@ cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/punch-pair.
 ```
 
 The left rectangular punch starts at X-30 Y0. The right five-sided punch starts at X1 Y0. Copy all four files of the `PAIR20` directory together.
+
+The three-punch example writes a five-file `TRIO20` job. The grid example places nine rectangular punches on a 32 mm pitch on 120 × 100 × 20 mm stock and writes eleven files in the `NINE20` directory. Each punch starts 13 mm left of its centre.
+
+```sh
+cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/punch-trio.camscript
+cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/punch-grid.camscript
+```
 
 ## Post a straight open cutoff
 

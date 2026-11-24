@@ -1,9 +1,9 @@
 //! #3893 (U2 of #3663): the Tool tab of the tool library window's editor -
 //! the type, the geometry and the rows that the tool's kind reads. It
 //! calls the same rows as Properties (`tool_settings_grid::geometry`, which
-//! draws `kind_rows`), so a new kind row lands in one place. The holder,
-//! the recipes and the drawing come to the window later (U3 to U5);
-//! Properties keeps them until then.
+//! draws `kind_rows`), so a new kind row lands in one place. The preview
+//! stands above the tabs (U3, `preview`); the holder and the recipes come
+//! to the window later (U4, U5) and Properties keeps them until then.
 //! Provenance: our own tab over the tool draft; no HSMWorks material
 //! involved.
 
