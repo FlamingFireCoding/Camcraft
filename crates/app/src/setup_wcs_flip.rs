@@ -133,7 +133,7 @@ fn op_problem(op: &Operation, cache: Option<crate::schema::Toolpath>) -> Option<
             | OpParams::MultiAxisRough { .. }
             | OpParams::Flow5D { .. }
             | OpParams::MultiAxisContour { .. }
-            | OpParams::MultiAxisContour { .. } | OpParams::MultiAxisDeburr { .. }
+            | OpParams::MultiAxisDeburr { .. }
             // #2826: the band's cylinders and rotary words are not
             // verified mirrored.
             | OpParams::RotaryFlow { .. }
