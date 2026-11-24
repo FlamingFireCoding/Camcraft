@@ -103,6 +103,7 @@ impl CreateOperation {
             skims: Vec::new(),
             four_axis: None,
             sharp_corners: false,
+            overlap: 0.0,
         });
         Self::build(world, name, tool, src, params, true)
     }
