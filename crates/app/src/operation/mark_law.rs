@@ -22,6 +22,8 @@
 //! model does not show is a gouge: cut it shallower, or model it (a
 //! modelled groove is the part's own surface, and the law reads it as
 //! such).
+//! A V-carve instead limits its budget to the cone height:
+//! `min(Top - Bottom, cutter radius / tan(included angle / 2))`.
 //!
 //! The test is the solid law run against the part LOWERED by the
 //! budget: a cutter that still enters the lowered part stands more than
@@ -55,6 +57,7 @@
 use crate::cl::Toolpath;
 use crate::geometry::{Point3, Triangle};
 use crate::schema::Operation;
+use crate::tools::Tool;
 use crate::units::{self, Unit};
 use crate::verify::{self, Warning, MARK_FLOOR};
 
@@ -66,21 +69,37 @@ use super::OpParams;
 /// exactly).
 const STEP: f64 = 0.25;
 
-/// The mark budget of a cut from `top` to `bottom` with a cutter of
-/// radius `cutter_r`: the lesser of the two, never negative; zero (no
+/// The mark budget of a cut from `top` to `bottom` with a cutter depth
+/// limit `cutter_depth`: the lesser of the two, never negative; zero (no
 /// entry at all is a mark) when a number is not finite.
 #[must_use]
-pub fn budget(top: f64, bottom: f64, cutter_r: f64) -> f64 {
-    if !(top.is_finite() && bottom.is_finite() && cutter_r.is_finite()) {
+pub fn budget(top: f64, bottom: f64, cutter_depth: f64) -> f64 {
+    if !(top.is_finite() && bottom.is_finite() && cutter_depth.is_finite()) {
         return 0.0;
     }
-    (top - bottom).min(cutter_r).max(0.0)
+    (top - bottom).min(cutter_depth).max(0.0)
+}
+
+/// The cutter's depth limit for a mark: the radius for a line mark,
+/// or the cone height for a V-carve (the handbook cone law).
+#[must_use]
+pub fn cutter_depth_limit(params: &OpParams, tool: &Tool) -> f64 {
+    let radius = tool.diameter * 0.5;
+    if matches!(params, OpParams::VCarve { .. }) {
+        if !(tool.tip_angle > 0.0 && tool.tip_angle < 180.0) {
+            return 0.0;
+        }
+        radius / (tool.tip_angle.to_radians() * 0.5).tan()
+    } else {
+        radius
+    }
 }
 
 /// Whether `params` is a kind the mark law speaks for.
 #[must_use]
 pub fn is_mark_kind(params: &OpParams) -> bool {
-    matches!(params, OpParams::Engrave { .. } | OpParams::Trace { .. })
+    // #1443: a V-carve marks the part as an engrave does.
+    matches!(params, OpParams::Engrave { .. } | OpParams::Trace { .. } | OpParams::VCarve { .. })
 }
 
 /// The mark an operation declares for the program sim (#1595, #1627):
@@ -186,6 +205,7 @@ pub(super) struct Marked {
 /// part; a rapid that does a `RapidInStock`. Returns what each reading
 /// found (a move two readings convict is counted under both and
 /// reported once).
+#[allow(clippy::too_many_arguments)] // the path, part, cutter, budget and recorded fidelity law
 pub(super) fn mark_into(
     warns: &mut Vec<Warning>,
     path: &Toolpath,
@@ -193,11 +213,12 @@ pub(super) fn mark_into(
     cutter: &verify::Cutter,
     budget: f64,
     excess: f64,
+    file_tolerance: bool,
 ) -> Marked {
     let law = verify::SolidLaw {
         step: STEP,
         // #864: less a coarse model's excess, while that is honest.
-        allow: verify::excess_floor(GOUGE_TOL, excess).unwrap_or(GOUGE_TOL),
+        allow: verify::excess_floor_for(GOUGE_TOL, excess, file_tolerance).unwrap_or(GOUGE_TOL),
         hole_walls: false,
     };
     let budget = if budget.is_finite() { budget.max(0.0) } else { 0.0 };

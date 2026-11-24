@@ -120,6 +120,7 @@ fn punch(machine: &str, mesh: Mesh, pick: bool, four_axis: Option<WireFourAxis>)
         clearance: camcraft_app::operation::DEFAULT_CLEARANCE,
         four_axis,
         skims: Vec::new(),
+        sharp_corners: false,
     };
     let c = CreateOperation::new(&world, "Punch1", "EDM-W025", src, OpParams::WireContour(op)).expect("op");
     h.execute(&world, c);
@@ -168,15 +169,15 @@ fn an_angle_word_punch_posts_its_golden_with_the_mitre_rule() {
     golden(NC, &text);
     let lines: Vec<&str> = text.lines().collect();
     let at = |w: &str| lines.iter().position(|l| *l == w).unwrap_or_else(|| panic!("no {w} in\n{text}"));
-    let (on, ang, off, cut) = (at("FX-TAPER-ON"), at("FX-ANGLE A3"), at("FX-TAPER-OFF"), at("FX-CUT"));
+    let (on, ang, off, cut) = (at("FX-TAPER-ON"), at("FX-ANGLE A3."), at("FX-TAPER-OFF"), at("FX-CUT"));
     assert!(on + 1 == ang && ang < off && off < cut, "{text}");
     assert!(!text.contains(" U") && !text.contains(" V"), "no U V words: {text}");
-    assert_eq!(lines[off + 1], "G1 X-30 Y0", "the taper is switched off before the lead-out stands the wire upright: {text}");
+    assert_eq!(lines[off + 1], "G1 X-30. Y0.", "the taper is switched off before the lead-out stands the wire upright: {text}");
     assert!(lines[ang + 1..off].contains(&"G1 X-20.165 Y-10.165"), "X Y on the top plane, at the kerf: {text}");
     // The other side rule writes the other sign.
     let (world, made) = punch(&angle_machine(&rules("mitre")).replace("top_left", "top_right"), block(), false, None);
     made.expect("generates");
-    assert!(post(&world, "right").expect("posts").contains("FX-ANGLE A-3"));
+    assert!(post(&world, "right").expect("posts").contains("FX-ANGLE A-3."));
 }
 
 /// Done means: under the cone rule the path pivots about each top

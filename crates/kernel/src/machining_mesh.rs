@@ -297,14 +297,24 @@ pub(crate) fn planned(
         }
         let tol = MeshTolerance::chord(chord);
         let planned = catch_unwind(AssertUnwindSafe(|| {
-            solidcore_tess::plan(record, &tol, size)
+            let planned = solidcore_tess::plan(record, &tol, size)?;
+            // The display planner can exhaust its face refinement budget.
+            // Try the constrained mesh path; all acceptance checks still apply.
+            if planned.1.over_tolerance.iter().any(|o| !o.within) && !stop.is_cancelled() {
+                solidcore_tess::mesh(record, &solidcore_tess::MeshSpec::chord(chord), size, None)
+            } else {
+                Ok(planned)
+            }
         }))
         .map_err(|_| MeshRefusal::Planner("the planner panicked".into()))?;
-        let (plan, stats) = planned.map_err(|e| MeshRefusal::Planner(e.to_string()))?;
+        let (mut plan, stats) = planned.map_err(|e| MeshRefusal::Planner(e.to_string()))?;
         if stop.is_cancelled() {
             return Err(MeshRefusal::TimedOut("planning"));
         }
         let (mut notes, left_out) = judge(&stats, keep_left_out)?;
+        // A runaway strip is divided over its boundary nodes (#2844); the
+        // measure below judges the plan as it then stands.
+        notes.extend(crate::mesh_redivide::redivide(&mut plan, record, tol_mm, stop));
         let planned_tris: usize = plan.faces.iter().map(|f| f.triangles.len()).sum();
         if planned_tris > MAX_MACHINING_TRIANGLES {
             return Err(MeshRefusal::TooLarge(planned_tris));

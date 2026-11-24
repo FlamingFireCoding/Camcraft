@@ -38,15 +38,30 @@ impl DoNotTouch {
             && self.clearance >= 0.0
             && self.clearance <= AREA_DISTANCE_MAX
             && self.picks.iter().all(|g| {
-                !g.entity.is_empty() && !matches!(g.feature, FeatureSel::Vertex(_))
+                !g.entity.is_empty()
+                    && !matches!(
+                        g.feature,
+                        FeatureSel::Vertex(_) | FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_)
+                    )
             })
     }
 }
 
-/// First-slice operations that honor "Do not touch" across all generators.
+/// Operations that honor "Do not touch" across generation and
+/// verification; 2D Adaptive with both methods (#3346), 3D Finish (#3347),
+/// and Engrave (#3349).
 #[must_use]
 pub fn do_not_touch_applies(kind: OpType) -> bool {
-    matches!(kind, OpType::Offset2D | OpType::Pocket3D)
+    matches!(
+        kind,
+        OpType::Offset2D
+            | OpType::Adaptive2D
+            | OpType::Pocket3D
+            | OpType::Trace
+            | OpType::Finish3D
+            | OpType::Face
+            | OpType::Engrave
+    )
 }
 
 /// User-facing refusal when "Do not touch" is set on an unsupported operation kind.
@@ -56,7 +71,7 @@ pub fn do_not_touch_unsupported(kind: OpType) -> Option<String> {
         None
     } else {
         Some(format!(
-            "'Do not touch' is supported on 2D Offset and 3D Pocket operations only so far - clear it on {kind}"
+            "'Do not touch' is supported on Trace, 2D Offset, 2D Adaptive, 3D Pocket, Face, 3D Finish and Engrave operations - clear it on {kind}"
         ))
     }
 }
@@ -70,6 +85,8 @@ pub fn describe_sel(g: &GeoSel) -> String {
         FeatureSel::Patch(_) => "patch",
         FeatureSel::Chain(_) => "edge chain",
         FeatureSel::Vertex(_) => "vertex",
+        FeatureSel::SketchChain(_) => "sketch chain",
+        FeatureSel::SketchLayer(_) => "sketch layer",
     };
     let _ = write!(s, "{} {kind} #{:x}", g.entity, g.feature.id());
     s
