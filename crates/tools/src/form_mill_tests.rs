@@ -18,7 +18,7 @@ fn mill(preset: FormPreset, pilot_len: f64) -> Tool {
 /// The widest radius the meridian's cutting segments reach.
 fn cutting_radius(t: &Tool) -> f64 {
     let m = t.meridian().unwrap_or_else(|e| panic!("{}: {e}", t.kind));
-    m.points().windows(2).zip(m.cutting()).filter(|(_, c)| **c).fold(0.0, |r, (w, _)| r.max(w[0].r).max(w[1].r))
+    m.points().windows(2).zip(m.cutting()).filter(|(_, c)| **c).fold(0.0_f64, |r, (w, _)| r.max(w[0].r).max(w[1].r))
 }
 
 #[test]
@@ -121,11 +121,11 @@ fn the_side_view_never_falls_inside_the_form() {
         // polygon, a concave one by its chords).
         for &(z, _) in prof.iter().filter(|p| p.0 > 1e-9 && p.0 < t.flute_len - 1e-9) {
             // A flat step has two vertices at one z: the wider one counts.
-            let r = prof.iter().filter(|q| (q.0 - z).abs() < 1e-12).fold(0.0, |m, q| m.max(q.1));
-            let want = atoms.iter().filter(|a| a.z0 - 1e-12 <= z && z <= a.z1 + 1e-12).fold(0.0, |m, a| m.max(a.rho(z)));
+            let r = prof.iter().filter(|q| (q.0 - z).abs() < 1e-12).fold(0.0_f64, |m, q| m.max(q.1));
+            let want = atoms.iter().filter(|a| a.z0 - 1e-12 <= z && z <= a.z1 + 1e-12).fold(0.0_f64, |m, a| m.max(a.rho(z)));
             assert!(r >= want - 1e-3, "{}: the side view is {r} at z {z}, the form {want}", FormPreset::NAMES[i]);
         }
-        let top = prof.iter().filter(|p| p.0 <= t.flute_len + 1e-9).fold(0.0, |m, p| m.max(p.1));
+        let top = prof.iter().filter(|p| p.0 <= t.flute_len + 1e-9).fold(0.0_f64, |m, p| m.max(p.1));
         assert!((top - t.diameter * 0.5).abs() < 1e-9, "{}: the widest cut is the diameter", FormPreset::NAMES[i]);
     }
 }
