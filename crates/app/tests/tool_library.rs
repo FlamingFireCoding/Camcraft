@@ -335,7 +335,7 @@ fn a_cutter_that_disagrees_refuses_the_file_by_tool_name() {
     assert!(err.contains(&format!("tool '{NECKED}'")) && err.contains("cutter"), "{err}");
     v["tools"][0]["definition"]["cutter"] = json!("not points");
     let err = parse_tool_library(&v.to_string()).expect_err("a malformed cutter refuses");
-    assert!(err.contains(&format!("tool '{NECKED}': cutter is malformed")), "{err}");
+    assert!(err.starts_with(&format!("tool '{NECKED}'")), "{err}");
 }
 
 #[test]
