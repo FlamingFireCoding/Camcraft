@@ -40,6 +40,12 @@ pub(crate) fn checks() -> u64 {
 fn cutter_outline(tool: &Tool, points: &[SpunPoint]) -> Outline {
     MEMO.with(|m| {
         let mut m = m.borrow_mut();
+        if let Some((t, p, out)) = m.as_ref()
+            && t == tool
+            && p.as_slice() == points
+        {
+            return out.clone();
+        }
         let _span = crate::frame_cost::span("ui/properties.tool.cutter_outline");
         CHECKS.with(|c| c.set(c.get().saturating_add(1)));
         let out = cutter_profile::check(tool, points.to_vec()).ok().map(|s| s.outline());

@@ -39,6 +39,11 @@ flutes on the 3D model are the follow-up #3908.
   `holder_d` x `holder_len`.
 - The Properties preview (`preview_inputs`) shows a landed drawn cutter on
   every tab, not only under "Draw cutter" (#93 leftover).
+- Review of PR #3914 (Frame cost): the Properties cutter check and outline
+  are memoised in `egui_app::tool_preview_inputs`, keyed on the draft tool
+  value and the cutter draft points, not on `doc_version`. `preview_inputs`
+  moved there out of `tool_profile_page` (415 -> 370 lines), along the seam
+  "what the Properties preview draws" versus "the shape editor's pane".
 
 **Dropped.**
 - Making `app::tool_body_view::revolve` public: a change in `crates/app`
