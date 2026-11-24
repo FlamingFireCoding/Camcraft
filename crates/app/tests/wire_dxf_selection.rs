@@ -1,5 +1,5 @@
 //! A single selected DXF wire profile through the ordinary command and post doors.
-//! Gate map (M4.4): covers app::operation (wire_sketch, wire_verify, job, stamp),
+//! Gate map (M4.4): covers app::operation (wire_sketch, wire_sketch_arcs, wire_verify, job, stamp),
 //! app::sketch_model, app::commands::SetOperationGeometry, app::posting.
 //! Provenance: original synthetic geometry and the existing fictional wire machine fixture.
 
@@ -17,6 +17,9 @@ use camcraft_app::{
     machine, model, posting, project, sketch, stock::StockShape, wire_tools, world::new_world,
 };
 use flecs_ecs::prelude::World;
+
+#[path = "wire_dxf_selection/arcs.rs"]
+mod arcs;
 
 const FIXTURE: &str = include_str!("edm/wire-iso-fixture.mch");
 const DXF: &str = "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n\
@@ -196,7 +199,7 @@ fn placed_chain_posts_one_offset_and_retains_its_identity_on_reopen() {
 }
 
 #[test]
-fn curved_pick_survives_but_generic_generation_refuses_and_undo_restores_the_pick() {
+fn curved_pick_survives_and_is_judged_on_its_arcs_and_undo_restores_the_pick() {
     let (world, mut h) = document(DXF);
     h.execute(
         &world,
@@ -207,7 +210,8 @@ fn curved_pick_survives_but_generic_generation_refuses_and_undo_restores_the_pic
     // from (-4, 5) to the R1 circle crosses the unselected outline.
     let why = refusal(&world);
     assert!(why.contains("cannot clear unselected DXF primitive"), "{why}");
-    // Other curved chains keep the straight-segment refusal of the generic path.
+    // #3937: a die on the circle is cut on its arcs; this start hole lies
+    // outside the circle, so the die is refused by name.
     let die = WireContourOp {
         side: WireSide::Die,
         ..wire_op()
@@ -216,7 +220,8 @@ fn curved_pick_survives_but_generic_generation_refuses_and_undo_restores_the_pic
         &world,
         EditOperationParams::new(&world, "Cut", OpParams::WireContour(die)).expect("die"),
     );
-    assert!(refusal(&world).contains("contains an arc or circle"));
+    let why = refusal(&world);
+    assert!(why.contains("lies outside the profile"), "{why}");
     assert!(h.undo(&world));
     assert!(h.undo(&world));
     h.execute(
