@@ -6,7 +6,7 @@
 use crate::catalog_asset::{CATALOG_JSON, parse_catalog};
 use crate::tools::{Tool, ToolKind, ToolMaterial, catalog, probe_tool, torch_tool};
 
-const ORDER: [&str; 41] = [
+const ORDER: [&str; 47] = [
     "EM-0200-2FL", "EM-0300-2FL", "EM-0400-2FL", "EM-0600-4FL", "EM-0800-4FL", "EM-1000-4FL", "EM-1200-2FL",
     "BN-0600", "BN-1000", "BB-1000-R1", "DR-0200", "DR-0300", "DR-0400", "DR-0600", "CM-0400-90", "CM-0600-90",
     "CM-1000-90",
@@ -18,6 +18,8 @@ const ORDER: [&str; 41] = [
     "TS-2000-0600", "KS-1600-0300", "DT-2000-60", "LP-1000",
     // #1883: the waterjet nozzle.
     "WJ-KERF-080",
+    // #3369: roundover, cove and V-groove form mills, in mm and inch.
+    "FM-RO-R6", "FM-RO-R0250IN", "FM-CV-R6", "FM-CV-R0250IN", "FM-VG-90-12", "FM-VG-90-0500IN",
 ];
 
 fn tool(name: &str) -> Tool {
@@ -149,4 +151,29 @@ fn a_catalog_electrode_keeps_its_outline() {
     let ell = vec![[-5.0, -4.0], [5.0, -4.0], [5.0, 0.0], [-1.0, 0.0], [-1.0, 4.0], [-5.0, 4.0]];
     assert_eq!(v[0].1, crate::electrode::electrode_outline_tool(&ell, 16.0, 15.0));
     assert!(parse_catalog(&file(def(12.0))).expect_err("sizes off the outline").contains("'E-L' is refused"));
+}
+
+/// #3369: the catalogue form mills write their outline from the preset,
+/// cut at the catalogue's diameter, and keep the pilot out of the cut.
+#[test]
+fn the_catalog_form_mills_cut_at_their_catalogue_diameter() {
+    for (name, d, pilot) in [
+        ("FM-RO-R6", 25.0, 5.0),
+        ("FM-RO-R0250IN", 25.4, 4.76),
+        ("FM-CV-R6", 25.0, 5.0),
+        ("FM-CV-R0250IN", 25.4, 4.76),
+        ("FM-VG-90-12", 12.0, 0.0),
+        ("FM-VG-90-0500IN", 12.7, 0.0),
+    ] {
+        let t = tool(name);
+        assert_eq!(t.kind, ToolKind::FormMill, "{name}");
+        assert_eq!(t.why_not_sane(), None, "{name}");
+        let form = t.form.clone().unwrap_or_default();
+        assert!(form.preset.is_some() && form.points.len() >= 3, "{name}: the preset wrote the points");
+        assert!((form.pilot_len - pilot).abs() < 1e-12, "{name}");
+        let m = t.meridian().unwrap_or_else(|e| panic!("{name}: {e}"));
+        let widest = m.points().iter().fold(0.0_f64, |r, p| r.max(p.r));
+        assert!((2.0 * widest - d).abs() < 1e-9, "{name}: cuts at {} mm", 2.0 * widest);
+        assert_eq!(m.cutting().contains(&false), pilot > 0.0, "{name}: only a pilot does not cut");
+    }
 }

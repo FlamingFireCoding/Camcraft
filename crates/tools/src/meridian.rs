@@ -192,6 +192,10 @@ impl Tool {
     /// by name.
     pub fn meridian(&self) -> Result<Meridian, MeridianError> {
         self.check_meridian_inputs()?;
+        // #3369: a form mill's meridian is its drawn outline.
+        if self.kind == ToolKind::FormMill {
+            return crate::form_mill::meridian(self);
+        }
         let (r, fl) = (self.diameter * 0.5, self.flute_len);
         let line = SpunPoint::line;
         // #3368: a flat or ball taper tip draws its own face and arc.
@@ -270,6 +274,7 @@ impl Tool {
                 | ToolKind::Keyseat
                 | ToolKind::Dovetail
                 | ToolKind::Lollipop
+                | ToolKind::FormMill
         ) {
             return Err(MeridianError::NotAMill(self.kind));
         }

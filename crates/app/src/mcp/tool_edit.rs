@@ -29,7 +29,7 @@ pub(super) fn edit_tool(env: &mut Env, a: &Map<String, Value>) -> Result<Value, 
     }
     let mut def = project::tool_to_json(&prev);
     merge(&mut def, &Value::Object(patch.clone()));
-    let next = project::tool_from_json(&def).map_err(|e| format!("bad tool patch: {e}"))?;
+    let next = project::tool_from_json(&def).map(settled).map_err(|e| format!("bad tool patch: {e}"))?;
     // serde drops keys it does not know; a dropped edit reads as done.
     let Value::Object(back) = project::tool_to_json(&next) else {
         return Err("the patched tool could not be read back".into());
@@ -51,6 +51,12 @@ pub(super) fn edit_tool(env: &mut Env, a: &Map<String, Value>) -> Result<Value, 
     if checked.get("tip_diameter").and_then(Value::as_f64) == Some(0.0) {
         checked.remove("tip_diameter");
     }
+    // #3369: a zero pilot length is written as absent.
+    if let Some(Value::Object(form)) = checked.get_mut("form")
+        && form.get("pilot_len").and_then(Value::as_f64) == Some(0.0)
+    {
+        form.remove("pilot_len");
+    }
     if let Some(path) = lost(&checked, &back, "") {
         return Err(format!("bad tool patch: unknown field {path} - a tool definition has no field \"{path}\""));
     }
@@ -58,4 +64,12 @@ pub(super) fn edit_tool(env: &mut Env, a: &Map<String, Value>) -> Result<Value, 
     env.history.execute(&env.world, cmd);
     let now = model::tool_of(&env.world, &entity).map(|t| project::tool_to_json(&t));
     Ok(json!({ "tool": name, "definition": now }))
+}
+
+/// #3369: a form mill read from a definition or a patch, its outline
+/// written from its preset and its diameter and flute length from the
+/// outline - as the editor's Apply writes them.
+pub(super) fn settled(mut t: crate::tools::Tool) -> crate::tools::Tool {
+    t.settle_form();
+    t
 }

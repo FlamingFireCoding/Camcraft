@@ -38,6 +38,11 @@ pub(super) fn params_block(ui: &mut Ui, state: &mut State, u: Unit) {
             ToolKind::Drill => angle(ui, "point angle °", &mut t.tip_angle),
             ToolKind::Taper => angle(ui, "cone angle °", &mut t.tip_angle),
             ToolKind::Dovetail => angle(ui, "flank angle °", &mut t.tip_angle),
+            // #3369: a form mill's tip is its form, edited on the Tool tab.
+            ToolKind::FormMill => {
+                ui.label("form");
+                ui.label(t.form.as_ref().and_then(|f| f.preset).map_or("drawn outline", |p| p.name()));
+            }
             _ => {
                 ui.label("");
                 ui.label("");
