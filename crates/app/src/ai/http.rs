@@ -81,6 +81,28 @@ impl Client {
         body: &Value,
         cancel: &AtomicBool,
     ) -> Result<Value, String> {
+        self.request_json_cancellable(ep, path, headers, auth, Some(body), cancel)
+    }
+
+    /// GET JSON with the same endpoint, cancellation, and diagnostic policies as POST.
+    pub fn get_json_cancellable(
+        &self,
+        ep: &Endpoint,
+        path: &str,
+        cancel: &AtomicBool,
+    ) -> Result<Value, String> {
+        self.request_json_cancellable(ep, path, &[], None, None, cancel)
+    }
+
+    fn request_json_cancellable(
+        &self,
+        ep: &Endpoint,
+        path: &str,
+        headers: &[(String, String)],
+        auth: Option<(&'static str, String)>,
+        body: Option<&Value>,
+        cancel: &AtomicBool,
+    ) -> Result<Value, String> {
         endpoint::admit(ep, self.offline_only)?;
         if cancel.load(Ordering::Relaxed) {
             return Err("cancelled".into());
@@ -90,7 +112,7 @@ impl Client {
             .build()
             .map_err(|e| format!("HTTP runtime unavailable: {e}"))?;
         runtime.block_on(async {
-            let request = self.post_async(ep, path, headers, auth.as_ref(), body);
+            let request = self.request_async(ep, path, headers, auth.as_ref(), body);
             tokio::select! {
                 result = request => result,
                 () = async {
@@ -102,13 +124,13 @@ impl Client {
         })
     }
 
-    async fn post_async(
+    async fn request_async(
         &self,
         ep: &Endpoint,
         path: &str,
         headers: &[(String, String)],
         auth: Option<&(&'static str, String)>,
-        body: &Value,
+        body: Option<&Value>,
     ) -> Result<Value, String> {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -121,9 +143,12 @@ impl Client {
             .user_agent(concat!("camcraft/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|_| "HTTP client unavailable".to_owned())?;
-        let mut req = client
-            .post(ep.url(path))
-            .header("content-type", "application/json");
+        let mut req = match body {
+            Some(body) => client.post(ep.url(path))
+                .header("content-type", "application/json")
+                .body(body.to_string()),
+            None => client.get(ep.url(path)),
+        };
         for (name, value) in headers {
             req = req.header(name, value);
         }
@@ -132,7 +157,6 @@ impl Client {
         }
         // Do not expose transport diagnostics: they can include header values.
         let resp = req
-            .body(body.to_string())
             .send()
             .await
             .map_err(|_| format!("{} could not be reached", ep.host))?;
@@ -252,4 +276,21 @@ pub fn probe_ollama_cancellable(
         cancel,
     )?;
     probe::parse_show(&answer)
+}
+
+/// Choose the first installed model that advertises native tool calls.
+/// Discovery stays on the chat endpoint's host and uses its offline policy.
+pub fn discover_ollama_cancellable(
+    client: &Client,
+    ep: &Endpoint,
+    cancel: &AtomicBool,
+) -> Result<String, String> {
+    let answer = client.get_json_cancellable(&ep.with_base_path(""), "/api/tags", cancel)?;
+    for model in probe::parse_tags(&answer)? {
+        if probe_ollama_cancellable(client, ep, &model, cancel)?.tools {
+            return Ok(model);
+        }
+    }
+    Err("Ollama has no installed model that can call tools. Run `ollama pull qwen3:8b`, \
+         then send again. Get models at https://ollama.com/library".into())
 }

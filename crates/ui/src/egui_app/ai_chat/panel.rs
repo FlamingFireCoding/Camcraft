@@ -77,10 +77,14 @@ fn draw_header(ui: &mut Ui, state: &mut State, pal: &theme::Tokens) {
         let model_lbl = ui.label("Model");
         ui.add(
             egui::TextEdit::singleline(&mut state.ai_chat.model_input)
+                .hint_text("Automatic: installed tool-capable model")
                 .desired_width(f32::INFINITY),
         )
         .labelled_by(model_lbl.id);
     });
+    if state.ai_chat.selected_preset().endpoint_kind == super::EndpointKind::Local {
+        ui.hyperlink_to("Get Ollama models", "https://ollama.com/library");
+    }
 
     ui.horizontal_wrapped(|ui| {
         // #1945: the switch is the person's policy - kept in prefs.json.
