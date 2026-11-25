@@ -102,10 +102,24 @@ pub(super) fn band_reach_counted(
             let mut zs: Vec<u64> = rest.cut().iter().map(|c| c.2.to_bits()).collect();
             zs.sort_unstable();
             zs.dedup();
+            // #3831: the planes of one prismatic slab share one section
+            // (`Rest::island_slice`), read once here. Each plane used to
+            // put its own vertices on the slab's walls - a point that
+            // runs the length of every wall as the plane rises - so the
+            // shared section is sampled along its walls instead
+            // (`slab::wall_samples`), never at its corners alone.
+            let mut read: Vec<*const super::slice_index::IndexedSlice> = Vec::new();
             for k in zs {
                 stats.slices += 1;
-                if let Some(s) = rest.islands_at(f, f64::from_bits(k)) {
-                    samples.extend(boundary_samples(&s));
+                if let Some(s) = rest.island_slice(f, f64::from_bits(k)) {
+                    let id = std::rc::Rc::as_ptr(&s);
+                    if !read.contains(&id) {
+                        read.push(id);
+                        samples.extend(boundary_samples(s.region()));
+                        if rest.stands_for_slab(&s) {
+                            samples.extend(super::slab::wall_samples(s.region()));
+                        }
+                    }
                 }
             }
         }
