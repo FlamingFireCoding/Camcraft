@@ -16,6 +16,7 @@ repo="${REPO:?REPO is required}"
 # Exit 0 when every changed file is a docs or process path. Code, Cargo.*,
 # xtask/, assets/, .github/, build.rs and scripts/ are never docs. A *.md file
 # inside crates/ is code too: cli_skill.md is compiled in with include_str!.
+# Docs consumed by tests are gate inputs too, even when no Rust file changes.
 docs_only() {
   local files f
   files=$(git diff --name-only --no-renames HEAD^ HEAD 2>/dev/null) || return 1
@@ -23,6 +24,7 @@ docs_only() {
   while IFS= read -r f; do
     case "$f" in
       crates/* | xtask/* | assets/* | .github/* | scripts/* | Cargo.* | build.rs | */build.rs) return 1 ;;
+      README.md | GEMINI.md | .agents/* | .claude/skills/camcraft-mcp/* | docs/agents/* | docs/tester-kits/* | site/content/* | site/tests/* | examples/*) return 1 ;;
       site/* | docs/* | .claude/* | *.md) ;;
       *) return 1 ;;
     esac

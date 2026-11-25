@@ -43,8 +43,27 @@ run_case() {
   fi
 }
 
-run_case docs-only push skip docs/a.txt site/index.html README.md
+run_case docs-only push skip docs/a.txt site/index.html CONTRIBUTING.md
 run_case claude-only push skip .claude/skills/x/SKILL.md AGENTS.md
+# Documents consumed by Rust tests and the catalog are gate inputs too.
+# Keep each input in its own commit so another run path cannot hide a skip.
+run_case readme-input push run README.md
+run_case gemini-input push run GEMINI.md
+run_case agents-mcp-input push run .agents/skills/camcraft-mcp/SKILL.md
+run_case claude-mcp-input push run .claude/skills/camcraft-mcp/SKILL.md
+run_case docs-mcp-input push run docs/agents/mcp-tools.md
+run_case tester-kit-program push run docs/tester-kits/sinumerik-810m-vmc200/air_cut_vmc200.mpf
+run_case tester-kit-project push run docs/tester-kits/sinumerik-810m-vmc200/air_cut_vmc200.camproj
+run_case tester-kit-readme push run docs/tester-kits/sinumerik-810m-vmc200/README.md
+run_case site-mcp-input push run site/content/guide/automate/mcp.md
+run_case site-ai-input push run site/content/guide/automate/ai.md
+run_case troubleshooting-input push run site/content/guide/reference/troubleshooting.md
+run_case getting-started-input push run site/content/guide/getting-started/first-part.md
+run_case machines-input push run site/content/guide/check-and-post/machines.md
+run_case operations-input push run site/content/guide/operations/contour.md
+run_case multi-axis-input push run site/content/guide/multi-axis/swarf.md
+run_case site-test-input push run site/tests/test_guide_navigation.py
+run_case catalog-readme-input push run examples/catalog/example/README.md
 run_case mixed-docs-code push run docs/b.md crates/app/src/lib.rs
 run_case github-change push run .github/workflows/post-merge.yml
 run_case cargo-lock push run Cargo.lock
