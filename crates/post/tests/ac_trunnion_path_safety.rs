@@ -96,6 +96,34 @@ fn initial_pose_travel_refusal_names_move_zero() {
 }
 
 #[test]
+fn subdivision_travel_refusal_names_the_original_move() {
+    let mut cfg = AcTrunnionConfig::default();
+    cfg.a.travel = Some((-60.0, -30.0));
+    let opts = PathOptions::default();
+    let start = axis(40.0, -150.0);
+    let end = axis(40.0, -30.0);
+    for endpoint in [start, end] {
+        solve_path(&cfg, &[feed(endpoint, endpoint)], &opts).expect("endpoint is within A travel");
+    }
+
+    // The interpolated axis between the endpoints tilts less than 30 degrees.
+    let path = [feed(start, start), feed(start, end)];
+    let error = solve_path(&cfg, &path, &opts).expect_err("midpoint is outside A travel");
+    let KinematicsError::PathTravelLimitExceeded {
+        source_index,
+        source,
+    } = error
+    else {
+        panic!("expected path travel refusal, got {error:?}");
+    };
+    assert_eq!(source_index, 1);
+    assert!(matches!(
+        *source,
+        KinematicsError::TravelLimitExceeded { axis_name, .. } if axis_name == "A"
+    ));
+}
+
+#[test]
 fn clearance_retract_keeps_c_continuous_and_checks_the_entire_lift() {
     let mut cfg = AcTrunnionConfig::default();
     cfg.a.travel = Some((-110.0, 30.0));
@@ -180,10 +208,9 @@ fn adjacent_cl_axis_change_is_refused_instead_of_teleporting() {
             rotary: None,
         });
     }
-    let err = refuse(solve_toolpath(&cfg, &toolpath, &PathOptions::default()));
-    assert!(
-        err.contains("DiscontinuousPath") && err.contains("source_index: 1"),
-        "{err}"
+    assert_eq!(
+        solve_toolpath(&cfg, &toolpath, &PathOptions::default()),
+        Err(KinematicsError::DiscontinuousPath { source_index: 1 })
     );
 }
 
