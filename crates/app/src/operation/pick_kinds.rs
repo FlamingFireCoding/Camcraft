@@ -77,9 +77,10 @@ impl KindInfo {
             // #3331 slice 1: the pick is a point in the lathe (Z, X) plane.
             OpType::Facing | OpType::ProfileRough | OpType::ProfileFinish => PickCapability::Meridian,
             OpType::Threading => PickCapability::NotTaken(PICK_THREAD_LAW),
+            // #3325: the end where the pass starts, and where it stops.
+            OpType::Slot => PickCapability::Ends,
             OpType::Face
             | OpType::Pocket
-            | OpType::Slot
             | OpType::Trace
             | OpType::Adaptive2D
             | OpType::Offset2D
@@ -118,6 +119,9 @@ impl KindInfo {
             | OpType::SinkerBurn
             | OpType::SinkerSideBurn
             | OpType::SlotUndercut
+            // #2826: the flow band's own start and exit ride its
+            // picked chains' own ends, the planner's choice.
+            | OpType::RotaryFlow
             | OpType::VCarve => PickCapability::NotTaken(PICK_OWED),
         }
     }
@@ -173,6 +177,9 @@ impl OpParams {
             OpParams::SinkerBurn(p) => Some(&p.picks),
             OpParams::SinkerSideBurn(p) => Some(&p.burn.picks),
             OpParams::SlotUndercut(p) => Some(&p.picks),
+            // #2826: the flow band's picks ride the op's own chain
+            // selection, the planner reads them there.
+            OpParams::RotaryFlow { .. } => None,
             OpParams::Probe { .. } => None,
         }
     }
@@ -228,6 +235,9 @@ impl OpParams {
             OpParams::SinkerBurn(p) => Some(&mut p.picks),
             OpParams::SinkerSideBurn(p) => Some(&mut p.burn.picks),
             OpParams::SlotUndercut(p) => Some(&mut p.picks),
+            // #2826: the flow band's picks ride the op's own chain
+            // selection, the planner reads them there.
+            OpParams::RotaryFlow { .. } => None,
             OpParams::Probe { .. } => None,
         }
     }
@@ -259,6 +269,10 @@ impl OpParams {
             let what = role.word();
             if matches!(self, OpParams::Contour { tilt: Some(_), .. }) {
                 return Some(format!("a {what} point is not taken on a tilted (3+2) contour yet - clear it or the tilt"));
+            }
+            // #3325: a pick is a model-frame point; the tilted slot's ends are not.
+            if matches!(self, OpParams::Slot { tilt: Some(_), .. }) {
+                return Some(format!("a {what} point is not taken on a tilted (3+2) slot yet - clear it or the tilt"));
             }
             if !cap.takes(role) {
                 let why = match cap {

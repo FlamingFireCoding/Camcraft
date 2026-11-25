@@ -303,14 +303,16 @@ fn actions(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Operation
         // Enabled, but the door will refuse: a safety line, not help.
         ui.colored_label(inks.warn, why);
     }
-    if live.is_some_and(|op| operation::has_agie_inspection_source(op)
-        && matches!(&op.params, operation::OpParams::WireContour(w) if w.condition.is_empty())) {
+    // Agie-only: an inspection source on a setup that mounts the Agie machine.
+    let live_inspection = live.filter(|op| operation::has_agie_inspection_source(op)
+        && super::agie_inspection::agie_mounted(&state.world, op.setup.as_deref()));
+    if live_inspection.is_some_and(|op| matches!(&op.params, operation::OpParams::WireContour(w) if w.condition.is_empty())) {
         super::layout::hint(ui, "Nominal inspection only. No machining condition is assigned.");
     }
     let commit_hint = format!("Commit the edited parameters ({} undoes)", chord("Z"));
     let clear_hint = format!("Remove the generated path and keep the operation ({} restores it)", chord("Z"));
     let delete_hint = format!("Delete the operation and its toolpath ({} restores both)", chord("Z"));
-    let inspect = live.filter(|op| operation::has_agie_inspection_source(op))
+    let inspect = live_inspection
         .map(|_| CommandKind::ExportAgieInspection(target.to_owned()));
     let inspection_refusal = inspect.as_ref().and_then(|cmd| state.browser_refusal_of(cmd)).or_else(|| {
         (!unchanged || (inspect.is_some() && live.is_some_and(|op| op.src != state.op_ui.src())))

@@ -144,6 +144,8 @@ mod tool_form_mill_row;
 // #898: the tool editor's catalog rows (part number, vendor, ...).
 mod tool_catalog_rows;
 mod tool_settings;
+// #3930: a saved tool's Properties summary and its "Edit in tool library" door.
+mod tool_summary;
 // #2014: the tool Properties' label-left property grid and its groups.
 mod tool_settings_grid;
 // #3892: the tool library window (U1 of #3663).
@@ -155,7 +157,7 @@ mod tool_turning_row;
 mod tool_profile_page;
 // #2007/#3914: what the Properties tool preview draws, with the cutter outline memo.
 mod tool_preview_inputs;
-// #793: the built-in taper holder picker in the Profile section.
+// #793: the built-in taper holder picker (#3930: the tool library window's assembly group).
 mod tool_holder_picker;
 // #93 slice 2: the Profile tab's drawn cutter, neck and shank.
 mod tool_cutter_page;

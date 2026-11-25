@@ -65,6 +65,8 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
             OpType::Facing | OpType::ProfileRough | OpType::ProfileFinish => {
                 assert_eq!(cap, PickCapability::Meridian, "{} takes a lathe-plane pick", k.label)
             }
+            // #3325: the Slot's slice of #1448 shipped.
+            OpType::Slot => assert_eq!(cap, PickCapability::Ends, "the slot takes a pick at one of its ends"),
             _ => {
                 let PickCapability::NotTaken(why) = cap else { panic!("{}: this kind takes no pick", k.label) };
                 assert!(!why.is_empty(), "{}: the reason is named", k.label);
