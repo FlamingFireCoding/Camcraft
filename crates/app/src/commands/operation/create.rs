@@ -121,6 +121,7 @@ impl CreateOperation {
             four_axis: None,
             sharp_corners: false,
             overlap: 0.0,
+            lead_arc_radius: None,
         });
         Self::build(world, name, tool, src, params, true, false)
     }

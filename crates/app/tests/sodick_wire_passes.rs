@@ -69,6 +69,7 @@ fn punch(machine_text: &str, condition: &str, skims: Vec<WireSkim>) -> World {
     h.execute(&world, ImportModel::from_mesh("slug", slug()));
     let op = WireContourOp {
         overlap: 0.0,
+        lead_arc_radius: None,
         top_z: Height::fixed(12.0),
         bottom_z: Height::fixed(0.0),
         condition: condition.into(),
