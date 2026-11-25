@@ -197,6 +197,10 @@ pub fn mirror(m: &crate::machine::Machine) -> Value {
             if let Some(f) = e.flushing {
                 eo.insert("flushing".to_owned(), json!(f.word()));
             }
+            // #4045: the work's bottom above the worktable, only when stated.
+            if let Some(t) = e.table_to_part_bottom {
+                eo.insert("table_to_part_bottom".to_owned(), json!(t));
+            }
             // #2686: the skim passes' flushing, only when stated.
             if let Some(f) = e.skim_flushing {
                 eo.insert("skim_flushing".to_owned(), json!(f.word()));

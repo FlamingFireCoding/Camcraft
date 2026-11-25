@@ -63,6 +63,7 @@ unstated capability into existence.
         "awt": true,                                   // wire, automatic threading
         "tank": "submerged", "flushing": "high",       // wire (#1499): submerged|non-submerged, high|low; unstated = set at the control
         "skim_flushing": "low",                        // wire (#2686): high|low, the flushing of each skim pass; needs "flushing"
+        "table_to_part_bottom": 0.0,                   // wire (#4045): the work's bottom above the worktable, length unit, 0 or more; the Sodick LN2W post writes TP / TN from it
         "orbits": [ { "kind": "circular", "word": "..." } ],  // sinker: circular|vector|planetary + the control's word
         "max_orbit_radius": 2.0,                       // sinker, length unit
         "pickup": "...",                               // sinker, the holder system's name

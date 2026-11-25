@@ -141,6 +141,7 @@ const WIRE_POSTS: &[(&str, &str)] = &[
     ("Sodick Wire EDM (Mark 21)", "sodick-wire"),
     ("Native wire EDM job files", "agie-native"),
     ("G-EDM Wire EDM", "g-edm"),
+    ("Sodick Wire EDM (LN2W)", "sodick-ln2w"),
 ];
 
 /// The SINKER EDM dialects (#542): their golden is the sinker burn's
@@ -499,6 +500,7 @@ const EXTENSIONS: &[(&str, &str)] = &[
     ("tormach-plasma", "nc"),
     ("wire-iso", "nc"),
     ("sodick-wire", "nc"),
+    ("sodick-ln2w", "nc"),
     ("agie-native", "agie"),
     ("g-edm", "nc"),
     ("sinker-iso", "nc"),

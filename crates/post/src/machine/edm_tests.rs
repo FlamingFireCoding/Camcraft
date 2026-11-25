@@ -152,6 +152,29 @@ fn a_sinker_stating_taper_angle_is_refused_as_a_wire_key() {
     assert!(parse_mch(&with_edm(WIRE, rules)).is_ok(), "a wire machine states it");
 }
 
+/// #4045 (#2130): the work's bottom above the worktable is a wire key,
+/// 0 or more, scaled to mm, and the script's `machine.edm` states it only
+/// when the file does.
+#[test]
+fn table_to_part_bottom_is_a_wire_length_of_zero_or_more() {
+    let m = parse_mch(&with_edm(WIRE, r#"{ "table_to_part_bottom": 0 }"#)).expect("zero is a stated height");
+    assert_eq!(m.edm.as_ref().and_then(|e| e.table_to_part_bottom), Some(0.0));
+    assert_eq!(crate::post::machine::script_props(&crate::post::machine::mirror(&m))["edm"]["table_to_part_bottom"], serde_json::json!(0.0));
+    let unstated = parse_mch(WIRE).expect("parses");
+    assert!(crate::post::machine::script_props(&crate::post::machine::mirror(&unstated))["edm"].get("table_to_part_bottom").is_none(), "absent is not zero");
+    let inch = WIRE.replace(r#""length": "mm""#, r#""length": "inch""#);
+    let m = parse_mch(&with_edm(&inch, r#"{ "table_to_part_bottom": 2 }"#)).expect("an inch file");
+    assert_eq!(m.edm.as_ref().and_then(|e| e.table_to_part_bottom), Some(50.8));
+    let err = parse_mch(&with_edm(WIRE, r#"{ "table_to_part_bottom": -1 }"#)).err().unwrap_or_default();
+    assert!(err.contains("edm.table_to_part_bottom must be 0 or more"), "{err}");
+    let err = parse_mch(&with_edm(SINKER, r#"{ "table_to_part_bottom": 5 }"#)).err().unwrap_or_default();
+    assert!(err.contains("edm.table_to_part_bottom is a wire_edm key; this is a sinker_edm machine"), "{err}");
+    let bad = Edm { table_to_part_bottom: Some(-1.0), ..Edm::default() };
+    assert!(!bad.is_sane());
+    assert!(bad.refusal().is_some_and(|r| r.starts_with("edm.table_to_part_bottom:")), "{:?}", bad.refusal());
+    assert!(!Edm { table_to_part_bottom: Some(0.0), ..Edm::default() }.fits(Kind::SinkerEdm));
+}
+
 /// Review #551 request 3: an EDM states no spindle, live tool or
 /// coolant, refused by the key's name like plasma.
 #[test]

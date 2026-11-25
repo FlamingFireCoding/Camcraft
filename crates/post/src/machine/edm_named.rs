@@ -30,6 +30,9 @@ impl Edm {
         if self.max_taper_deg.is_some_and(|a| !(a.is_finite() && a > 0.0 && a < 90.0)) {
             return Some("edm.max_taper_deg: must be between 0 and 90 degrees, exclusive".to_owned());
         }
+        if self.table_to_part_bottom.is_some_and(|t| !(t.is_finite() && t >= 0.0)) {
+            return Some("edm.table_to_part_bottom: must be a finite number, 0 or more".to_owned());
+        }
         if self.wire_diameters.iter().any(|d| !(d.is_finite() && *d > 0.0)) {
             return Some("edm.wire_diameters: every diameter must be a positive finite number".to_owned());
         }
