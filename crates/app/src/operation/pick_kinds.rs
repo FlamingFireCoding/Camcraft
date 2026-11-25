@@ -19,6 +19,8 @@ use super::types::{OpParams, OpType};
 pub enum PickCapability {
     /// A point on a closed ring: the ring is re-sequenced to start there
     /// (the 2D contour). Snaps to a wall. Takes a start and an exit.
+    /// The Sinker Burn's ring is its orbit (#3333): the pick is an angle
+    /// round the burn position.
     Ring,
     /// A point inside the region: the descent place of the first pass
     /// and the end of the last pass. Snaps to a point in the region.
@@ -65,6 +67,10 @@ impl KindInfo {
         match self.ty {
             OpType::Contour => PickCapability::Ring,
             OpType::WireContour => PickCapability::Threading,
+            // #3333: the orbit ring round the burn position, and the two
+            // ends of the side move.
+            OpType::SinkerBurn => PickCapability::Ring,
+            OpType::SinkerSideBurn => PickCapability::Ends,
             OpType::Probe => PickCapability::NotTaken(PICK_NO_PATH),
             OpType::Face
             | OpType::Pocket
@@ -108,8 +114,6 @@ impl KindInfo {
             // #1883: the waterjet's lead picks are owed, as the plasma's.
             | OpType::WaterjetProfile
             | OpType::TrochoidalSlot
-            | OpType::SinkerBurn
-            | OpType::SinkerSideBurn
             | OpType::SlotUndercut
             | OpType::VCarve => PickCapability::NotTaken(PICK_OWED),
         }
@@ -261,6 +265,11 @@ impl OpParams {
                 return Some(format!("{}: a {what} point is not taken - {why}; clear it on this operation", info.label));
             }
         }
-        None
+        // #3333: a pick that the sinker's orbit or side move cannot hold.
+        match self {
+            OpParams::SinkerBurn(p) => p.orbit_ends().err(),
+            OpParams::SinkerSideBurn(p) => p.side_ends().err(),
+            _ => None,
+        }
     }
 }
