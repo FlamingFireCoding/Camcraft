@@ -17,6 +17,9 @@ mod common;
 // #3334: the Plasma Profile's picks (the pierce and the torch off).
 #[path = "start_exit_shared/plasma.rs"]
 mod plasma;
+// #3328: the hole order of Drill, Bore and Thread under the picks.
+#[path = "start_exit_shared/hole_order.rs"]
+mod hole_order;
 
 use camcraft_app::mcp::Server;
 use camcraft_app::geo2d::Point2;
@@ -74,6 +77,8 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
             OpType::WireContour => assert_eq!(cap, PickCapability::Threading, "the wire takes its threading point"),
             // #3334: the pierce and the torch-off place on a closed contour.
             OpType::PlasmaProfile => assert_eq!(cap, PickCapability::Ring, "the plasma profile takes a ring pick"),
+            // #3328: the first hole and the last hole of the list.
+            OpType::Drill | OpType::Bore | OpType::Thread => assert_eq!(cap, PickCapability::HoleOrder, "{}: a hole order pick", k.label),
             // #3331 slice 1: a point in the lathe (Z, X) plane.
             OpType::Facing | OpType::ProfileRough | OpType::ProfileFinish => {
                 assert_eq!(cap, PickCapability::Meridian, "{} takes a lathe-plane pick", k.label)
