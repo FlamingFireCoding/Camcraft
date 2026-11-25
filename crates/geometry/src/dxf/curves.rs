@@ -171,7 +171,27 @@ struct Fields {
     points: Vec<Point2>,
     fit: usize,
     x: Option<f64>,
+    xy: Option<Point2>,
     z: Option<f64>,
+    elevation: Option<f64>,
+}
+
+impl Fields {
+    fn finish_control(&mut self, kind: &'static str) -> Result<(), DxfError> {
+        if self.x.is_some() {
+            return Err(error(kind, "control point has no Y coordinate"));
+        }
+        if let Some(point) = self.xy.take() {
+            // Omitted Z is zero for this control point.
+            let z = self.z.take().unwrap_or(0.0);
+            if self.elevation.is_some_and(|elevation| elevation != z) {
+                return Err(error(kind, "control points are not in one Z plane"));
+            }
+            self.elevation = Some(z);
+            self.points.push(point);
+        }
+        Ok(())
+    }
 }
 
 pub(super) fn spline(record: Record<'_>, state: &mut State) -> Result<(), DxfError> {
@@ -201,9 +221,7 @@ pub(super) fn spline(record: Record<'_>, state: &mut State) -> Result<(), DxfErr
             40 => push(&mut f.knots, value()?, knots, "knot")?,
             41 => push(&mut f.weights, value()?, controls, "weight")?,
             10 => {
-                if f.x.is_some() {
-                    return Err(error(KIND, "control point has no Y coordinate"));
-                }
+                f.finish_control(KIND)?;
                 f.x = Some(coordinate(value()?, KIND)?);
             }
             20 => {
@@ -214,16 +232,19 @@ pub(super) fn spline(record: Record<'_>, state: &mut State) -> Result<(), DxfErr
                 if f.points.len() >= controls {
                     return Err(error(KIND, "more control points than group 73 states"));
                 }
-                f.points.push(p);
+                f.xy = Some(p);
             }
             30 => {
-                let z = coordinate(value()?, KIND)?;
-                if f.z.is_some_and(|old| old != z) {
-                    return Err(error(KIND, "control points are not in one Z plane"));
+                if f.xy.is_none() {
+                    return Err(error(KIND, "Z before X and Y in a control point"));
                 }
-                f.z = Some(z);
+                if f.z.is_some() {
+                    return Err(error(KIND, "duplicate Z in a control point"));
+                }
+                f.z = Some(coordinate(value()?, KIND)?);
             }
             11 => {
+                f.finish_control(KIND)?;
                 coordinate(value()?, KIND)?;
                 f.fit += 1;
                 if f.fit > fits {
@@ -233,9 +254,7 @@ pub(super) fn spline(record: Record<'_>, state: &mut State) -> Result<(), DxfErr
             _ => {}
         }
     }
-    if f.x.is_some() {
-        return Err(error(KIND, "control point has no Y coordinate"));
-    }
+    f.finish_control(KIND)?;
     if f.fit != fits {
         return Err(error(KIND, "fit point count does not match group 74"));
     }
@@ -251,7 +270,7 @@ pub(super) fn spline(record: Record<'_>, state: &mut State) -> Result<(), DxfErr
             "knot or control point count does not match groups 72 and 73",
         ));
     }
-    state.elevation(KIND, f.z.unwrap_or(0.0))?;
+    state.elevation(KIND, f.elevation.unwrap_or(0.0))?;
     for _ in 0..f.points.len() {
         state.vertex(KIND)?;
     }

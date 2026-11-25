@@ -70,6 +70,49 @@ fn malformed_splines_are_refused_by_name() {
 }
 
 #[test]
+fn spline_control_points_use_a_per_point_z_default() {
+    let drawing = |first_z, last_z| {
+        wrap(&format!(
+            "0\nSPLINE\n71\n1\n72\n4\n73\n2\n40\n0\n40\n0\n40\n1\n40\n1\n\
+             10\n0\n20\n0\n{first_z}10\n10\n20\n0\n{last_z}"
+        ))
+    };
+
+    let zero = "30\n0\n";
+    let elevated = "30\n1\n";
+    refused(&drawing(elevated, ""), "SPLINE", "one Z plane");
+    refused(&drawing("", elevated), "SPLINE", "one Z plane");
+    for (first, last) in [
+        ("", ""),
+        (zero, ""),
+        ("", zero),
+        (zero, zero),
+        (elevated, elevated),
+    ] {
+        assert!(parse(drawing(first, last).as_bytes()).is_ok());
+    }
+}
+
+#[test]
+fn spline_control_points_refuse_orphan_and_duplicate_z() {
+    refused(
+        &spline(|s| s.replace("10\n0\n20\n0\n", "30\n0\n10\n0\n20\n0\n")),
+        "SPLINE",
+        "Z before X and Y",
+    );
+    refused(
+        &spline(|s| s.replace("10\n3\n20\n5\n", "10\n3\n30\n0\n20\n5\n")),
+        "SPLINE",
+        "Z before X and Y",
+    );
+    refused(
+        &spline(|s| s.replace("10\n3\n20\n5\n", "10\n3\n20\n5\n30\n0\n30\n0\n")),
+        "SPLINE",
+        "duplicate Z",
+    );
+}
+
+#[test]
 fn malformed_ellipses_are_refused_by_name() {
     let ellipse = |edit: &dyn Fn(&str) -> String| {
         wrap(&edit("0\nELLIPSE\n8\n0\n10\n0\n20\n0\n11\n10\n21\n0\n40\n0.5\n41\n0\n42\n6.283185307179586\n"))
