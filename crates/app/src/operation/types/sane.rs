@@ -89,6 +89,8 @@ impl OpParams {
             OpParams::SinkerBurn(p) => p.compensation_refusal(),
             OpParams::SinkerSideBurn(p) => p.refusal(),
             OpParams::SlotUndercut(p) => p.refusal(),
+            // #3334: an exit pick beside control compensation.
+            OpParams::PlasmaProfile(p) => p.pick_refusal(),
             OpParams::Pocket { corner_relief, .. }
             | OpParams::Offset2D { corner_relief, .. } => corner_relief.validate().err().map(|e| e.to_string()),
             OpParams::Adaptive2D { method, troch, corner_relief, pass_start, .. } => troch.refusal().or_else(|| {

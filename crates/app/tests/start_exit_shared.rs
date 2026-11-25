@@ -6,6 +6,13 @@
 //!
 //! Gate map (#3324): covers app::operation (kinds pick capability,
 //! path_picks accessor, sane), app::mcp (tools schema, job kind list).
+//! Gate map (#3334): covers app::operation (plasma_op, the Plasma Profile
+//! picks), camcraft_motion::plasma (picks, emit).
+
+mod common;
+// #3334: the Plasma Profile's picks (the pierce and the torch off).
+#[path = "start_exit_shared/plasma.rs"]
+mod plasma;
 
 use camcraft_app::mcp::Server;
 use camcraft_app::geo2d::Point2;
@@ -55,6 +62,8 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
         match k.ty {
             OpType::Contour => assert_eq!(cap, PickCapability::Ring, "the contour takes a ring pick"),
             OpType::WireContour => assert_eq!(cap, PickCapability::Threading, "the wire takes its threading point"),
+            // #3334: the pierce and the torch-off place on a closed contour.
+            OpType::PlasmaProfile => assert_eq!(cap, PickCapability::Ring, "the plasma profile takes a ring pick"),
             _ => {
                 let PickCapability::NotTaken(why) = cap else { panic!("{}: only the contour and the wire take a pick", k.label) };
                 assert!(!why.is_empty(), "{}: the reason is named", k.label);

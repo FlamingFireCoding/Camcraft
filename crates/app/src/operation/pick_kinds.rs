@@ -68,6 +68,8 @@ impl KindInfo {
             OpType::Contour => PickCapability::Ring,
             OpType::WireContour => PickCapability::Threading,
             OpType::Probe => PickCapability::NotTaken(PICK_NO_PATH),
+            // #3334: the pierce and the torch-off place on a closed contour.
+            OpType::PlasmaProfile => PickCapability::Ring,
             OpType::Face
             | OpType::Pocket
             | OpType::Slot
@@ -106,8 +108,7 @@ impl KindInfo {
             | OpType::MultiPassTurning
             | OpType::FormTurning
             | OpType::BoringTurning
-            | OpType::PlasmaProfile
-            // #1883: the waterjet's lead picks are owed, as the plasma's.
+            // #1883: the waterjet's lead picks are owed (the plasma's: #3334).
             | OpType::WaterjetProfile
             | OpType::TrochoidalSlot
             | OpType::SinkerBurn
