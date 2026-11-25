@@ -193,7 +193,15 @@ fn raster_without_a_pick_is_the_automatic_path_byte_for_byte() {
         assert_eq!(got, auto, "an empty seam is the automatic raster (waterlines {w})");
         assert!(ends.is_some());
         let axis = control(15.0, 0.0, Some(60.0));
-        assert_eq!(run(&facets, &p, &RasterSeam::default()).expect("posed").0, parallel5d(&facets, &p, &axis, None).expect("auto"));
+        let (posed, _) = run(&facets, &p, &RasterSeam::default()).expect("posed");
+        assert_eq!(posed, parallel5d(&facets, &p, &axis, None).expect("auto"));
+        // The automatic order stands by itself, not only by its twin: the
+        // first pass is the lowest one in Y and runs toward +X.
+        let cuts = raster_cuts(&posed);
+        let y_min = cuts.iter().flat_map(|(a, b)| [a.y, b.y]).fold(f64::INFINITY, f64::min);
+        let s = first_plunge(&posed);
+        assert!((s.y - y_min).abs() < 1e-6, "the automatic cut starts on the lowest pass: {s:?} (lowest {y_min})");
+        assert!(cuts[0].1.x > cuts[0].0.x, "the first automatic pass runs toward +X: {:?}", cuts[0]);
     }
 }
 
