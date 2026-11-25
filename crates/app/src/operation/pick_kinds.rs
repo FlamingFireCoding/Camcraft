@@ -33,6 +33,9 @@ pub enum PickCapability {
     Raster,
     /// The wire's threading point (`WireContourOp.picks`): a start only.
     Threading,
+    /// A point in the lathe (Z, X) plane (#3331): the first pass starts
+    /// there and the last pass leaves there. Each pick states its Z.
+    Meridian,
     /// The kind does not take a pick; the reason, said by name in the
     /// refusal and on the operation page.
     NotTaken(&'static str),
@@ -41,6 +44,9 @@ pub enum PickCapability {
 /// The reason of a cutting kind whose family slice of #1448 has not shipped.
 pub const PICK_OWED: &str =
     "the planner chooses the entry and the exit of this kind until its slice of #1448 ships";
+
+/// The reason of lathe Threading (#3331): its own law places the start.
+pub const PICK_THREAD_LAW: &str = "the thread start law sets the start and the exit of a thread";
 
 /// The reason of the probe: it has no path to start.
 pub const PICK_NO_PATH: &str = "a probe touches the part and cuts no path";
@@ -52,7 +58,7 @@ impl PickCapability {
         match self {
             Self::NotTaken(_) => false,
             Self::Threading => role == PickRole::Start,
-            Self::Ring | Self::Region | Self::HoleOrder | Self::Ends | Self::Raster => true,
+            Self::Ring | Self::Region | Self::HoleOrder | Self::Ends | Self::Raster | Self::Meridian => true,
         }
     }
 }
@@ -66,6 +72,9 @@ impl KindInfo {
             OpType::Contour => PickCapability::Ring,
             OpType::WireContour => PickCapability::Threading,
             OpType::Probe => PickCapability::NotTaken(PICK_NO_PATH),
+            // #3331 slice 1: the pick is a point in the lathe (Z, X) plane.
+            OpType::Facing | OpType::ProfileRough | OpType::ProfileFinish => PickCapability::Meridian,
+            OpType::Threading => PickCapability::NotTaken(PICK_THREAD_LAW),
             OpType::Face
             | OpType::Pocket
             | OpType::Slot
@@ -92,13 +101,9 @@ impl KindInfo {
             | OpType::MultiAxisRough
             | OpType::Flow5D
             | OpType::MultiAxisContour
-            | OpType::Facing
-            | OpType::ProfileRough
-            | OpType::ProfileFinish
             | OpType::GrooveRough
             | OpType::GrooveFinish
             | OpType::Part
-            | OpType::Threading
             | OpType::Chamfering
             | OpType::TaperTurning
             | OpType::MultiPassTurning
@@ -259,6 +264,13 @@ impl OpParams {
                     _ => "this kind takes a start point only",
                 };
                 return Some(format!("{}: a {what} point is not taken - {why}; clear it on this operation", info.label));
+            }
+            // #3331: a turning pick is a point of the lathe (Z, X) plane.
+            if cap == PickCapability::Meridian && picks.of(role).iter().any(|p| p.z.is_none()) {
+                return Some(format!(
+                    "{}: the {what} point needs a Z - a turning point is a point in the lathe (Z, X) plane; state its Z or clear it",
+                    info.label
+                ));
             }
         }
         None
