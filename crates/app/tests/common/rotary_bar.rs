@@ -11,7 +11,7 @@ use std::time::Instant;
 use flecs_ecs::prelude::World;
 
 use camcraft_app::cl::Move;
-use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, History, ImportModel, SetStock};
+use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, History, ImportModel, LoadMachine, SetStock};
 use camcraft_app::geometry::{quat_from_axis_angle, Mesh, Point3, Triangle, IDENTITY_Q};
 use camcraft_app::model;
 use camcraft_app::operation::{Height, OpParams, SrcRef};
@@ -94,6 +94,8 @@ pub fn params(kind: Kind) -> OpParams {
             lead_deg: 0.0,
             lag_deg: 0.0,
             max_tilt_deg: 60.0,
+            stated_axis: None,
+            picks: Default::default(),
         },
         Kind::Parallel => OpParams::RotaryParallel {
             tolerance: 0.1,
@@ -108,6 +110,8 @@ pub fn params(kind: Kind) -> OpParams {
             lead_deg: 0.0,
             lag_deg: 0.0,
             max_tilt_deg: 60.0,
+            stated_axis: None,
+            picks: Default::default(),
         },
         Kind::Offset => OpParams::RotaryOffset {
             links: camcraft_app::links::Links::ROUGH3D,
@@ -128,6 +132,8 @@ pub fn params(kind: Kind) -> OpParams {
             lead_deg: 0.0,
             lag_deg: 0.0,
             max_tilt_deg: 60.0,
+            stated_axis: None,
+            picks: Default::default(),
         },
     }
 }
@@ -135,10 +141,25 @@ pub fn params(kind: Kind) -> OpParams {
 /// A world with the bar as stock and model, the ball on the rack, and
 /// the kind's op "OP" generated.
 pub fn world_for(kind: Kind) -> World {
+    world_for_machine(kind, None)
+}
+
+/// [`world_for`] with the TORMACH 4th axis mounted (#2772): its A
+/// states the line [1, 0, 0] through the work offset origin, so the
+/// kinds turn about the STATED axis, never a free fit - the world the
+/// stated-axis tests and the stated parity read.
+pub fn world_for_stated(kind: Kind) -> World {
+    world_for_machine(kind, Some("Tormach 770MX + microARC 4"))
+}
+
+fn world_for_machine(kind: Kind, machine: Option<&str>) -> World {
     let world = camcraft_app::world::new_world();
     let mut h = History::default();
     let tool = catalog().into_iter().find(|(n, _)| *n == "BN-0600").map(|(_, t)| t).expect("catalog ball");
     h.execute(&world, AddTool::new(&world, "BN-0600", tool).expect("tool"));
+    if let Some(m) = machine {
+        h.execute(&world, LoadMachine::builtin(&world, m).expect("machine"));
+    }
     let lying = kind.lying();
     let loc = if lying {
         Location { pos: Point3::new(-HALF_L, 0.0, 0.0), rot: quat_from_axis_angle(1, std::f64::consts::FRAC_PI_2) }

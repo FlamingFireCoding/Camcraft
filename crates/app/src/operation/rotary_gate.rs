@@ -15,6 +15,7 @@
 //! law; axis lettering per RS-274 / ISO 6983 convention. No vendor
 //! material consulted.
 
+use crate::geometry::Triangle;
 use crate::machine::AxisLimits;
 use crate::machining2d::GenError;
 
@@ -61,6 +62,32 @@ pub(super) fn rotary_letter(
         )));
     };
     Ok(ax.name.chars().next().map(|c| c.to_ascii_uppercase()))
+}
+
+/// The rotary kinds' letter door (M13.5 B): the line the kernel will
+/// turn the part about, held against the mounted machine's rotary
+/// inventory. A STATED axis (#2772 parts 1-2) answers the letter
+/// directly - the machine states its own rotaries, and the op's own
+/// statement is held to the same inventory below - so no fit is
+/// asked; nothing stated keeps the fit the kernel will read, and a
+/// fit that fails there is left to the kernel, which refuses it by
+/// its own name. The spindle's C answers the line (issue #33): the
+/// caller then stamps the path with the axis's C.
+pub(super) fn letter_gate(
+    machine: Option<&(String, Vec<AxisLimits>)>,
+    stated: Option<&crate::multiaxis::axis::Axis>,
+    facets: &[Triangle],
+    kind: &str,
+) -> Result<Option<crate::multiaxis::axis::Axis>, GenError> {
+    let ax = match stated {
+        Some(ax) => *ax,
+        None => match crate::multiaxis::axis::fit(facets) {
+            Ok(ax) => ax,
+            Err(_) => return Ok(None),
+        },
+    };
+    let letter = rotary_letter(machine, [ax.dir.x, ax.dir.y, ax.dir.z], kind)?;
+    Ok((letter == Some('C')).then_some(ax))
 }
 
 /// Stamp a rotary kind's part-frame path with the spindle C (issue
@@ -349,5 +376,69 @@ mod tests {
         assert!(e.is_some_and(|e| e.to_string().contains("states no rotary on that line")));
         let c = ("MT".to_owned(), vec![rot("C", [0.0, 0.0, 1.0])]);
         assert_eq!(rotary_letter(Some(&c), [0.0, 0.0, 1.0], "Rotary Contour").ok(), Some(Some('C')));
+    }
+
+    /// A helical rotor along world X (#2772): a 4-lobe helical sweep
+    /// turning as x advances - the reporter's screw, whose normals
+    /// share no rotation axis (the fit's own refusal).
+    fn screw(turns: f64) -> Vec<Triangle> {
+        use crate::geometry::Point3;
+        let rate = turns * std::f64::consts::TAU / 32.0;
+        let (nth, nx) = (96usize, 32usize);
+        let rho = |th: f64| 5.0 + 1.5 * (4.0 * th).cos();
+        let pt = |th_i: usize, x: f64| {
+            let th = std::f64::consts::TAU * th_i as f64 / nth as f64;
+            let (s, c) = (rate * x).sin_cos();
+            let r = rho(th);
+            let (bs, bc) = th.sin_cos();
+            Point3::new(x, r * (bc * c - bs * s), r * (bs * c + bc * s))
+        };
+        let mut f = Vec::new();
+        for thi in 0..nth {
+            let tk = (thi + 1) % nth;
+            for st in 0..nx {
+                let (x0, x1) = (-16.0 + 32.0 * st as f64 / nx as f64, -16.0 + 32.0 * (st + 1) as f64 / nx as f64);
+                let (a1, a2, b1, b2) = (pt(thi, x0), pt(tk, x0), pt(thi, x1), pt(tk, x1));
+                f.push(Triangle::new(a1, a2, b2));
+                f.push(Triangle::new(a1, b2, b1));
+            }
+        }
+        let cap = |f: &mut Vec<Triangle>, x: f64, outward: bool| {
+            let c = Point3::new(x, 0.0, 0.0);
+            for thi in 0..nth {
+                let tk = (thi + 1) % nth;
+                let (a, b) = (pt(thi, x), pt(tk, x));
+                f.push(if outward { Triangle::new(c, a, b) } else { Triangle::new(c, b, a) });
+            }
+        };
+        cap(&mut f, -16.0, false);
+        cap(&mut f, 16.0, true);
+        f
+    }
+
+    /// #2772 parts 1-2: a stated line answers the letter without a
+    /// fit. The screw's fit refuses (no axis of revolution), so today
+    /// the door answers nothing; its STATED line - the A the part is
+    /// clamped on - holds the machine's inventory, and the spindle's
+    /// C answers a stated vertical line with the axis itself.
+    #[test]
+    fn a_stated_line_answers_the_letter_without_a_fit() {
+        use crate::geometry::Point3;
+        let mesh = screw(2.0);
+        assert!(crate::multiaxis::axis::fit(&mesh).is_err(), "the helical lobes share no rotation axis");
+        let at = |d: [f64; 3]| crate::multiaxis::axis_stated::canonical(d, Point3::new(0.0, 0.0, 0.0)).expect("a direction");
+        let a_bench = ("Bench".to_owned(), vec![rot("A", [1.0, 0.0, 0.0])]);
+        let stated = at([1.0, 0.0, 0.0]);
+        // Nothing stated: the fit refuses, the door answers nothing.
+        assert_eq!(letter_gate(Some(&a_bench), None, &mesh, "Rotary Parallel").ok(), Some(None));
+        // The stated line answers the machine's A, no fit asked.
+        assert_eq!(letter_gate(Some(&a_bench), Some(&stated), &mesh, "Rotary Parallel").ok(), Some(None));
+        // The spindle's C answers a stated vertical line with the axis.
+        let c_bench = ("MT".to_owned(), vec![rot("C", [0.0, 0.0, 1.0])]);
+        let z = at([0.0, 0.0, 1.0]);
+        assert_eq!(letter_gate(Some(&c_bench), Some(&z), &mesh, "Rotary Contour").ok(), Some(Some(z)));
+        // A stated line no rotary holds still refuses by name.
+        let e = letter_gate(Some(&c_bench), Some(&stated), &mesh, "Rotary Contour").expect_err("no rotary about the stated line");
+        assert!(e.to_string().contains("states no rotary on that line"), "{e}");
     }
 }
