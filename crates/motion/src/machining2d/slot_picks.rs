@@ -65,17 +65,17 @@ pub fn picked_ends(a: Point2, b: Point2, p: &SlotParams, picks: &PathPicks) -> R
         (None, None) => false,
     };
     let (from, to) = if swap { (b, a) } else { (a, b) };
-    if let (Some(_), Some(exit_at_a), Some(q)) = (start, exit, picks.first(PickRole::Exit)) {
-        if exit_at_a != (stops_at_a != swap) {
-            let end = |at_a: bool| if at_a { a } else { b };
-            let (s, e) = (end(starts_at_a != swap), end(stops_at_a != swap));
-            return Err(GenError::Invalid(format!(
-                "exit point ({:.3}, {:.3}): the pass that starts at the slot end ({:.3}, {:.3}) has {rows} \
-                 row(s) and stops at the slot end ({:.3}, {:.3}), not at the end nearest the exit point - \
-                 pick the exit at that end, or clear the exit point or the start point",
-                q.xy.x, q.xy.y, s.x, s.y, e.x, e.y
-            )));
-        }
+    if let (Some(_), Some(exit_at_a), Some(q)) = (start, exit, picks.first(PickRole::Exit))
+        && exit_at_a != (stops_at_a != swap)
+    {
+        let end = |at_a: bool| if at_a { a } else { b };
+        let (s, e) = (end(starts_at_a != swap), end(stops_at_a != swap));
+        return Err(GenError::Invalid(format!(
+            "exit point ({:.3}, {:.3}): the pass that starts at the slot end ({:.3}, {:.3}) has {rows} \
+             row(s) and stops at the slot end ({:.3}, {:.3}), not at the end nearest the exit point - \
+             pick the exit at that end, or clear the exit point or the start point",
+            q.xy.x, q.xy.y, s.x, s.y, e.x, e.y
+        )));
     }
     Ok((from, to))
 }
