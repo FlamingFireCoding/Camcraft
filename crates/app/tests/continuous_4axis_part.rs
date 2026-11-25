@@ -120,6 +120,7 @@ fn build_with(flute_in: f64) -> World {
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
         stated_axis: None,
+        picks: Default::default(),
     };
     h.execute(&world, ok(CreateOperation::new(&world, OP, "BN 1/8", SrcRef::Entity(MODEL_NAME.into()), wrap), OP));
     h.execute(&world, ok(GenerateOperation::new(&world, OP), OP));

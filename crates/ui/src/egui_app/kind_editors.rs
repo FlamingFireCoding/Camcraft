@@ -420,9 +420,10 @@ pub(super) fn rotary_axis_editor(ui: &mut Ui, lead_deg: &mut f64, lag_deg: &mut 
 /// file's own law for its `axis` vector), through the setup's work
 /// offset origin. It writes the draft, so the existing
 /// EditOperationParams commit path makes the edit undoable. Absent
-/// follows the model's fit, else the machine's stated rotary line;
-/// the panel never judges - the resolver's disagreement refusal owns
-/// the door.
+/// follows the machine's stated rotary line; only when nothing is
+/// stated does the model's fit run - the resolver's own order
+/// (`rotary_stated::lines_of`). The panel never judges; the
+/// resolver's disagreement refusal owns the door.
 pub(super) fn rotary_stated_axis_editor(ui: &mut Ui, v: &mut Option<[f64; 3]>) {
     let mut armed = v.is_some();
     let g = group(ui, "Stated rotation axis", Some(&mut armed), |ui| {
@@ -435,5 +436,5 @@ pub(super) fn rotary_stated_axis_editor(ui: &mut Ui, v: &mut Option<[f64; 3]>) {
     if g.toggled {
         *v = armed.then_some([1.0, 0.0, 0.0]);
     }
-    hint(ui, "a direction through the work offset origin; absent: fitted from the model, else the machine's stated rotary line - a line the model's faces disagree with refuses by name");
+    hint(ui, "a direction through the work offset origin; absent: the machine's stated rotary line, else fitted from the model - a line the model's faces disagree with refuses by name");
 }

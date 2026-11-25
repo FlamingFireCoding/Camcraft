@@ -242,9 +242,11 @@ pub(super) fn list_operation_types(_env: &mut Env, a: &Map<String, Value>) -> Re
                     &mut fields,
                     &[
                         ("condition", "string", json!("")),
-                        ("start", "array", Value::Null),
+                        ("picks", "object", json!({})),
                         ("tabs", "object", Value::Null),
                         ("capture", "boolean", json!(false)),
+                        ("both_pieces_restrained", "boolean", json!(false)),
+                        ("stock_centered_in_xy_travel", "boolean", json!(false)),
                         ("taper_deg", "number", json!(0.0)),
                         ("burnout_clearance", "number", Value::Null),
                         ("clearance", "number", json!(crate::operation::DEFAULT_CLEARANCE)),
@@ -256,6 +258,19 @@ pub(super) fn list_operation_types(_env: &mut Env, a: &Map<String, Value>) -> Re
             }
             if matches!(key.as_str(), "sinker_burn" | "sinker_side_burn") {
                 fields.push(json!({ "name": "cavity_outline", "type": "array", "default": Value::Null }));
+                fields.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+            }
+            // The zero default is omitted by ParamsDto to preserve old
+            // project bytes, but it is still an authored operation
+            // parameter on the MCP surface (#3153).
+            if key == "chamfer2_d"
+                && !fields.iter().any(|f| f["name"] == "minimum_cone_radius")
+            {
+                fields.push(json!({
+                    "name": "minimum_cone_radius",
+                    "type": "number",
+                    "default": 0.0
+                }));
                 fields.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
             }
             let mut kind = json!({
@@ -288,8 +303,7 @@ fn start_exit(k: &KindInfo) -> Value {
     let mut out = json!({ "start": cap.takes(PickRole::Start), "exit": cap.takes(PickRole::Exit) });
     match cap {
         operation::PickCapability::NotTaken(why) => out["why_not"] = json!(why),
-        operation::PickCapability::Threading => out["field"] = json!("start"),
-        _ => out["field"] = json!("links.approach.start_point / exit_point"),
+        _ => out["field"] = json!("picks"),
     }
     out
 }
@@ -327,7 +341,10 @@ pub(super) fn finding(op: &str, w: &Warning) -> Value {
         Warning::UndercutLift { at } => ("undercut_lift", *at),
         Warning::StrategyFallback { at, .. } => ("strategy_fallback", *at),
         Warning::FluteShort { at, .. } => ("flute_short", *at),
+        Warning::PlungeTooDeep { at, .. } => ("plunge_too_deep", *at),
         Warning::EntryNotRecommended { at, .. } => ("entry_not_recommended", *at),
+        Warning::EntryStandIn { at, .. } => ("entry_stand_in", *at),
+        Warning::PlungeIntoStock { at } => ("plunge_into_stock", *at),
     };
     json!({
         "op": op,

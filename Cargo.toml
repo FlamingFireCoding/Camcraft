@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/app", "crates/cl", "crates/motion", "crates/post", "crates/sim",
+members = ["crates/app", "crates/cl", "crates/gcode", "crates/motion", "crates/post", "crates/sim",
   "crates/tools", "crates/ui", "crates/geometry", "crates/kernel", "crates/gpu", "xtask"]
 
 [workspace.package]

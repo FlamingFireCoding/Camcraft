@@ -125,7 +125,7 @@ fn wrong_version_is_refused() {
     // v31 -> v32 (the `multi_axis_contour` tag).
     // Spell the probe from the constant: a rung named by hand goes stale
     // (grey, then red) the day the stamp moves, as it did at v25.
-    let future = project::PROJECT_VERSION + 1;
+    let future = project::NEWEST_PROJECT_VERSION + 1;
     let text = format!(r#"{{"version": {future}, "entities": []}}"#);
     let world = new_world();
     match project::open(&world, &text) {
@@ -384,6 +384,7 @@ fn tools_and_generated_operations_round_trip() {
                 feed: 1200.0,
                 plunge_feed: 300.0,
                 climb: true,
+                picks: Default::default(),
             },
         )
         .expect("create op"),
@@ -493,6 +494,7 @@ fn arc_move_round_trips() {
                 blend_turns: false, blend_radius: None,
                 links: camcraft_app::links::Links::PLANAR,
                 chain_overrides: Vec::new(),
+                picks: Default::default(),
             },
         )
         .expect("create"),
@@ -560,6 +562,7 @@ fn a_stated_pose_round_trips_verbatim() {
                 feed: 1000.0,
                 plunge_feed: 200.0,
                 climb: true,
+                picks: Default::default(),
             },
         )
         .expect("face"),
@@ -985,6 +988,7 @@ fn v5_roundtrips_retract_and_auto() {
                 optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
                 blend_turns: false,
                 corner_relief: Default::default(),
+                picks: Default::default(),
             },
         )
         .expect("pocket"),
@@ -1005,6 +1009,7 @@ fn v5_roundtrips_retract_and_auto() {
                 feed: 1200.0,
                 plunge_feed: 300.0,
                 climb: true,
+                picks: Default::default(),
             },
         )
         .expect("trace"),
@@ -1084,6 +1089,7 @@ fn patch_selection_round_trips() {
                 feed: 1200.0,
                 plunge_feed: 300.0,
                 climb: true,
+                picks: Default::default(),
             },
         )
         .expect("create"),
@@ -1171,6 +1177,7 @@ fn a_selection_round_trips_and_stays_ok() {
         blend_turns: false, blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         chain_overrides: Vec::new(),
+        picks: Default::default(),
     };
     history.execute(
         &world,
@@ -2684,6 +2691,7 @@ fn level_link_choice_round_trips_and_the_default_writes_no_key() {
             blend_turns: false, blend_radius: None,
             links,
             chain_overrides: Vec::new(),
+            picks: Default::default(),
         };
         history.execute(
             &world,
@@ -2773,6 +2781,7 @@ fn side_choice_round_trips_and_a_hand_edited_inside_refuses_at_generate() {
                 blend_turns: false, blend_radius: None,
                 links: camcraft_app::links::Links::PLANAR,
                 chain_overrides: Vec::new(),
+                picks: Default::default(),
             },
         )
         .expect("create"),
@@ -2848,6 +2857,7 @@ fn side_choice_round_trips_and_a_hand_edited_inside_refuses_at_generate() {
                 blend_turns: false, blend_radius: None,
                 links: camcraft_app::links::Links::PLANAR,
                 chain_overrides: Vec::new(),
+                picks: Default::default(),
             },
         )
         .expect("create C2"),
@@ -5658,8 +5668,8 @@ fn a_project_save_into_a_folder_without_write_access_is_refused_and_kept() {
 
 
 #[test]
-fn v79_file_and_the_rotary_flow_grammar_round_trips() {
-    // v79 (#2826): the `rotary_flow` tag arrives - the picked guide
+fn v82_file_and_the_rotary_flow_grammar_round_trips() {
+    // v82 (#2826): the `rotary_flow` tag arrives - the picked guide
     // chains' kind, the parallel's shape minus the station window the
     // picks replace. A literal document reads back whole; the absent
     // optionals stay silent; write-parse-write is a fixed point; and
@@ -5692,7 +5702,7 @@ fn v79_file_and_the_rotary_flow_grammar_round_trips() {
         ]
     }}"#, project::PROJECT_VERSION);
     let world = new_world();
-    project::open(&world, &text).expect("the v79 flow-band grammar must read");
+    project::open(&world, &text).expect("the v82 flow-band grammar must read");
     let e = model::find_by_name(&world, "RF1").expect("op");
     let o = model::operation_of(&world, &e).expect("operation");
     let OpParams::RotaryFlow {
@@ -5720,7 +5730,7 @@ fn v79_file_and_the_rotary_flow_grammar_round_trips() {
 
     // Write-parse-write is a fixed point, and the optionals ride the
     // file only where stated.
-    let p = tmp_path("v79");
+    let p = tmp_path("v82");
     project::save(&world, &p).expect("save");
     let first = std::fs::read_to_string(&p).expect("read");
     let world2 = new_world();
@@ -5744,6 +5754,60 @@ fn v79_file_and_the_rotary_flow_grammar_round_trips() {
     let world3 = new_world();
     assert!(
         matches!(project::open(&world3, &bad), Err(ProjectError::Corrupt(_))),
-        "a v79 file with a 200-degree cone must not load"
+        "a v82 file with a 200-degree cone must not load"
     );
+}
+
+/// #3368: a flat or ball taper tip rides the project file, and only such a
+/// file stepped to `TIP_FORM_PROJECT_VERSION` while the tip-form rung led
+/// the ladder, so an older build refused it instead of reading the tip as
+/// sharp (a smaller tool). A file with only sharp tapers keeps
+/// `PROJECT_VERSION` and writes no tip key, so an older build still opens
+/// it. Since #3153 stepped `PROJECT_VERSION` past the tip-form step (v80),
+/// every file says `PROJECT_VERSION` and the tip keys ride the
+/// unconditional ladder; a v79 file - written while the rung led - still
+/// opens and reads its tips whole.
+#[test]
+fn a_tip_form_round_trips_and_steps_the_project_version() {
+    const { assert!(project::PROJECT_VERSION > project::TIP_FORM_PROJECT_VERSION) };
+    let Some((_, sharp)) = catalog().into_iter().find(|(n, _)| *n == "CM-0600-90") else {
+        panic!("the catalog has CM-0600-90");
+    };
+    let saved_with = |tools: &[(&str, Tool)]| {
+        let world = new_world();
+        let mut h = History::default();
+        for (name, t) in tools {
+            h.execute(&world, AddTool::new(&world, name, t.clone()).expect("a sane tool"));
+        }
+        project::save_text(&world).expect("saved")
+    };
+    let only_sharp = saved_with(&[("CM", sharp.clone())]);
+    let doc: serde_json::Value = serde_json::from_str(&only_sharp).expect("json");
+    assert_eq!(doc["version"], serde_json::json!(project::PROJECT_VERSION), "no tip form, no step");
+    assert!(!only_sharp.contains("tip_form") && !only_sharp.contains("tip_diameter"), "{only_sharp}");
+    let flat = Tool { tip_form: camcraft_app::tools::TaperTip::Flat, tip_diameter: 1.0, ..sharp.clone() };
+    let ball = Tool { tip_form: camcraft_app::tools::TaperTip::Ball, corner_r: 0.5, ..sharp.clone() };
+    let text = saved_with(&[("CM", sharp.clone()), ("FLAT", flat.clone()), ("BALL", ball.clone())]);
+    let doc: serde_json::Value = serde_json::from_str(&text).expect("json");
+    assert_eq!(doc["version"], serde_json::json!(project::written_project_version(true)), "a tip form steps the version");
+    assert!(project::written_project_version(true) >= project::TIP_FORM_PROJECT_VERSION, "an older build refuses a tip-form file");
+    assert_eq!(doc["version"], serde_json::json!(project::PROJECT_VERSION), "the tip form rides the unconditional version");
+    let world = new_world();
+    project::open(&world, &text).expect("this build reads its own tip-form file");
+    for (name, want) in [("CM", &sharp), ("FLAT", &flat), ("BALL", &ball)] {
+        let got = model::find_by_name(&world, name).and_then(|e| model::tool_of(&world, &e)).expect("tool");
+        let shape = |t: &Tool| (t.kind, t.diameter, t.corner_r, t.tip_angle, t.tip_form, t.tip_diameter);
+        assert_eq!(shape(&got), shape(want), "{name} round-trips");
+    }
+    assert_eq!(project::save_text(&world).expect("saved again"), text, "byte for byte");
+    // A v79 file - written while the tip-form rung led the ladder -
+    // still opens and reads its tips whole: it is the v78 file it
+    // says, plus the keys this build reads natively.
+    let mut v79: serde_json::Value = serde_json::from_str(&text).expect("json");
+    v79["version"] = serde_json::json!(project::TIP_FORM_PROJECT_VERSION);
+    let raw79 = serde_json::to_string(&v79).expect("json");
+    let world = new_world();
+    project::open(&world, &raw79).expect("a v79 tip-form file reads natively");
+    let got = model::find_by_name(&world, "FLAT").and_then(|e| model::tool_of(&world, &e)).expect("tool");
+    assert_eq!((got.tip_form, got.tip_diameter), (flat.tip_form, flat.tip_diameter), "the v79 tip reads whole");
 }

@@ -126,6 +126,8 @@ mod stock_material_row;
 mod tool_body_assembly_page;
 mod tool_body_lathe_page;
 mod tool_body_page;
+// #3894: the orbitable model view shared by the body page and the tool library window.
+mod tool_model_view;
 // #630: the tool editor's lathe orientation row.
 mod tool_orientation_row;
 // #894: the Thread operation's pitch and hand rows.
@@ -134,17 +136,24 @@ mod thread_page;
 mod tool_thread_mill_row;
 // #1444: the undercut cutters' seeding and dovetail flank angle row.
 mod tool_undercut_row;
+// #3368: a chamfer mill's tip form and tip diameter rows.
+mod tool_taper_tip_row;
+// #3369: a form mill's preset list, number rows and pilot length.
+mod tool_form_mill_row;
 // #898: the tool editor's catalog rows (part number, vendor, ...).
 mod tool_catalog_rows;
 mod tool_settings;
 // #2014: the tool Properties' label-left property grid and its groups.
 mod tool_settings_grid;
-mod tool_library;
+// #3892: the tool library window (U1 of #3663).
+mod tool_library_dialog;
 mod tool_preview;
 // #890: the tool editor's per-material cutting data.
 mod tool_cutting_rows;
 mod tool_turning_row;
 mod tool_profile_page;
+// #2007/#3914: what the Properties tool preview draws, with the cutter outline memo.
+mod tool_preview_inputs;
 // #793: the built-in taper holder picker in the Profile section.
 mod tool_holder_picker;
 // #93 slice 2: the Profile tab's drawn cutter, neck and shank.

@@ -21,7 +21,8 @@ verdict, which now takes the job's resolved axis), `rotary_picks`,
 the centre-cutting audit's revolved bar, and the letter door (which
 answers a stated line without a fit). Nothing stated keeps today's
 behaviour bit for bit. The op param saves in the project file as
-`stated_axis` (PROJECT_VERSION steps to v78), edits in the property
+`stated_axis` (PROJECT_VERSION steps to v81 - revised at rework, see
+below), edits in the property
 page through the existing EditOperationParams commit, and patches
 through `edit_operation`'s merge patch.
 
@@ -55,3 +56,43 @@ own door names that machine, and the resolver does not double it.
 `multiaxis::axis_stated`; the radial drop slice consumes the same
 lines without touching the resolver. Remove the "not supported yet"
 clause of the disagreement refusal when the radial drop lands.
+
+**Revised at rework (PR #3674, mkinney's SAFETY review):**
+
+- **The judge's radius is read ABOUT THE STATED LINE, never off the
+  world origin.** `axis_stated::holds_data` computed the facet radius
+  from `d.p` relative to the world origin; a common model or WCS
+  translation (e.g. +10000 mm in Y) inflated the sagitta budget with
+  the translation and let a 1 mm wrong line generate silently. Each
+  radius is now the facet's distance from the stated line
+  (`d.p - ax.origin`). Pinned by motion tests (a moved part holds its
+  moved line on every coordinate axis; a wrong line on each of the
+  three coordinate planes refuses at home and after any common
+  translation) and by the app-level mutation the review probed
+  (bar at Y+10000, stated X, clearance 100: WCS Y=10000 generates,
+  Y=10001 and Y=10002 refuse by name).
+- **The project version is v81, not v78.** Upstream main owns v78
+  (`reserved_tools`, #2604), the conditional v79 (tip form, #3368)
+  and, since the second refresh, v80 (`minimum_cone_radius`, #3153).
+  v78 is refused (main's reader accepts it and silently drops
+  `stated_axis` on re-save - the review's finding), v79 is refused
+  (it is upstream's live tip-form version; a v79 stated-axis file
+  would read as v78 and drop the same way), and v80 is main's own
+  step. The next correctly-ordered free version is v81, marked
+  breaking: older readers refuse a v81 file rather than turn the
+  part about an axis the user never named. The v79 tip-form
+  conditional stays: `tip_form_read_version` is now inert (the
+  ladder reads a v79 file natively at 79), and the tip-form test
+  carries #3153's asserts plus the v79-reads-natively pin. The #2826
+  held branch numbered its Rotary Flow step v80 before main took
+  v80; it must renumber past main's ladder when it refreshes,
+  whatever this branch had taken.
+- **The page's help follows the resolver.** The stated-axis group's
+  hint said an absent direction uses the fitted axis before the
+  machine line; `rotary_stated::lines_of` reads the machine's stated
+  line first and fits only when nothing is stated. The hint and its
+  comment now say the resolver's order, pinned by a text assertion.
+- **UI tests** for the group live in
+  `crates/ui/src/egui_app/tests/rotary_stated_axis.rs`: labels,
+  roles, enabled state, the Apply commit and its undo, across the
+  three rotary kinds; release PNGs unchanged.

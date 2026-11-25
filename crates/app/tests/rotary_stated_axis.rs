@@ -130,10 +130,16 @@ fn screw(turns: f64) -> Vec<Triangle> {
 /// The rotary parallel's params, with the op's own stated direction
 /// when one is given (#2772).
 fn parallel(stated_axis: Option<[f64; 3]>) -> OpParams {
+    parallel_at(stated_axis, 25.0)
+}
+
+/// [`parallel`] at a stated clearance: the review's probe of PR
+/// #3674 ran the moved part at 100.
+fn parallel_at(stated_axis: Option<[f64; 3]>, clearance: f64) -> OpParams {
     OpParams::RotaryParallel {
         tolerance: 0.1,
         stepover: Some(2.0),
-        clearance_z: Height::fixed(25.0),
+        clearance_z: Height::fixed(clearance),
         retract_z: None,
         top_z: Height::fixed(6.0),
         bottom_z: Height::fixed(1.0),
@@ -144,6 +150,7 @@ fn parallel(stated_axis: Option<[f64; 3]>) -> OpParams {
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
         stated_axis,
+        picks: Default::default(),
     }
 }
 
@@ -168,6 +175,67 @@ fn contour_at(stated_axis: Option<[f64; 3]>, clearance: f64) -> OpParams {
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
         stated_axis,
+        picks: Default::default(),
+    }
+}
+
+/// Every vertex of `facets` moved by `off`: a common model or WCS
+/// translation (the review of PR #3674).
+fn moved(facets: &[Triangle], off: [f64; 3]) -> Vec<Triangle> {
+    let at = |p: Point3| Point3::new(p.x + off[0], p.y + off[1], p.z + off[2]);
+    facets
+        .iter()
+        .map(|t| Triangle::new(at(t.a), at(t.b), at(t.c)))
+        .collect()
+}
+
+/// [`world_on`] with the box stock moved to `stock` as well - a
+/// common translation of the whole setup (the review of PR #3674
+/// moved the model and the stock together).
+fn world_moved(mesh: Vec<Triangle>, params: OpParams, stock: [f64; 3]) -> World {
+    let world = camcraft_app::world::new_world();
+    let mut h = History::default();
+    let tool = catalog().into_iter().find(|(n, _)| *n == "BN-0600").map(|(_, t)| t).expect("catalog ball");
+    h.execute(&world, AddTool::new(&world, "BN-0600", tool).expect("tool"));
+    let (dx, dz) = if mesh.first().is_some_and(|t| t.a.x.abs() > t.a.z.abs()) { (34.0, 14.0) } else { (14.0, 34.0) };
+    h.execute(
+        &world,
+        SetStock::new(
+            &world,
+            StockShape::Box { dx, dy: 14.0, dz },
+            Location { pos: Point3::new(stock[0], stock[1], stock[2]), ..Location::default() },
+        )
+        .expect("stock"),
+    );
+    h.execute(&world, ImportModel::from_mesh("bar", Mesh::from_facets(mesh)));
+    h.execute(&world, CreateOperation::new(&world, "OP", "BN-0600", SrcRef::Entity("bar".into()), params).expect("create"));
+    world
+}
+
+/// The rotary offset's params (the wrap ladder), with the op's own
+/// stated direction when one is given (#2772).
+fn offset(stated_axis: Option<[f64; 3]>) -> OpParams {
+    OpParams::RotaryOffset {
+        links: camcraft_app::links::Links::ROUGH3D,
+        tolerance: 0.1,
+        stepover: 4.0,
+        stock_to_leave: 0.5,
+        clearance_z: Height::fixed(25.0),
+        top_z: Height::fixed(16.0),
+        bottom_z: Height::fixed(-14.0),
+        stepdown: 0.5,
+        feed: 500.0,
+        plunge_feed: 100.0,
+        climb: true,
+        strategy: camcraft_app::machining2d::PocketStrategy::Auto,
+        entry: camcraft_app::machining3d::Entry3D::Plunge,
+        helix_radius: 1.0,
+        optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
+        lead_deg: 0.0,
+        lag_deg: 0.0,
+        max_tilt_deg: 60.0,
+        stated_axis,
+        picks: Default::default(),
     }
 }
 
@@ -342,8 +410,46 @@ fn a_work_offset_move_moves_the_stated_line_and_refuses() {
 }
 
 #[test]
+fn a_common_translation_does_not_defeat_the_stated_line_judge() {
+    // The review of PR #3674's mutation, pinned: the model and the
+    // box stock moved +10000 in Y, the op's own stated X direction
+    // anchored through the work offset origin, clearance 100. The
+    // judge reads its radii ABOUT THE STATED LINE: an origin ON the
+    // moved part generates the fitted path, and 1 mm or 2 mm off in
+    // Y refuses by name - the same disagreement the judge makes at
+    // home, wherever the part sits.
+    let off = [0.0, 10000.0, 0.0];
+    let mesh = moved(&bar(0), off);
+    let params = parallel_at(Some([1.0, 0.0, 0.0]), 100.0);
+    // The GREEN control: the work offset on the moved part generates.
+    let world = world_moved(mesh.clone(), params.clone(), off);
+    let mut h = History::default();
+    h.execute(
+        &world,
+        SetWcsOrigin::new(&world, Location { pos: Point3::new(off[0], off[1], off[2]), ..Location::default() })
+            .expect("place"),
+    );
+    generate(&world).expect("the stated line runs through the moved part");
+    assert!(!moves(&world).is_empty(), "the control generates a program");
+    // 1 mm and 2 mm off: the refusal the judge makes at home, not a
+    // tolerance that grows with the translation.
+    for dy in [1.0, 2.0] {
+        let world = world_moved(mesh.clone(), params.clone(), off);
+        let mut h = History::default();
+        h.execute(
+            &world,
+            SetWcsOrigin::new(&world, Location { pos: Point3::new(off[0], off[1] + dy, off[2]), ..Location::default() })
+                .expect("place"),
+        );
+        let err = generate(&world).expect_err("the stated line stands off the moved part");
+        assert!(err.contains("disagree with the stated rotary line"), "{err}");
+        assert!(err.contains("they turn about their own axis"), "{err}");
+    }
+}
+
+#[test]
 fn the_stated_axis_round_trips_the_project_file() {
-    // v78 (#2772): the op's stated direction saves, opens and reads
+    // v81 (#2772): the op's stated direction saves, opens and reads
     // back whole; a v77 file (no key) opens as unstated, following the
     // machine, else the fit.
     let world = world_on(bar(0), parallel(Some([0.0, 1.0, 0.0])), None);
@@ -385,10 +491,11 @@ fn the_stated_axis_round_trips_the_project_file() {
 
 #[test]
 fn a_v77_file_opens_and_a_newer_file_is_refused() {
-    // The v78 rule: an older reader must refuse this file rather than
-    // drop a stated axis and turn the part about one the user never
-    // named. A v77 file steps up unchanged.
-    const { assert!(project::PROJECT_VERSION >= 79, "the stated rotation axis needs project v79") };
+    // The v81 rule (#2772, reviewed in PR #3674): an older reader -
+    // upstream's v78, and its v79 tip-form build - must refuse this
+    // file rather than drop a stated axis and turn the part about one
+    // the user never named. A v77 file steps up unchanged.
+    const { assert!(project::PROJECT_VERSION >= 81, "the stated rotation axis needs a distinct version older readers refuse") };
     let world = world_on(bar(0), parallel(None), Some(MICROARC));
     let out = std::env::temp_dir().join(format!("camcraft_stated_version_{}.camproj", std::process::id()));
     project::save(&world, &out).expect("save");
@@ -402,4 +509,44 @@ fn a_v77_file_opens_and_a_newer_file_is_refused() {
     let raw = serde_json::to_string(&future).expect("json");
     let err = project::open(&back, &raw).expect_err("a future version is refused");
     assert!(err.to_string().contains("unsupported project version"), "{err}");
+}
+
+#[test]
+fn a_stated_axis_on_every_rotary_kind_needs_the_new_reader() {
+    // The old-reader boundary, one op of each rotary kind (the review
+    // of PR #3674): a file whose op states a rotation axis says v81,
+    // a version upstream's v78 reader - and its v79 tip-form build -
+    // refuses rather than drop the statement and re-save the op about
+    // an axis the user never named.
+    const { assert!(project::PROJECT_VERSION >= 81, "the stated rotation axis needs a distinct version older readers refuse") };
+    for (kind, params) in [
+        ("rotary_contour", contour(Some([1.0, 0.0, 0.0]))),
+        ("rotary_parallel", parallel(Some([1.0, 0.0, 0.0]))),
+        ("rotary_offset", offset(Some([1.0, 0.0, 0.0]))),
+    ] {
+        let world = world_on(bar(0), params, None);
+        let out = std::env::temp_dir().join(format!("camcraft_stated_kind_{}_{}.camproj", kind, std::process::id()));
+        project::save(&world, &out).expect("save");
+        let text = std::fs::read_to_string(&out).expect("the saved document");
+        let _ = std::fs::remove_file(&out);
+        assert!(text.contains("stated_axis"), "{kind}: the stated direction is written: {text}");
+        let saved: serde_json::Value = serde_json::from_str(&text).expect("json");
+        assert_eq!(saved["version"], serde_json::json!(project::PROJECT_VERSION), "{kind}: {text}");
+        assert!(
+            saved["version"].as_u64().is_some_and(|v| v >= 81),
+            "{kind}: a v79 reader must refuse a file that states a rotation axis"
+        );
+        // This build reopens its own file whole.
+        let back = camcraft_app::world::new_world();
+        project::open(&back, &text).expect("open");
+        let e = model::find_by_name(&back, "OP").expect("op");
+        let op = model::operation_of(&back, &e).expect("operation");
+        let read = match op.params {
+            OpParams::RotaryContour { stated_axis, .. }
+            | OpParams::RotaryParallel { stated_axis, .. }
+            | OpParams::RotaryOffset { stated_axis, .. } => stated_axis,
+            _ => panic!("{kind}: the op kept its kind"),
+        };
+        assert_eq!(read, Some([1.0, 0.0, 0.0]), "{kind}: the stated direction survives the round trip");
+    }
 }

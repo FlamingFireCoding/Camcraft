@@ -243,22 +243,7 @@ pub(crate) fn v_operations(env: &mut Env, _args: Vec<Value>) -> Result<Value, St
 /// and leaves the generations before it real and undoable, exactly as
 /// in the app.
 pub(crate) fn v_generate(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
-    let all = inventory(env);
-    let targets: Vec<(String, Entity)> = if args.is_empty() {
-        all.iter()
-            .map(|(n, e, _)| (n.clone(), *e))
-            .collect()
-    } else {
-        let mut out = Vec::with_capacity(args.len());
-        for i in 0..args.len() {
-            let name = arg_str(&args, i, "an operation name")?;
-            match all.iter().find(|(n, e, _)| *n == name || model::operation_label(&env.world, n, e) == name) {
-                Some((key, e, _)) => out.push((key.clone(), *e)),
-                None => return Err(format!("no operation named '{name}'")),
-            }
-        }
-        out
-    };
+    let targets = generate_targets(env, &args)?;
     let mut done = Vec::with_capacity(targets.len());
     for (name, entity) in targets {
         if args.is_empty() && crate::operation::status_of(&env.world, &entity) == OpStatus::Ok {
@@ -269,6 +254,29 @@ pub(crate) fn v_generate(env: &mut Env, args: Vec<Value>) -> Result<Value, Strin
         done.push(op_view(env, &name, &entity, false));
     }
     Ok(Value::Array(done))
+}
+
+/// The operations a `generate` call runs, in program order: every one
+/// for no names (the caller skips the Ok ones as it reaches them), or
+/// each named one. #3035: the MCP server's background generate reads
+/// the same list, so the two paths cannot disagree on what runs.
+pub(crate) fn generate_targets(env: &Env, args: &[Value]) -> Result<Vec<(String, Entity)>, String> {
+    let all = inventory(env);
+    Ok(if args.is_empty() {
+        all.iter()
+            .map(|(n, e, _)| (n.clone(), *e))
+            .collect()
+    } else {
+        let mut out = Vec::with_capacity(args.len());
+        for i in 0..args.len() {
+            let name = arg_str(args, i, "an operation name")?;
+            match all.iter().find(|(n, e, _)| *n == name || model::operation_label(&env.world, n, e) == name) {
+                Some((key, e, _)) => out.push((key.clone(), *e)),
+                None => return Err(format!("no operation named '{name}'")),
+            }
+        }
+        out
+    })
 }
 
 /// A refused generation as the script's (and MCP's) error: the refusal,
@@ -510,7 +518,7 @@ pub(crate) fn ops_view(env: &Env) -> Value {
 
 /// One operation as the script sees it: the tree row, plus the cached
 /// path's warnings when the caller is asking for a verdict.
-fn op_view(env: &Env, name: &str, entity: &Entity, warnings: bool) -> Value {
+pub(crate) fn op_view(env: &Env, name: &str, entity: &Entity, warnings: bool) -> Value {
     let op = model::operation_of(&env.world, entity);
     let status = crate::operation::status_of(&env.world, entity);
     let mut row = json!({

@@ -198,6 +198,14 @@ pub struct VerifyContext<'a> {
     /// Declared corner relief zones (#2400) for inside-corner pockets and
     /// slots, bounded strictly to cutter radius, pocket floor Z, and stock.
     pub corner_reliefs: &'a [super::CornerReliefZone],
+    /// The stepdown the plunge depth law (d3, #3679) judges a feed
+    /// descent against: the deepest engagement below the floor that the
+    /// cuts before the plunge left under the full tool disc. `None` -
+    /// every kind that cuts no levels (drills, bores, threads, turning,
+    /// wire, plasma) and every context that states no limit - keeps the
+    /// law silent and every stored verdict byte-identical, the same
+    /// discipline as `finish_tol` and `model`.
+    pub plunge_stepdown: Option<f64>,
 }
 
 /// The inert tool of [`VerifyContext::default`].
@@ -239,6 +247,7 @@ impl Default for VerifyContext<'_> {
             rim_top_z: None,
             lathe_axis: None,
             corner_reliefs: &[],
+            plunge_stepdown: None,
         }
     }
 }
@@ -432,17 +441,38 @@ pub enum Warning {
     /// decision): it names the cause of the shank and holder findings that
     /// follow it, and those findings hold the post.
     FluteShort { at: usize, flute_mm: f64, depth_mm: f64 },
+    /// #3679: the feed plunge at move `at` reaches `mm` below the floor
+    /// that the cuts before it left under the full tool disc, deeper
+    /// than the stated stepdown `limit_mm` - the rim stands on stock
+    /// that no level above cut, and the cutter takes that much material
+    /// in one bite. Always advisory (the #3525 pattern): nothing gouges
+    /// and nothing collides, the risk is the tool load, so the finding
+    /// is shown and named everywhere a warning is and the post is not
+    /// held.
+    PlungeTooDeep { at: usize, mm: f64, limit_mm: f64 },
     /// #3748: a start-side pass ("Pass starts at" Inside, or Outside when
     /// `inside` is false) round a part that the user set to the `entry`
     /// lead-in, where Arc from the air is the recommended one. The entry
     /// is used as selected, from the first cut at `at`. Advisory: the
     /// path is verified like any other, so the post is not held.
     EntryNotRecommended { at: usize, entry: super::AdvisedEntry, inside: bool },
+    /// #3884: a start-side pass where the selected entry did not fit at
+    /// `entries` pass starts, from the first cut at `at`: a named stand-in
+    /// entry (a ramp, a helix, an axial dive or a plunge) was used there.
+    /// Advisory: the path is verified, so the post is not held.
+    EntryStandIn { at: usize, entries: usize },
+    /// #3884: a start-side pass whose selected Plunge plunges into uncut
+    /// stock at a pass start that no earlier cut cleared, from the first
+    /// cut at `at`. Advisory: the entry is the user's and is verified.
+    PlungeIntoStock { at: usize },
 }
 
 impl Warning {
-    /// Whether this warning holds the post: every kind but the scallop
-    /// reading (M13.9), which is a quality note - shown, never binding.
+    /// Whether this warning holds the post: every kind but the advisory
+    /// readings - the scallop (M13.9), the probe search, the sinker
+    /// order, the undersize drill, the strategy fallback, the flute
+    /// reach (#3525) and the plunge depth (#3679) - which name a risk
+    /// the collision laws alone decide.
     #[must_use]
     pub fn blocks_post(&self) -> bool {
         !matches!(self, Warning::Scallop { .. }
@@ -451,7 +481,10 @@ impl Warning {
                 | Warning::DrillUndersize { .. }
                 | Warning::StrategyFallback { .. }
                 | Warning::FluteShort { .. }
-                | Warning::EntryNotRecommended { .. })
+                | Warning::PlungeTooDeep { .. }
+                | Warning::EntryNotRecommended { .. }
+                | Warning::EntryStandIn { .. }
+                | Warning::PlungeIntoStock { .. })
     }
 
     /// The envelope report's unjudged hidden half, as the warning that
@@ -605,10 +638,29 @@ impl core::fmt::Display for Warning {
                  above the flutes, the shank or the holder goes into the cut; the findings after this one name the moves where \
                  it meets material - use a tool with a longer flute, or cut less deep (this finding alone does not hold the post)"
             ),
+            Warning::PlungeTooDeep { at, mm, limit_mm } => write!(
+                f,
+                "feed plunge at move {at} reaches {mm:.3} mm below the floor that no level above cut, deeper than one \
+                 stepdown ({limit_mm:.3} mm) - cut the levels above first, or plunge in pecks of one stepdown (the post is \
+                 not held: the risk is the tool load)"
+            ),
             Warning::EntryNotRecommended { at, entry, inside } => write!(
                 f,
                 "{}, from move {at} (the post is not held: the cut is verified)",
                 super::entry_advice(*entry, *inside)
+            ),
+            Warning::EntryStandIn { at, entries } => write!(
+                f,
+                "Pass starts at: the selected entry did not fit at {entries} pass start{} in material, from move {at}: \
+                 a stand-in entry is used there, and the notes name each one - set the stock so that an Arc entry can \
+                 start in the air outside it, or use a smaller stepover (the post is not held: the cut is verified)",
+                if *entries == 1 { "" } else { "s" }
+            ),
+            Warning::PlungeIntoStock { at } => write!(
+                f,
+                "Pass starts at: the selected Plunge entry plunges into uncut stock where a pass starts in material, \
+                 from move {at}: Arc is recommended, because it enters from the air outside the stock where it fits \
+                 (the post is not held: the cut is verified)"
             ),
         }
     }

@@ -100,6 +100,12 @@ impl OpParams {
                     corner_relief.validate().err().map(|e| e.to_string())
                 }
             }),
+            OpParams::Chamfer2D {
+                minimum_cone_radius,
+                ..
+            } if !(minimum_cone_radius.is_finite() && *minimum_cone_radius >= 0.0) => {
+                Some("tip offset must be finite and non-negative".into())
+            }
             _ => None,
         }
     }
@@ -135,6 +141,8 @@ impl OpParams {
         let links_ok = links_ok && self.arc_turn_refusal().is_none();
         // #1489: a rest group the generator would refuse.
         let links_ok = links_ok && crate::operation::rest_op::rest_refusal(self).is_none();
+        // #1448 / #3339: every pick coordinate finite, in bounds, and within the cap.
+        let links_ok = links_ok && self.path_picks().refusal().is_none();
         tilt_ok
             && links_ok
             && match self {
@@ -398,6 +406,7 @@ impl OpParams {
             OpParams::Chamfer2D {
                 width,
                 angle_deg,
+                minimum_cone_radius,
                 clearance_z,
                 retract_z,
                 top_z,
@@ -408,6 +417,7 @@ impl OpParams {
             } => {
                 pos(*width)
                     && (0.0..90.0).contains(angle_deg)
+                    && nneg(*minimum_cone_radius)
                     && pos(*tolerance)
                     && clearance_z.is_sane()
                     && retract_z.is_none_or(|r| r.is_sane())
@@ -557,6 +567,7 @@ impl OpParams {
                 // #1889: the policy is an enum; each value is legal.
                 unreachable: _,
                 sizing,
+                picks: _,
             } => {
                 pos(*width)
                     // #1890: a positive depth and 1..=100 passes.
@@ -598,6 +609,7 @@ impl OpParams {
                 lag_deg,
                 max_tilt_deg,
                 shank_avoid: _,
+                picks: _,
             } => {
                 let cap = crate::multiaxis::MAX_TILT_CAP_DEG;
                 let deg = |v: f64| v.is_finite() && (0.0..=cap).contains(&v);
@@ -1087,6 +1099,7 @@ impl OpParams {
                 stepdown,
                 feed,
                 plunge_feed,
+                picks: _,
             } => {
                 pos(*tolerance)
                     && clearance_z.is_sane()
@@ -1112,6 +1125,7 @@ impl OpParams {
                 stock_to_leave,
                 feed,
                 plunge_feed,
+                picks: _,
             } => {
                 pos(*tolerance)
                     && clearance_z.is_sane()
@@ -1130,6 +1144,7 @@ impl OpParams {
                 bottom_z,
                 feed,
                 plunge_feed,
+                picks: _,
             } => {
                 pos(*tolerance)
                     && clearance_z.is_sane()
@@ -1153,6 +1168,7 @@ impl OpParams {
                 stock_to_leave,
                 feed,
                 plunge_feed,
+                picks: _,
             } => {
                 pos(*tolerance)
                     && clearance_z.is_sane()
@@ -1171,6 +1187,7 @@ impl OpParams {
                 bottom_z,
                 feed,
                 plunge_feed,
+                picks: _,
             } => {
                 pos(*tolerance)
                     && clearance_z.is_sane()
@@ -1235,6 +1252,7 @@ impl OpParams {
                 plunge_feed,
                 infeed_plan,
                 hand: _,
+                picks: _,
             } => {
                 pos(*tolerance)
                     && clearance_z.is_sane()
@@ -1265,6 +1283,7 @@ impl OpParams {
                 angle_deg,
                 feed,
                 plunge_feed,
+                picks: _,
             } => {
                 pos(*tolerance)
                     && clearance_z.is_sane()
@@ -1286,6 +1305,7 @@ impl OpParams {
                 top_dia,
                 feed,
                 plunge_feed,
+                picks: _,
             } => {
                 pos(*tolerance)
                     && clearance_z.is_sane()
@@ -1311,6 +1331,7 @@ impl OpParams {
                 passes,
                 feed,
                 plunge_feed,
+                picks: _,
             } => {
                 pos(*tolerance)
                     && clearance_z.is_sane()
@@ -1335,6 +1356,7 @@ impl OpParams {
                 bottom_z,
                 feed,
                 plunge_feed,
+                picks: _,
             } => {
                 pos(*tolerance)
                     && clearance_z.is_sane()
@@ -1355,6 +1377,7 @@ impl OpParams {
                 bottom_z,
                 feed,
                 plunge_feed,
+                picks: _,
             } => {
                 pos(*tolerance)
                     && clearance_z.is_sane()

@@ -17,7 +17,7 @@ use super::fields::{check_row, combo, int_range_row, num_feed, num_plain_row, nu
 use super::layout::{CTRL_W, group_open, prop_row, prop_row_hint, text_row};
 
 /// Tool kind labels, same order as `ToolKind` (mirrors `ToolUi::from_tool`).
-const TOOL_KINDS: [(tools::ToolKind, &str); 22] = [
+const TOOL_KINDS: [(tools::ToolKind, &str); 23] = [
     (tools::ToolKind::EndMill, "End mill"),
     (tools::ToolKind::BallNose, "Ball nose"),
     (tools::ToolKind::BullNose, "Bull nose"),
@@ -46,6 +46,8 @@ const TOOL_KINDS: [(tools::ToolKind, &str); 22] = [
     (tools::ToolKind::Keyseat, "Keyseat cutter"),
     (tools::ToolKind::Dovetail, "Dovetail cutter"),
     (tools::ToolKind::Lollipop, "Lollipop cutter"),
+    // #3369: a router-style cutter whose edge is a drawn or preset form.
+    (tools::ToolKind::FormMill, "Form mill"),
 ];
 
 /// The settings grid: the groups, in the order the tool reads.
@@ -60,8 +62,9 @@ pub(super) fn grid(ui: &mut Ui, state: &mut State) {
     group_open(ui, "Catalog", None, true, |ui| catalog(ui, state));
 }
 
-/// Type, the cutting shape and the tool body's lengths.
-fn geometry(ui: &mut Ui, state: &mut State) {
+/// Type, the cutting shape and the tool body's lengths. #3893: the tool
+/// library window's Tool tab draws these same rows.
+pub(super) fn geometry(ui: &mut Ui, state: &mut State) {
     let u = state.units();
     let exists = state.tool_ui.exists;
     let before = state.tool_ui.kind;
@@ -106,6 +109,8 @@ fn geometry(ui: &mut Ui, state: &mut State) {
                 |ui| num_row(ui, u, &mut state.tool_ui.diameter),
             );
         }
+        // #3369: a form mill's diameter is its form's widest cut.
+        tools::ToolKind::FormMill => form_length_row(ui, state, "Diameter", state.tool_ui.diameter),
         _ => {
             prop_row(ui, "Diameter", |ui| num_row(ui, u, &mut state.tool_ui.diameter));
         }
@@ -138,17 +143,22 @@ fn geometry(ui: &mut Ui, state: &mut State) {
             | tools::ToolKind::Keyseat
             | tools::ToolKind::Dovetail
             | tools::ToolKind::Lollipop
+            | tools::ToolKind::FormMill
     ) {
         prop_row(ui, "Corner radius", |ui| num_row(ui, u, &mut state.tool_ui.corner_r));
     }
-    prop_row(ui, "Flute length", |ui| num_row(ui, u, &mut state.tool_ui.flute_len));
+    if state.tool_ui.tool_kind() == tools::ToolKind::FormMill {
+        form_length_row(ui, state, "Flute length", state.tool_ui.flute_len);
+    } else {
+        prop_row(ui, "Flute length", |ui| num_row(ui, u, &mut state.tool_ui.flute_len));
+    }
     prop_row(ui, "Shank diameter", |ui| num_row(ui, u, &mut state.tool_ui.shank_d));
     prop_row(ui, "Shank length", |ui| num_row(ui, u, &mut state.tool_ui.shank_len));
 }
 
 /// The rows each tool kind reads, shown only where they feed a generator
 /// or the collision profile.
-fn kind_rows(ui: &mut Ui, state: &mut State) {
+pub(super) fn kind_rows(ui: &mut Ui, state: &mut State) {
     let u = state.units();
     let kind = state.tool_ui.kind;
     if kind == 3 {
@@ -203,7 +213,19 @@ fn kind_rows(ui: &mut Ui, state: &mut State) {
         prop_row_hint(ui, "Cone angle (deg)", "the included angle of the taper - 90 cuts a 45-degree face", |ui| {
             num_plain_row(ui, &mut state.tool_ui.tip_angle)
         });
+        // #3368: the tip form, and a flat tip's diameter.
+        super::tool_taper_tip_row::tip_rows(ui, state);
     }
+    // #3369: a form mill's preset, its numbers and the pilot.
+    super::tool_form_mill_row::rows(ui, state);
+}
+
+/// A length a form mill's outline sets: shown, never typed (#3369).
+fn form_length_row(ui: &mut Ui, state: &State, label: &str, v: f64) {
+    let u = state.units();
+    prop_row_hint(ui, label, "set by the form outline", |ui| {
+        ui.label(format!("{} {}", camcraft_app::units::len(v, u, 3), u.suffix()));
+    });
 }
 
 /// The holder's two cylinders. #2016: when the editor's holder is a
@@ -257,7 +279,8 @@ fn cutting(ui: &mut Ui, state: &mut State) {
 }
 
 /// The catalog facts, the workpiece material and the tool-table number.
-fn catalog(ui: &mut Ui, state: &mut State) {
+/// #3893: the tool library window's Details tab draws these same rows.
+pub(super) fn catalog(ui: &mut Ui, state: &mut State) {
     text_row(ui, "Material group", &mut state.tool_ui.material_group, "tool_material_group", CTRL_W * 1.3);
     super::layout::hint(ui, "workpiece material these base speeds and feeds are set for");
     super::tool_catalog_rows::catalog_rows(ui, &mut state.tool_ui);

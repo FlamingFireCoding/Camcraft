@@ -119,6 +119,7 @@ fn rotary_world() -> World {
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
         stated_axis: None,
+        picks: Default::default(),
     };
     history.execute(
         &world,
@@ -196,6 +197,7 @@ fn tilted_world() -> World {
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
         corner_relief: Default::default(),
+        picks: Default::default(),
     };
     history.execute(
         &world,
@@ -242,6 +244,7 @@ fn face_params() -> OpParams {
         feed: 1200.0,
         plunge_feed: 300.0,
         climb: true,
+        picks: Default::default(),
     }
 }
 

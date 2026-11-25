@@ -47,8 +47,9 @@ pub fn strategy_fallback(path: &Toolpath) -> Option<Warning> {
 /// #3748: the start-side pass whose user selected a Helix, Ramp or Plunge
 /// lead-in where the Arc entry from the air applies - one advisory
 /// warning that names the selected type, the recommended Arc and the
-/// reason. The ladder writes the advice note only where that air room
-/// exists (`machining2d::entry_advice`); the entry runs as selected.
+/// reason. The ladder writes the advice note on each Inside or Outside
+/// ring pass (`machining2d::entry_advice`, #3884: not gated on the air
+/// room); the entry runs as selected.
 #[must_use]
 pub fn entry_not_recommended(path: &Toolpath) -> Option<Warning> {
     use crate::machining2d::{PassStart, advised, entry_advice};
@@ -206,8 +207,17 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     if let OpParams::WireContour(op) = &params {
         let cond = wire.ok_or_else(|| unreached("wire condition"))?;
         let k = cond.0.wire_diameter * 0.5 + cond.0.gap;
+        // #3937: a selected chain with an arc, a circle or a joint gap is
+        // cut on its own lines and arcs.
+        if let Some(sketch) = &wire_sketch
+            && let Some(mut path) = sketch.generate_arcs(op, &cond.0, &hs)?
+        {
+            sketch.check_path(&path, k).map_err(GenError::Invalid)?;
+            sketch.annotate(&mut path);
+            return Ok((path, Vec::new()));
+        }
         let picks = if let Some(sketch) = &wire_sketch {
-            Some((vec![sketch.straight_ring(op).map_err(GenError::Invalid)?], Vec::new()))
+            Some((vec![sketch.nominal_ring(op).map_err(GenError::Invalid)?], Vec::new()))
         } else {
             contour_sel.take().transpose()?.map(|(loops, chains, _)| (loops, chains))
         };
@@ -223,8 +233,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             || region_for_job(&mut picked_region, &mut section_z, &src, &params, &material, None),
             stock,
         )?;
+        let mut path = path;
         if let Some(sketch) = &wire_sketch {
             sketch.check_path(&path, k).map_err(GenError::Invalid)?;
+            sketch.annotate(&mut path);
         }
         return Ok((path, warnings));
     }
@@ -559,6 +571,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             entry,
             helix_radius,
             blend_turns, blend_radius,
+            picks,
             ..
         } => {
             // Backstop for a committed file that carries Inside on a
@@ -611,7 +624,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry: *entry,
                 helix_radius: *helix_radius,
                 blend_turns: *blend_turns, blend_radius: *blend_radius,
-            links: lk,
+                links: lk,
+                picks: picks.clone(),
             };
             let (region, path) = if let Some(plan_res) = sketch_contour.take() {
                 let mut carry = |reach: &Region, candidate: &Toolpath| -> Option<f64> {
@@ -2625,17 +2639,14 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         // the kernel states the law on the face alone. The tool must
         // be a chamfer mill whose cone is the supplement of the
         // authored angle (a 45-degree chamfer takes the shop's
-        // 90-degree tool), and its diameter must reach the face's
-        // full width - `width / tan(alpha)` of cone height is exactly
-        // the corner depth, so the reach door is the whole flute law
-        // for a well-made cone. `side` cannot change the ride's circle -
-        // the cone meets its wall the same circle whether the material
-        // stands inside it (bore) or outside (boss) - it says which
-        // wall the region picks (the sim judges), and so which way
-        // climb travels it (#1555: material right of travel under M3).
+        // 90-degree tool), and its cone must reach the selected band's
+        // outer radius. The ideal cone has to stand
+        // `(minimum_cone_radius + width) * tan(angle)` above its virtual
+        // tip. `side` names the air side for loops and open runs.
         OpParams::Chamfer2D {
             width,
             angle_deg,
+            minimum_cone_radius,
             feed,
             plunge_feed,
             climb,
@@ -2655,28 +2666,44 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     tool_name, tool.tip_angle
                 )));
             }
-            if tool.diameter < 2.0 * width - 1e-9 {
+            let outer_radius = minimum_cone_radius + width;
+            if tool.diameter * 0.5 < outer_radius - 1e-9 {
+                if *minimum_cone_radius == 0.0 {
+                    return Err(GenError::Invalid(format!(
+                        "a {width} mm chamfer reaches {} mm from the wall; '{}' is only {} mm across",
+                        width, tool_name, tool.diameter
+                    )));
+                }
                 return Err(GenError::Invalid(format!(
-                    "a {width} mm chamfer reaches {} mm from the wall; '{}' is only {} mm across",
-                    width, tool_name, tool.diameter
+                    "a {width} mm chamfer with a {minimum_cone_radius} mm tip offset reaches \
+                     {outer_radius} mm from the cone axis; '{}' has only {} mm of tool radius",
+                    tool_name,
+                    tool.diameter * 0.5
                 )));
             }
-            if tool.flute_len < width * angle_deg.to_radians().tan() - 1e-9 {
+            let reach = outer_radius * angle_deg.to_radians().tan();
+            if tool.flute_len < reach - 1e-9 {
                 // The depth is DERIVED, and a derived float must not
                 // reach the user as its bits: tan(45 degrees) is
                 // 0.9999999999999999, and a refusal that quotes
                 // "3.9999999999999996 mm" reads as a bug, not a law.
                 // A tenth is the shop's reading precision.
+                if *minimum_cone_radius == 0.0 {
+                    return Err(GenError::Invalid(format!(
+                        "the cone of '{}' is {} mm of flute, short of the {:.1} mm depth this face stands at",
+                        tool_name, tool.flute_len, reach
+                    )));
+                }
                 return Err(GenError::Invalid(format!(
-                    "the cone of '{}' is {} mm of flute, short of the {:.1} mm depth this face stands at",
-                    tool_name,
-                    tool.flute_len,
-                    width * angle_deg.to_radians().tan()
+                    "the cone of '{}' is {} mm of flute, short of the {:.1} mm cone reach \
+                     for a {minimum_cone_radius} mm tip offset plus a {width} mm chamfer",
+                    tool_name, tool.flute_len, reach
                 )));
             }
             let cp = ChamferParams {
                 width: *width,
                 angle_deg: *angle_deg,
+                minimum_cone_radius: *minimum_cone_radius,
                 clearance_z: hl.clearance,
                 retract_z: hl.retract,
                 top_z: req_z(hl.top, "Top of Part Z")?,
@@ -3909,6 +3936,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 // about the spindle its kernel fitted.
                 lathe_axis: super::turning_axis::lathe_axis_of(&params, &geom, &material.facets),
                 corner_reliefs: &relief_zones,
+                // #3679: the plunge depth law reads the op's own
+                // stepdown; None keeps the kinds that cut no levels
+                // silent.
+                plunge_stepdown: crate::cutting_rows::plunge_stepdown(&params),
             };
             // The picks' touching bodies, read as their union
             // (M13.11); empty for one body.
@@ -3916,15 +3947,18 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #1091: a dive convicted against the stock's highest point is re-read under the tool.
             super::stock_top_law::acquit(&path, mode, judged_stock.filter(|_| stock_fidelity_known), &material.facets, &geom, material.excess, &mut warns);
             // The program ahead cut too (#96 review): a dive the column
-            // convicted against the raw block is re-read against what
-            // the setup's earlier operations left standing.
-            // Cut only when a rapid was convicted: the simulation is
-            // the costly half, and a clean path needs no second word.
-            if warns.iter().any(|w| matches!(w, Warning::RapidInStock { .. }))
+            // convicted against the raw block, and a feed plunge the
+            // depth law convicted against this op's own floor (#3679),
+            // are re-read against what the setup's earlier operations
+            // left standing. Cut only when one of the two laws
+            // convicted: the simulation is the costly half, and a
+            // clean path needs no second word.
+            if warns.iter().any(|w| matches!(w, Warning::RapidInStock { .. } | Warning::PlungeTooDeep { .. }))
                 && let Some(dex) = verify_prior.get()
             {
                 let prior = crate::stock_sim::Columns::of_grid(dex);
                 verify::acquit_by_prior(&path, &prior, geom.radius, Z_TOL, &mut warns);
+                verify::acquit_plunge_by_prior(&path, &prior, geom.radius, Z_TOL, &mut warns);
             }
             // #1444: an undercut answers to the part's solid with the
             // cutter's real head and neck (a stock source: the kept
@@ -4185,7 +4219,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             warns.extend(strategy_fallback(&path));
             // #3748: a selected entry that is not the recommended Arc on a
             // start-side pass - one advisory warning, the entry kept.
-            warns.extend(entry_not_recommended(&path));
+            let advice = entry_not_recommended(&path);
+            // #3884: each stand-in entry and a selected Plunge into uncut
+            // stock of a start-side pass - a warning, not a note only.
+            warns.extend(crate::machining2d::entry_warnings(&path, advice.is_some()));
+            warns.extend(advice);
             // The rotary kinds' bands and rapids (M13): `Mode::Rotary`
             // stood the vertical-column laws down; the radial field
             // reads rest material in the frame the work turns in.
@@ -4318,6 +4356,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     // No envelope runs in a plane's frame (finish_tol None).
                     lathe_axis: None,
                     corner_reliefs: &relief_zones,
+                    // #3679: the plunge law reads world-Z axial descents;
+                    // a tilted plane's descents answer to its own entry
+                    // law, not to the column - so the law stays silent
+                    // here.
+                    plunge_stepdown: None,
                 },
                 &m_gen.bodies,
             );

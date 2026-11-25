@@ -1579,12 +1579,13 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
             }
         }
         // The chamfer ride draws its one authored plane: the top edge's
-        // own Z, where the cone's apex stands. The face's floor is
-        // DERIVED (width·tan(angle), variant docs) - a rectangle at a
+        // own Z. The virtual cone tip stands below it by the selected
+        // cone-band reach. The face's floor is DERIVED
+        // (width·tan(angle), variant docs) - a rectangle at a
         // z no height author could disagree with is honest, and Part's
         // law above says an advertised window the path cannot be
-        // measured against is not. The corner Z rides the pane's read
-        // of the same two numbers.
+        // measured against is not. The cone-tip note reads the same
+        // two face numbers plus the minimum radius.
         operation::OpParams::Chamfer2D { top_z, .. } => {
             if let Some(z) = resolve(*top_z) {
                 out.push(HeightPlane {

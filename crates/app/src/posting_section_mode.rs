@@ -126,6 +126,7 @@ mod tests {
             blend_turns: false, blend_radius: None,
             holes: FaceHoles::default(),
             tilt,
+            picks: Default::default(),
         }
     }
 
@@ -154,6 +155,7 @@ mod tests {
             lag_deg: 0.0,
             max_tilt_deg: 45.0,
             shank_avoid: false,
+            picks: Default::default(),
         };
         assert_eq!(classify(&sim, &empty), Some(SectionMode::Simultaneous5Axis));
 
@@ -180,6 +182,7 @@ mod tests {
             lag_deg: 0.0,
             max_tilt_deg: 45.0,
             stated_axis: None,
+            picks: Default::default(),
         };
         assert_eq!(classify(&rotary_op, &empty), Some(SectionMode::Simultaneous5Axis));
         assert_eq!(classify(&rotary_op, &live_path), None);

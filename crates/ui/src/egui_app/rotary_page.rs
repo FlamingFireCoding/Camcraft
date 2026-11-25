@@ -34,6 +34,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             lag_deg,
             max_tilt_deg,
             stated_axis,
+            picks: _,
         } => rotary_editor(
             ui,
             world,
@@ -68,6 +69,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             lag_deg,
             max_tilt_deg,
             stated_axis,
+            picks: _,
         } => rotary_editor(
             ui,
             world,
@@ -113,6 +115,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             lag_deg,
             max_tilt_deg,
             stated_axis,
+            picks: _,
         } => {
             if tab == SEC_LEADS {
                 lead_page::leads_tab(ui, u, "ro", Some((entry, helix_radius)), links);
@@ -212,7 +215,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             lead_deg,
             lag_deg,
             max_tilt_deg,
-            shank_avoid,
+            shank_avoid, picks: _,
         } => {
             if tab == SEC_LEADS {
                 lead_page::leads_tab(ui, u, "ma", Some((entry, helix_radius)), links);

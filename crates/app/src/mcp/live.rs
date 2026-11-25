@@ -246,6 +246,9 @@ pub fn answer_live_with(
             last_value: Value::Null,
             selection: options.selection.clone(),
         },
+        // The live bridge answers one line at a time: no background lane.
+        bg: None,
+        gate: None,
     };
     let reply = server.handle_line(line);
     *history = std::mem::take(&mut server.env.history);

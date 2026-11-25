@@ -14,13 +14,14 @@ const TAU: f64 = std::f64::consts::TAU;
 /// The turned bar's meridian (rho, s): wall r6, shoulder, neck r5.
 const MERIDIAN: [(f64, f64); 6] = [(0.0, -16.0), (6.0, -16.0), (6.0, -2.0), (5.0, 2.0), (5.0, 16.0), (0.0, 16.0)];
 
-/// The bar revolved about `axis` (0 = world X, laid; 2 = world Z,
-/// standing), `n` facets around.
+/// The bar revolved about `axis` (0 = world X, laid; 1 = world Y;
+/// 2 = world Z, standing), `n` facets around.
 fn bar(axis: usize, n: usize) -> Vec<Triangle> {
     let pt = |rho: f64, s: f64, j: usize| {
         let th = TAU * j as f64 / n as f64;
         match axis {
             0 => Point3::new(s, rho * th.cos(), rho * th.sin()),
+            1 => Point3::new(rho * th.cos(), s, rho * th.sin()),
             _ => Point3::new(rho * th.cos(), rho * th.sin(), s),
         }
     };
@@ -85,6 +86,16 @@ fn rotor(turns: f64) -> Vec<Triangle> {
 /// offset's own position when the document sets none.
 fn line(dir: [f64; 3]) -> Axis {
     canonical(dir, Point3::new(0.0, 0.0, 0.0)).expect("a direction")
+}
+
+/// Every vertex of `facets` moved by `off`: a common model or WCS
+/// translation (the review of PR #3674).
+fn moved(facets: &[Triangle], off: [f64; 3]) -> Vec<Triangle> {
+    let at = |p: Point3| Point3::new(p.x + off[0], p.y + off[1], p.z + off[2]);
+    facets
+        .iter()
+        .map(|t| Triangle::new(at(t.a), at(t.b), at(t.c)))
+        .collect()
 }
 
 #[test]
@@ -161,4 +172,79 @@ fn an_empty_mesh_refuses_like_the_fit_does() {
     let e = judged_any(&[], &[("A".into(), line([1.0, 0.0, 0.0]))]).expect_err("no surface");
     assert!(e.to_string().contains("no surface"), "{e}");
     assert!(holds_any(&[], &[line([1.0, 0.0, 0.0])]).is_none());
+}
+
+#[test]
+fn a_common_translation_moves_the_hold_with_the_part() {
+    // The radius the judge scales its gates by is read ABOUT THE
+    // STATED LINE, never off the world origin (the review of PR
+    // #3674): a part moved with its line - a common model or WCS
+    // translation - holds exactly as it did at home, on every
+    // coordinate axis, and reads the same axis the fit reads.
+    for (axis, dir) in [(0usize, [1.0, 0.0, 0.0]), (1, [0.0, 1.0, 0.0]), (2, [0.0, 0.0, 1.0])] {
+        for off in [
+            [0.0, 0.0, 0.0],
+            [10000.0, 0.0, 0.0],
+            [0.0, 10000.0, 0.0],
+            [0.0, 0.0, 10000.0],
+            [-2500.0, 30.0, 480.0],
+        ] {
+            let facets = moved(&bar(axis, 16), off);
+            let stated = canonical(dir, Point3::new(off[0], off[1], off[2])).expect("a direction");
+            let held = holds(&facets, stated).expect("the moved part turns about its moved line");
+            let fitted = super::super::axis::fit(&facets).expect("the moved bar is still a revolve");
+            let near = |a: f64, b: f64| (a - b).abs() < 1e-6;
+            assert!(
+                near(held.dir.x, fitted.dir.x)
+                    && near(held.dir.y, fitted.dir.y)
+                    && near(held.dir.z, fitted.dir.z)
+                    && near(held.origin.x, fitted.origin.x)
+                    && near(held.origin.y, fitted.origin.y)
+                    && near(held.origin.z, fitted.origin.z),
+                "{off:?} axis {axis}: the stated line reads the axis the fit reads"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_wrong_line_refuses_on_every_plane_wherever_the_part_sits() {
+    // The review of PR #3674: the same geometric disagreement gives
+    // the same refusal wherever the part sits. A wrong line a hair
+    // off the part's true axis - one on each coordinate plane -
+    // refuses at home and after any common translation; the old
+    // world-origin radius let the 1 mm error pass behind +10000 mm.
+    let facets = bar(0, 16); // the true axis: world X through the origin
+    let wrong = [
+        ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]), // parallel, 1 mm off in Y: the XY plane
+        ([1.0, 0.0, 0.0], [0.0, 0.0, 1.0]), // parallel, 1 mm off in Z: the XZ plane
+        ([0.0, 0.0, 1.0], [0.0, 1.0, 0.0]), // across the bar, in the YZ plane
+    ];
+    for off in [
+        [0.0, 0.0, 0.0],
+        [10000.0, 0.0, 0.0],
+        [0.0, 10000.0, 0.0],
+        [0.0, 0.0, 10000.0],
+        [-2500.0, 30.0, 480.0],
+    ] {
+        let moved_facets = moved(&facets, off);
+        for (dir, at) in wrong {
+            let stated =
+                canonical(dir, Point3::new(at[0] + off[0], at[1] + off[1], at[2] + off[2])).expect("a direction");
+            let e = judged_any(&moved_facets, &[("A".into(), stated)])
+                .expect_err("a wrong line refuses wherever the part sits");
+            let e = e.to_string();
+            assert!(
+                e.contains("disagree with the stated rotary line (A)"),
+                "{off:?} {dir:?} at {at:?}: {e}"
+            );
+            assert!(
+                e.contains("they turn about their own axis"),
+                "{off:?} {dir:?} at {at:?}: {e}"
+            );
+        }
+        // The part's own line, moved with it, still holds.
+        let own = canonical([1.0, 0.0, 0.0], Point3::new(off[0], off[1], off[2])).expect("a direction");
+        assert!(holds(&moved_facets, own).is_some(), "{off:?}: the part keeps its own moved line");
+    }
 }

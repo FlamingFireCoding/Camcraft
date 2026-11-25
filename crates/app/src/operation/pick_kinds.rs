@@ -8,14 +8,13 @@
 //! Provenance: our own parameter model over the general machining practice
 //! of a chosen entry and exit position; no vendor material.
 
-use crate::geo2d::Point2;
-use crate::path_picks::{PathPick, PathPicks, PickRole};
+use crate::path_picks::{PathPicks, PickRole};
 
 use super::kinds::KindInfo;
 use super::types::{OpParams, OpType};
 
 /// What a pick means on a kind, and so how the viewport snaps it. Every
-/// capability except [`Self::NotTaken`] takes a start pick.
+/// capability except [`Self::NotTaken`] takes a start pick and an exit pick.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PickCapability {
     /// A point on a closed ring: the ring is re-sequenced to start there
@@ -32,7 +31,8 @@ pub enum PickCapability {
     /// The corner of the first raster row and the end of the last row.
     /// Snaps to a corner.
     Raster,
-    /// The wire's threading point (`WireContourOp.start`): a start only.
+    /// The wire's threading point (`WireContourOp.picks`) and its exit
+    /// (#3332): the end of an open run, or where a closed cut leaves.
     Threading,
     /// The kind does not take a pick; the reason, said by name in the
     /// refusal and on the operation page.
@@ -52,8 +52,9 @@ impl PickCapability {
     pub fn takes(self, role: PickRole) -> bool {
         match self {
             Self::NotTaken(_) => false,
-            Self::Threading => role == PickRole::Start,
-            Self::Ring | Self::Region | Self::HoleOrder | Self::Ends | Self::Raster => true,
+            Self::Threading | Self::Ring | Self::Region | Self::HoleOrder | Self::Ends | Self::Raster => {
+                matches!(role, PickRole::Start | PickRole::Exit)
+            }
         }
     }
 }
@@ -121,20 +122,119 @@ impl KindInfo {
 }
 
 impl OpParams {
-    /// The start and exit picks of this operation, for every kind: the
-    /// contour family's `links.approach` points and the wire's threading
-    /// point, read into the one shared shape. A kind without a pick field
-    /// answers empty lists.
+    fn picks_ref(&self) -> Option<&PathPicks> {
+        match self {
+            OpParams::Face { picks, .. }
+            | OpParams::Contour { picks, .. }
+            | OpParams::Pocket { picks, .. }
+            | OpParams::Adaptive2D { picks, .. }
+            | OpParams::Offset2D { picks, .. }
+            | OpParams::Engrave { picks, .. }
+            | OpParams::VCarve { picks, .. }
+            | OpParams::Chamfer2D { picks, .. }
+            | OpParams::Circular { picks, .. }
+            | OpParams::Slot { picks, .. }
+            | OpParams::TrochoidalSlot { picks, .. }
+            | OpParams::Trace { picks, .. }
+            | OpParams::Drill { picks, .. }
+            | OpParams::Pocket3D { picks, .. }
+            | OpParams::Finish3D { picks, .. }
+            | OpParams::Deburr { picks, .. }
+            | OpParams::MultiAxisDeburr { picks, .. }
+            | OpParams::Contour5D { picks, .. }
+            | OpParams::Parallel5D { picks, .. }
+            | OpParams::Swarf { picks, .. }
+            | OpParams::AdvancedSwarf { picks, .. }
+            | OpParams::RotaryContour { picks, .. }
+            | OpParams::RotaryParallel { picks, .. }
+            | OpParams::RotaryOffset { picks, .. }
+            | OpParams::MultiAxisRough { picks, .. }
+            | OpParams::Flow5D { picks, .. }
+            | OpParams::MultiAxisContour { picks, .. }
+            | OpParams::Facing { picks, .. }
+            | OpParams::ProfileRough { picks, .. }
+            | OpParams::ProfileFinish { picks, .. }
+            | OpParams::GrooveRough { picks, .. }
+            | OpParams::GrooveFinish { picks, .. }
+            | OpParams::Part { picks, .. }
+            | OpParams::Threading { picks, .. }
+            | OpParams::Chamfering { picks, .. }
+            | OpParams::TaperTurning { picks, .. }
+            | OpParams::MultiPassTurning { picks, .. }
+            | OpParams::FormTurning { picks, .. }
+            | OpParams::BoringTurning { picks, .. }
+            | OpParams::Bore { picks, .. }
+            | OpParams::Thread { picks, .. } => Some(picks),
+            OpParams::PlasmaProfile(p) => Some(&p.picks),
+            OpParams::WaterjetProfile(p) => Some(&p.picks),
+            OpParams::WireContour(p) => Some(&p.picks),
+            OpParams::SinkerBurn(p) => Some(&p.picks),
+            OpParams::SinkerSideBurn(p) => Some(&p.burn.picks),
+            OpParams::SlotUndercut(p) => Some(&p.picks),
+            OpParams::Probe { .. } => None,
+        }
+    }
+
+    /// Mutable access to the operation-level picks for any path kind;
+    /// `None` only for `Probe`.
+    pub fn path_picks_mut(&mut self) -> Option<&mut PathPicks> {
+        match self {
+            OpParams::Face { picks, .. }
+            | OpParams::Contour { picks, .. }
+            | OpParams::Pocket { picks, .. }
+            | OpParams::Adaptive2D { picks, .. }
+            | OpParams::Offset2D { picks, .. }
+            | OpParams::Engrave { picks, .. }
+            | OpParams::VCarve { picks, .. }
+            | OpParams::Chamfer2D { picks, .. }
+            | OpParams::Circular { picks, .. }
+            | OpParams::Slot { picks, .. }
+            | OpParams::TrochoidalSlot { picks, .. }
+            | OpParams::Trace { picks, .. }
+            | OpParams::Drill { picks, .. }
+            | OpParams::Pocket3D { picks, .. }
+            | OpParams::Finish3D { picks, .. }
+            | OpParams::Deburr { picks, .. }
+            | OpParams::MultiAxisDeburr { picks, .. }
+            | OpParams::Contour5D { picks, .. }
+            | OpParams::Parallel5D { picks, .. }
+            | OpParams::Swarf { picks, .. }
+            | OpParams::AdvancedSwarf { picks, .. }
+            | OpParams::RotaryContour { picks, .. }
+            | OpParams::RotaryParallel { picks, .. }
+            | OpParams::RotaryOffset { picks, .. }
+            | OpParams::MultiAxisRough { picks, .. }
+            | OpParams::Flow5D { picks, .. }
+            | OpParams::MultiAxisContour { picks, .. }
+            | OpParams::Facing { picks, .. }
+            | OpParams::ProfileRough { picks, .. }
+            | OpParams::ProfileFinish { picks, .. }
+            | OpParams::GrooveRough { picks, .. }
+            | OpParams::GrooveFinish { picks, .. }
+            | OpParams::Part { picks, .. }
+            | OpParams::Threading { picks, .. }
+            | OpParams::Chamfering { picks, .. }
+            | OpParams::TaperTurning { picks, .. }
+            | OpParams::MultiPassTurning { picks, .. }
+            | OpParams::FormTurning { picks, .. }
+            | OpParams::BoringTurning { picks, .. }
+            | OpParams::Bore { picks, .. }
+            | OpParams::Thread { picks, .. } => Some(picks),
+            OpParams::PlasmaProfile(p) => Some(&mut p.picks),
+            OpParams::WaterjetProfile(p) => Some(&mut p.picks),
+            OpParams::WireContour(p) => Some(&mut p.picks),
+            OpParams::SinkerBurn(p) => Some(&mut p.picks),
+            OpParams::SinkerSideBurn(p) => Some(&mut p.burn.picks),
+            OpParams::SlotUndercut(p) => Some(&mut p.picks),
+            OpParams::Probe { .. } => None,
+        }
+    }
+
+    /// The start and exit picks of this operation, for every kind, read from
+    /// the operation-level `picks` field (#3339). `Probe` answers empty lists.
     #[must_use]
     pub fn path_picks(&self) -> PathPicks {
-        let one = |p: Option<Point2>| p.map(PathPick::xy).into_iter().collect::<Vec<_>>();
-        if let OpParams::WireContour(w) = self {
-            return PathPicks { start: one(w.start.map(|[x, y]| Point2::new(x, y))), exit: Vec::new() };
-        }
-        self.links().map_or_else(PathPicks::default, |l| PathPicks {
-            start: one(l.approach.start_point),
-            exit: one(l.approach.exit_point),
-        })
+        self.picks_ref().cloned().unwrap_or_default()
     }
 
     /// The by-name refusal of a pick that this kind does not take (#1448):
@@ -142,6 +242,9 @@ impl OpParams {
     /// keeps its own refusal. `None` when every pick is taken.
     pub(super) fn pick_refusal(&self) -> Option<String> {
         let picks = self.path_picks();
+        if let Some(why) = picks.refusal() {
+            return Some(why);
+        }
         if picks.is_empty() {
             return None;
         }
@@ -163,6 +266,34 @@ impl OpParams {
                 return Some(format!("{}: a {what} point is not taken - {why}; clear it on this operation", info.label));
             }
         }
-        None
+        match self {
+            OpParams::WireContour(w) => wire_exit_refusal(w),
+            _ => None,
+        }
     }
+}
+
+/// The wire's exit pick beside what it is not cut with (#3332): the exit
+/// is read on a vertical, single-pass, untabbed cut of one profile or
+/// one open run. Each other cut starts or ends its passes at the
+/// threading point, so the pair is refused by name at the command door
+/// and at generation, never cut as something else. `None` when the op
+/// states no exit point or none of those.
+#[must_use]
+pub(super) fn wire_exit_refusal(w: &super::types::WireContourOp) -> Option<String> {
+    w.picks.first(PickRole::Exit)?;
+    let with = if w.four_axis.is_some() {
+        "a 4-axis cut - its two profiles are paired from the start hole, and the wire returns there".to_owned()
+    } else if w.burnout.is_some() {
+        "a no-core burnout - its rings are cut from the start hole, and the wire returns there".to_owned()
+    } else if w.tabs.is_some() {
+        "tabs - each stretch between tabs and the tab cut-off start from the threading point with the wire threaded".to_owned()
+    } else if !w.skims.is_empty() {
+        format!("{} skim pass(es) - every pass starts and ends at the threading point", w.skims.len())
+    } else if w.taper_deg != 0.0 {
+        format!("a {:.3} degree taper - a leaning cut returns to the threading point", w.taper_deg)
+    } else {
+        return None;
+    };
+    Some(format!("Wire Contour: an exit point is stated with {with}; clear the exit point or that setting"))
 }
