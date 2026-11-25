@@ -1,25 +1,30 @@
 //! The UI link (#3751): each running CamCraft window opens a local
-//! socket at start and writes a discovery file, so `camcraft-cli --ui`
-//! can find it and send it MCP tool calls that run on the window's own
-//! History. This module is the window's end: the folder, the token, the
-//! discovery file and the hello line that opens a session.
+//! transport at start and writes a discovery file, so `camcraft-cli
+//! --ui` can find it and send it MCP tool calls that run on the window's
+//! own History. This module is the window's end: the folder, the token,
+//! the discovery file and the hello line that opens a session.
 //!
 //! - **Local only.** On Unix the socket is a Unix domain socket in the
-//!   user's own folder (mode 0700, the socket 0600). Elsewhere (Windows:
-//!   std has no named pipe or local socket) it is TCP bound to 127.0.0.1
-//!   with an OS-chosen port; no other interface is ever bound.
-//! - **Same user only.** A client must open with the random token from
-//!   the discovery file, which only the user can read; any other first
-//!   line closes the connection before a byte of it reaches the app.
+//!   user's own folder (mode 0700, the socket 0600). On Windows it is a
+//!   named pipe with a security descriptor that admits the window's own
+//!   user only (`link_pipe`); the pipe name carries the process id.
+//! - **Who the peer is.** On Unix the 0700 folder is the gate. On
+//!   Windows the pipe's ACL is the gate, and the CLI asks the kernel
+//!   which process serves the pipe and refuses a peer that is not the
+//!   process the file names - before one byte of the token crosses.
+//!   The token then tells the window that the client read the
+//!   discovery file. A token on the wire proves nothing about a peer
+//!   on an open port: the first client that sends it gives it away
+//!   (#3874), so a TCP address is refused outright.
 //! - **One file per window.** `<pid>.json` in the link folder; a window
 //!   removes its file when it closes. A file left by a crash is stale:
-//!   its socket does not answer, and the client skips it.
+//!   its transport does not answer, and the client skips it.
 //!
-//! Provenance: our own design (docs/decisions/3751-cli-ui-link.md) over
-//! std; the per-user folders are the platforms' published locations
-//! (Windows `%APPDATA%`, macOS `~/Library/Application Support`, the XDG
-//! Base Directory spec with `XDG_RUNTIME_DIR` for sockets). Clean-room,
-//! public sources only.
+//! Provenance: our own design (docs/decisions/3751-cli-ui-link.md,
+//! 3874-ui-link-transport.md) over std; the per-user folders are the
+//! platforms' published locations (Windows `%APPDATA%`, macOS
+//! `~/Library/Application Support`, the XDG Base Directory spec with
+//! `XDG_RUNTIME_DIR` for sockets). Clean-room, public sources only.
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -47,7 +52,9 @@ pub struct Entry {
     pub format: u32,
     /// The window's process id.
     pub pid: u32,
-    /// `"unix"` (a socket path) or `"tcp"` (a 127.0.0.1 address).
+    /// `"unix"` (a socket path), `"pipe"` (a Windows pipe name). A
+    /// `"tcp"` address is what builds before #3874 wrote: this build
+    /// refuses it by name, and never binds one.
     pub transport: String,
     pub address: String,
     pub token: String,
@@ -109,11 +116,12 @@ fn new_token() -> String {
         .collect()
 }
 
-/// A fresh client nonce, from the same randomness as [`new_token`].
-#[must_use]
-pub fn new_nonce() -> String {
-    new_token()
-}
+/// The pipe name of the window with this process id (#3874): the
+/// discovery file's `address` field on Windows. The name is derived
+/// from the pid, so the CLI can refuse a file whose pipe name belongs
+/// to another pid.
+#[cfg(windows)]
+pub use super::link_pipe::pipe_name;
 
 /// The first line a client sends.
 #[must_use]
@@ -125,83 +133,21 @@ pub fn hello_line(token: &str) -> String {
 /// the same time for every token of the same length.
 #[must_use]
 pub fn hello_matches(line: &[u8], token: &str) -> bool {
-    let Ok(v) = serde_json::from_slice::<Value>(line) else { return false };
+    let Ok(v) = serde_json::from_slice::<Value>(line) else {
+        return false;
+    };
     if v.get("camcraft_link").and_then(Value::as_u64) != Some(u64::from(FORMAT)) {
         return false;
     }
-    let Some(got) = v.get("token").and_then(Value::as_str) else { return false };
+    let Some(got) = v.get("token").and_then(Value::as_str) else {
+        return false;
+    };
     got.len() == token.len()
-        && got.bytes().zip(token.bytes()).fold(0_u8, |acc, (a, b)| acc | (a ^ b)) == 0
-}
-
-/// The first line a client sends, with a nonce (#3874). The window's
-/// answer must carry a proof that it mixed this nonce with the token, so
-/// a peer that never read the discovery file cannot pass as the window.
-#[must_use]
-pub fn hello_with_nonce(token: &str, nonce: &str) -> String {
-    json!({ "camcraft_link": FORMAT, "token": token, "nonce": nonce }).to_string()
-}
-
-/// The nonce a client put in its hello line; `None` when there is none
-/// (an older CLI). At most 128 bytes: no honest nonce is longer.
-#[must_use]
-pub fn hello_nonce(line: &[u8]) -> Option<String> {
-    let v = serde_json::from_slice::<Value>(line).ok()?;
-    v.get("nonce")?
-        .as_str()
-        .map(str::to_owned)
-        .filter(|n| !n.is_empty() && n.len() <= 128)
-}
-
-/// The proof of the token (#3874): two FNV-1a 64-bit words over `token`,
-/// a zero byte, `nonce`. This is a knowledge proof, not encryption - the
-/// token itself already crosses the same socket in the clear - so a
-/// simple published hash is enough. The proof only binds the answer to a
-/// peer that read the discovery file and saw this client's fresh nonce.
-#[must_use]
-pub fn token_proof(token: &str, nonce: &str) -> String {
-    fn fnv1a(data: &[u8]) -> u64 {
-        // The published FNV-1a 64-bit parameters (public domain).
-        data.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| {
-            (h ^ u64::from(*b)).wrapping_mul(0x0000_0100_0000_01B3)
-        })
-    }
-    let mut data = Vec::with_capacity(token.len() + nonce.len() + 1);
-    data.extend_from_slice(token.as_bytes());
-    data.push(0);
-    data.extend_from_slice(nonce.as_bytes());
-    let a = fnv1a(&data);
-    let b = fnv1a(&a.to_be_bytes());
-    format!("{a:016x}{b:016x}")
-}
-
-/// The window's answer to a good hello: plain [`HELLO_OK`] for a hello
-/// without a nonce (an older CLI), otherwise with the proof of the token
-/// and the client's nonce.
-#[must_use]
-pub fn hello_ok_line(token: &str, nonce: Option<&str>) -> String {
-    match nonce {
-        None => HELLO_OK.to_owned(),
-        Some(n) => json!({ "camcraft_link": FORMAT, "ok": true, "proof": token_proof(token, n) })
-            .to_string(),
-    }
-}
-
-/// Whether an answer proves that the peer knows `token` and mixed in the
-/// client's `nonce`. The compare takes the same time for equal lengths.
-#[must_use]
-pub fn proof_matches(answer: &[u8], token: &str, nonce: &str) -> bool {
-    let Ok(v) = serde_json::from_slice::<Value>(answer) else { return false };
-    if v.get("camcraft_link").and_then(Value::as_u64) != Some(u64::from(FORMAT)) {
-        return false;
-    }
-    if v.get("ok").and_then(Value::as_bool) != Some(true) {
-        return false;
-    }
-    let want = token_proof(token, nonce);
-    let Some(got) = v.get("proof").and_then(Value::as_str) else { return false };
-    got.len() == want.len()
-        && got.bytes().zip(want.bytes()).fold(0_u8, |acc, (a, b)| acc | (a ^ b)) == 0
+        && got
+            .bytes()
+            .zip(token.bytes())
+            .fold(0_u8, |acc, (a, b)| acc | (a ^ b))
+            == 0
 }
 
 /// A window's registration: its discovery file (and socket file), removed
@@ -264,7 +210,11 @@ pub(crate) fn open(dir: &Path) -> std::io::Result<(Listener, Registration, Strin
         app_version: env!("CARGO_PKG_VERSION").to_owned(),
     };
     // Built before the write, so a failed write still removes the socket.
-    let registration = Registration { file: dir.join(format!("{pid}.json")), socket, entry };
+    let registration = Registration {
+        file: dir.join(format!("{pid}.json")),
+        socket,
+        entry,
+    };
     write_entry(&registration.file, &registration.entry)?;
     Ok((listener, registration, token))
 }
@@ -280,12 +230,20 @@ fn prepare_dir(dir: &Path) -> std::io::Result<()> {
 }
 
 #[cfg(unix)]
-fn bind(dir: &Path, pid: u32) -> std::io::Result<(Listener, &'static str, String, Option<PathBuf>)> {
+fn bind(
+    dir: &Path,
+    pid: u32,
+) -> std::io::Result<(Listener, &'static str, String, Option<PathBuf>)> {
     use std::os::unix::fs::PermissionsExt;
     let path = dir.join(format!("{pid}.sock"));
     let address = path
         .to_str()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "the link folder path is not UTF-8"))?
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "the link folder path is not UTF-8",
+            )
+        })?
         .to_owned();
     // A file of a crashed process with the same pid: nobody serves it.
     let _ = std::fs::remove_file(&path);
@@ -294,11 +252,30 @@ fn bind(dir: &Path, pid: u32) -> std::io::Result<(Listener, &'static str, String
     Ok((Listener::Unix(listener), "unix", address, Some(path)))
 }
 
-#[cfg(not(unix))]
-fn bind(_dir: &Path, _pid: u32) -> std::io::Result<(Listener, &'static str, String, Option<PathBuf>)> {
-    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
-    let address = listener.local_addr()?.to_string();
-    Ok((Listener::Tcp(listener), "tcp", address, None))
+/// Windows: a named pipe with a user-only ACL (#3874 review): the pipe
+/// name carries the pid, the kernel says which process serves it, and
+/// no port exists for a false server to hold.
+#[cfg(windows)]
+fn bind(
+    _dir: &Path,
+    pid: u32,
+) -> std::io::Result<(Listener, &'static str, String, Option<PathBuf>)> {
+    let name = pipe_name(pid);
+    let listener = super::link_pipe::PipeListener::new(&name)?;
+    Ok((Listener::Pipe(listener), "pipe", name, None))
+}
+
+/// Any other platform: no local link transport. The window still runs,
+/// and its status line says why (decision 3751).
+#[cfg(not(any(unix, windows)))]
+fn bind(
+    _dir: &Path,
+    _pid: u32,
+) -> std::io::Result<(Listener, &'static str, String, Option<PathBuf>)> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "this platform has no local UI link transport",
+    ))
 }
 
 /// Write the file all or nothing (a temp file, then a rename), readable
@@ -324,7 +301,9 @@ fn write_entry(file: &Path, entry: &Entry) -> std::io::Result<()> {
 /// not one (a temp file, another format) is skipped and logged.
 #[must_use]
 pub fn entries(dir: &Path) -> Vec<Entry> {
-    let Ok(read) = std::fs::read_dir(dir) else { return Vec::new() };
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
     let mut found: Vec<Entry> = read
         .filter_map(Result::ok)
         .map(|e| e.path())
@@ -335,7 +314,10 @@ pub fn entries(dir: &Path) -> Vec<Entry> {
                 .and_then(|t| serde_json::from_str::<Entry>(&t).ok())
                 .filter(|e| e.format == FORMAT);
             if parsed.is_none() {
-                tracing::info!("ui link: {} is not a link file of this version; skipped", p.display());
+                tracing::info!(
+                    "ui link: {} is not a link file of this version; skipped",
+                    p.display()
+                );
             }
             parsed
         })

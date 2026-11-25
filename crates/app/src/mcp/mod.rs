@@ -46,6 +46,21 @@ mod job;
 mod listen;
 pub mod link;
 mod link_client;
+/// The CLI's trust law of that link (#3874): the peer proves its
+/// transport before the token crosses, and every line is bounded.
+mod link_peer;
+// The Windows named-pipe transport of the UI link (#3874): a pipe with
+// a user-only ACL replaces the TCP port, and the CLI asks the kernel
+// which process serves the pipe. Public so the link tests can stand a
+// false pipe server up.
+#[cfg(windows)]
+pub mod link_pipe;
+/// The user-only gate of that pipe: its security descriptor.
+#[cfg(windows)]
+mod link_pipe_acl;
+/// The byte stream of that pipe: overlapped reads and writes.
+#[cfg(windows)]
+mod link_pipe_stream;
 mod port_flag;
 mod wire;
 mod live;
@@ -103,7 +118,7 @@ mod recipe_tools;
 // #183: the same tool table served live from inside the GUI, over a
 // loopback socket, against the app's own document and History.
 pub use bridge::bridge;
-pub use link_client::{bridge as link_bridge, call as link_call, connect as link_connect, LinkError, Select};
+pub use link_client::{bridge as link_bridge, bridge_with_bound, call as link_call, connect as link_connect, hold as link_hold, HeldSession, LinkError, Select};
 pub use listen::{Inbox, Request, Wake, IDLE_TIMEOUT};
 pub use port_flag::port_from;
 pub use live::{

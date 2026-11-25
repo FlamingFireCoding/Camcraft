@@ -328,15 +328,16 @@ fn serve_client(mut stream: Stream, tx: &Sender<Request>, stop: &AtomicBool, wak
             let rest = buf.split_off(nl.saturating_add(1));
             let line = std::mem::replace(&mut buf, rest);
             if let Some(want) = gate.take() {
-                // A hello that carries a nonce (a client of #3874) gets
-                // the proof of the token back; a plain hello (an older
-                // CLI) gets plain HELLO_OK.
-                let nonce = link::hello_nonce(&line);
+                // The transport already proved the peer's identity
+                // (#3874: the 0700 socket folder, or the pipe's
+                // user-only ACL and the server process id). The token
+                // now tells the window that this client read the
+                // discovery file; any other first line is refused.
                 if !link::hello_matches(&line, want) {
                     let _ = writeln!(writer, "{}", link::HELLO_REFUSED).and_then(|()| writer.flush());
                     return Ok(End::Refused);
                 }
-                writeln!(writer, "{}", link::hello_ok_line(want, nonce.as_deref()))?;
+                writeln!(writer, "{}", link::HELLO_OK)?;
                 writer.flush()?;
                 active = Instant::now();
                 continue;

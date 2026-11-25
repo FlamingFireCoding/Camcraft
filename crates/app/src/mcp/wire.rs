@@ -14,11 +14,18 @@ use std::time::Duration;
 #[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
 
+#[cfg(windows)]
+use super::link_pipe::{PipeListener, PipeStream};
+
 /// A listening socket: what [`super::Inbox`] accepts clients on.
 pub enum Listener {
     Tcp(TcpListener),
     #[cfg(unix)]
     Unix(UnixListener),
+    /// The UI link on Windows (#3874): a named pipe in the user's own
+    /// name space, never a TCP port.
+    #[cfg(windows)]
+    Pipe(PipeListener),
 }
 
 impl Listener {
@@ -32,6 +39,8 @@ impl Listener {
             Listener::Tcp(l) => l.accept().map(|(s, peer)| (Stream::Tcp(s), peer.to_string())),
             #[cfg(unix)]
             Listener::Unix(l) => l.accept().map(|(s, _)| (Stream::Unix(s), "local socket".to_owned())),
+            #[cfg(windows)]
+            Listener::Pipe(l) => l.accept().map(|(s, peer)| (Stream::Pipe(s), peer)),
         }
     }
 
@@ -42,6 +51,9 @@ impl Listener {
             Listener::Tcp(l) => l.set_nonblocking(on),
             #[cfg(unix)]
             Listener::Unix(l) => l.set_nonblocking(on),
+            // The pipe's own connect wait is sliced; it needs no mode.
+            #[cfg(windows)]
+            Listener::Pipe(l) => l.set_nonblocking(on),
         }
     }
 }
@@ -51,6 +63,8 @@ pub enum Stream {
     Tcp(TcpStream),
     #[cfg(unix)]
     Unix(UnixStream),
+    #[cfg(windows)]
+    Pipe(PipeStream),
 }
 
 impl Stream {
@@ -61,6 +75,8 @@ impl Stream {
             Stream::Tcp(s) => s.set_nonblocking(on),
             #[cfg(unix)]
             Stream::Unix(s) => s.set_nonblocking(on),
+            #[cfg(windows)]
+            Stream::Pipe(s) => s.set_nonblocking(on),
         }
     }
 
@@ -71,6 +87,8 @@ impl Stream {
             Stream::Tcp(s) => s.set_read_timeout(t),
             #[cfg(unix)]
             Stream::Unix(s) => s.set_read_timeout(t),
+            #[cfg(windows)]
+            Stream::Pipe(s) => s.set_read_timeout(t),
         }
     }
 
@@ -81,6 +99,8 @@ impl Stream {
             Stream::Tcp(s) => s.set_write_timeout(t),
             #[cfg(unix)]
             Stream::Unix(s) => s.set_write_timeout(t),
+            #[cfg(windows)]
+            Stream::Pipe(s) => s.set_write_timeout(t),
         }
     }
 
@@ -93,6 +113,8 @@ impl Stream {
             Stream::Tcp(s) => s.try_clone().map(Stream::Tcp),
             #[cfg(unix)]
             Stream::Unix(s) => s.try_clone().map(Stream::Unix),
+            #[cfg(windows)]
+            Stream::Pipe(s) => s.try_clone().map(Stream::Pipe),
         }
     }
 
@@ -105,6 +127,10 @@ impl Stream {
             Stream::Tcp(s) => s.shutdown(std::net::Shutdown::Write),
             #[cfg(unix)]
             Stream::Unix(s) => s.shutdown(std::net::Shutdown::Write),
+            // A pipe cannot close one direction only; the session ends
+            // through the idle drop or the broken pipe instead.
+            #[cfg(windows)]
+            Stream::Pipe(s) => s.shutdown_write(),
         }
     }
 }
@@ -115,6 +141,8 @@ impl Read for Stream {
             Stream::Tcp(s) => s.read(buf),
             #[cfg(unix)]
             Stream::Unix(s) => s.read(buf),
+            #[cfg(windows)]
+            Stream::Pipe(s) => s.read(buf),
         }
     }
 }
@@ -125,6 +153,8 @@ impl Write for Stream {
             Stream::Tcp(s) => s.write(buf),
             #[cfg(unix)]
             Stream::Unix(s) => s.write(buf),
+            #[cfg(windows)]
+            Stream::Pipe(s) => s.write(buf),
         }
     }
 
@@ -133,6 +163,8 @@ impl Write for Stream {
             Stream::Tcp(s) => s.flush(),
             #[cfg(unix)]
             Stream::Unix(s) => s.flush(),
+            #[cfg(windows)]
+            Stream::Pipe(s) => s.flush(),
         }
     }
 }
