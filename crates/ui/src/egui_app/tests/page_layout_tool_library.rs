@@ -126,6 +126,10 @@ fn layout_window_tool_editor() {
     let group = rect(crate::egui_app::tool_library_dialog::assembly_group::HEADING);
     assert!(group.top() > rect("Diameter").top(), "the assembly group {group:?} stands under the geometry rows");
     assert!(group.left() >= win.left() - 1.0 && group.right() <= win.right() + 1.0, "the group {group:?} keeps to the window's width");
+    // #3930: the folded Body section follows the assembly group.
+    let body = rect(crate::egui_app::tool_library_dialog::assembly_group::BODY);
+    assert!(body.top() > group.top(), "the Body section {body:?} stands under the assembly group {group:?}");
+    assert!(node.query_all_by_label("Import body…").next().is_none(), "the Body section starts folded");
     let (view, dims, holder) = (rect("3D"), rect(preview::DIMS), rect(preview::HOLDER));
     assert!(view.top() > rect(&heading).top(), "the preview {view:?} stands under the heading");
     assert!(view.left() > rect("Diameter").right(), "the preview {view:?} stands right of the rows");
