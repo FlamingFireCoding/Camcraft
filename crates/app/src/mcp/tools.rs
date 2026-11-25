@@ -397,7 +397,9 @@ fn s_edit_op() -> Value {
     let ring: Vec<&str> = crate::operation::KindInfo::ALL.iter().filter(|k| k.pick() == crate::operation::PickCapability::Ring).map(|k| k.label).collect();
     // #3331: the turning kinds whose pick is a point of the lathe (Z, X) plane.
     let lathe: Vec<&str> = crate::operation::KindInfo::ALL.iter().filter(|k| k.pick() == crate::operation::PickCapability::Meridian).map(|k| k.label).collect();
-    let params = format!("Fields to change (see get_job for the current ones). Start / exit picks: picks {{ start: [[x, y, z?], ...], exit: [...] }} in model mm, null or {{}} clears; taken by {} (Wire Contour: start is the threading point; exit ends an open run at its nearest end, or leaves a closed profile there) and by {} (a point in the lathe (Z, X) plane: z is required). Each kind's start_exit in list_operation_types says if it takes a pick.", ring.join(", "), lathe.join(", "));
+    // #3330: the raster kinds, whose pick is a corner of the raster.
+    let raster: Vec<&str> = crate::operation::KindInfo::ALL.iter().filter(|k| k.pick() == crate::operation::PickCapability::Raster).map(|k| k.label).collect();
+    let params = format!("Fields to change (see get_job for the current ones). Start / exit picks: picks {{ start: [[x, y, z?], ...], exit: [...] }} in model mm, null or {{}} clears; taken by {} (Wire Contour: start is the threading point; exit ends an open run at its nearest end, or leaves a closed profile there) and by {} (a point in the lathe (Z, X) plane: z is required); and by {} (a raster corner: the cut starts at the end of the first or the last pass nearest the start pick, and the exit pick chooses where the last pass ends). Each kind's start_exit in list_operation_types says if it takes a pick.", ring.join(", "), lathe.join(", "), raster.join(", "));
     obj(
         json!({
             "name": { "type": "string", "description": "Operation name (key or label)." },

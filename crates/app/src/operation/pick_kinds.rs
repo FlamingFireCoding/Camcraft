@@ -81,6 +81,9 @@ impl KindInfo {
             OpType::Threading => PickCapability::NotTaken(PICK_THREAD_LAW),
             // #3325: the end where the pass starts, and where it stops.
             OpType::Slot => PickCapability::Ends,
+            // #3330: the raster corner where the cut starts, and the end
+            // of the last pass.
+            OpType::Parallel5D => PickCapability::Raster,
             OpType::Face
             | OpType::Pocket
             | OpType::Trace
@@ -96,7 +99,6 @@ impl KindInfo {
             | OpType::Finish3D
             | OpType::Deburr
             | OpType::MultiAxisDeburr
-            | OpType::Parallel5D
             | OpType::Swarf
             | OpType::AdvancedSwarf
             | OpType::RotaryContour

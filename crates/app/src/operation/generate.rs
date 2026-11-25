@@ -1791,10 +1791,14 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #3330: the contour's start / exit picks seat its rings; an
             // empty seam is the automatic ladder, byte for byte.
             let seam = crate::finishing3d::RingSeam::of(&params.path_picks());
+            // #3330: the parallel's picks choose the raster corner where
+            // the cut starts and where the last pass ends; an empty seam
+            // is the automatic order, byte for byte.
+            let raster = crate::finishing3d::RasterSeam::of(&params.path_picks());
             let run = |q: &Finish3DParams| if is_contour {
                 crate::multiaxis::contour5d_seamed(&material.facets, q, &axis, shank.as_ref(), &seam)
             } else {
-                crate::multiaxis::parallel5d(&material.facets, q, &axis, shank.as_ref())
+                crate::multiaxis::parallel5d_seamed(&material.facets, q, &axis, shank.as_ref(), &raster).map(|(t, _)| t)
             };
             let kind = if is_contour { "5-Axis Contour" } else { "5-Axis Parallel" };
             let path = super::plunge_solid::guard_posed(
