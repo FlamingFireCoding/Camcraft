@@ -2389,6 +2389,102 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             )?;
             (region, path)
         }
+        // The rotary flow band (#2826, the second slice of #2804):
+        // the picked helical guide chains, unwrapped about the STATED
+        // axis (the op's own, else the machine's rotary line, else the
+        // twins' free fit - #2772's law, judged against the faces
+        // either way), machined where they stand by flow passes the
+        // kernel blends between each adjacent pair. No window clips
+        // the chains: a 360-degree helical band is the kind's own
+        // case, and the heights read as BALL-CENTER RADII about the
+        // axis - never as world Z - so the clearance and retract
+        // cylinders carry the links, and the kernel's radial guard
+        // refuses a number that does not clear the work (#2774's
+        // alignment: the offset sits on the rotary centreline, so a
+        // stock-top reference reads its radius above the stock's own
+        // max radius).
+        OpParams::RotaryFlow {
+            tolerance,
+            stepover,
+            feed,
+            plunge_feed,
+            climb,
+            lead_deg,
+            lag_deg,
+            max_tilt_deg,
+            ..
+        } => {
+            if tool.kind != crate::tools::ToolKind::BallNose {
+                return Err(GenError::Invalid(format!(
+                    "Rotary Flow needs a ball-nose tool, '{}' is a {}",
+                    tool_name, tool.kind
+                )));
+            }
+            let region = region_for_job(
+                    &mut picked_region,
+                    &mut section_z,
+                    &src,
+                    &params,
+                m_gen,
+                frame.as_ref(),
+            )?;
+            let chains = drive_chains
+                .take()
+                .ok_or_else(|| unreached("drive chains"))??;
+            // #2772 parts 1-2: a stated rotation axis first - the op's
+            // own direction, else the machine's stated rotary lines,
+            // each anchored through the work offset origin and judged
+            // against the model's faces (`axis_stated::judged_any`);
+            // nothing stated keeps the twins' free fit, whose own
+            // refusal names a model that says nothing of turning.
+            let lines = crate::rotary_stated::lines_of(
+                crate::rotary_stated::op_stated(&params),
+                machine_rotaries.as_ref().map(|(_, r)| r.as_slice()),
+                wcs_origin,
+            )
+            .transpose()
+            .map_err(|e| GenError::Invalid(format!("Rotary Flow: {e}")))?;
+            let ax = match &lines {
+                Some(ls) => crate::multiaxis::axis_stated::judged_any(&material.facets, ls)?,
+                None => crate::multiaxis::axis::fit(&material.facets)?,
+            };
+            let axis = crate::multiaxis::AxisControl {
+                lead_deg: *lead_deg,
+                lag_deg: *lag_deg,
+                max_tilt_deg: Some(*max_tilt_deg),
+            };
+            let fp = crate::multiaxis::RotaryFlowParams {
+                tool: &tool,
+                stepover: *stepover,
+                tolerance: *tolerance,
+                clearance: hl.clearance,
+                retract: hl.retract,
+                feed: *feed,
+                plunge_feed: *plunge_feed,
+                climb: *climb,
+            };
+            // M13.5 B: the letter is the machine's. The line the
+            // kernel will turn the part about - stated (#2772) or
+            // fitted - must be a rotary the mounted machine states
+            // (A/B on a table, or the spindle's C - issue #33).
+            let spindle_c = super::rotary_gate::letter_gate(machine_rotaries.as_ref(), lines.as_ref().map(|_| &ax), &material.facets, "Rotary Flow")?;
+            let path = crate::multiaxis::rotary_flow(&chains, &material.facets, &ax, &fp, &axis)?;
+            super::plunge_solid::audit_posed(
+                "Rotary Flow", tool.center_cutting, stock_facets.as_deref(), m_gen, frame.as_ref(), &path, d * 0.5,
+            )?;
+            // Issue #33: on the spindle's C the path states its angle.
+            // The unwind law is not proven on this kind's band links
+            // end to end, so it posts only what fits the travel as
+            // stamped and refuses by name where it would rewind - the
+            // parallel's own answer (`unwinds: false`).
+            let path = super::rotary_gate::stamp_spindle_c(path, spindle_c, (machine_rotaries.as_ref(), false), *tolerance, "Rotary Flow")?;
+            // #3096: the first rapid from the turret's index position onto the station.
+            if let Some(ax) = spindle_c.filter(|_| super::rotary_traverse::answers(machine_kind, lathe_tool, &params, true)) {
+                let work = super::rotary_traverse::Work { part: &material.facets, part_solid, kept: &keep_parts, neighbours: &neighbour_parts, stock: stock_facets.as_deref(), stock_aabb, turning: &workholding.0, fixed: &workholding.1, excess: material.excess };
+                super::rotary_traverse::judge_about(&path, "Rotary Flow", &ax, &tool, &work)?;
+            }
+            (region, path)
+        }
         OpParams::Slot {
             a,
             b,
@@ -2403,6 +2499,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             helix_radius, blend_turns, blend_radius,
             extend_start,
             extend_end,
+            picks,
             ..
         } => {
             // #1504: picks bound the room the slot may cut in - a slot
@@ -2414,10 +2511,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 room?.judge(*a, *b, *width)?;
             }
             let (ea, eb) = machining2d::slot_extended_ends(*a, *b, *extend_start, *extend_end)?;
-            let path = machining2d::slot(
-                ea,
-                eb,
-                &SlotParams {
+            let sp = SlotParams {
                     links: lk,
                     tool_diameter: d,
                     entry: *entry,
@@ -2433,8 +2527,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     feed: *feed,
                     plunge_feed: *plunge_feed,
                     climb: *climb,
-                },
-            )?;
+            };
+            // #3325: a start or exit pick chooses which end the pass
+            // starts on; without a pick the ends come back as they are.
+            let (ea, eb) = machining2d::slot_picked_ends(ea, eb, &sp, picks)?;
+            let path = machining2d::slot(ea, eb, &sp)?;
             let region = region_for_job(
                     &mut picked_region,
                     &mut section_z,
@@ -4569,6 +4666,10 @@ pub(super) fn stock_to_leave_of(params: &OpParams) -> f64 {
         // ball's envelope at the curve's stations is the whole law.
         | OpParams::Flow5D { .. }
         | OpParams::MultiAxisContour { .. }
+        // The flow band's passes are the same answer on the rotor's
+        // own skin (#2826): a leave number could only move the rest
+        // verdict.
+        | OpParams::RotaryFlow { .. }
         // Facing leaves no shelf: the ladder steps to the facing
         // plane and stops - the tolerance measures the finish, a
         // stock-to-leave number would only move the verdict (M5.2 A).
