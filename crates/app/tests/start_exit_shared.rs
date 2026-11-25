@@ -7,6 +7,11 @@
 //! Gate map (#3324): covers app::operation (kinds pick capability,
 //! path_picks accessor, sane), app::mcp (tools schema, job kind list).
 
+mod common;
+// #3328: the hole order of Drill, Bore and Thread under the picks.
+#[path = "start_exit_shared/hole_order.rs"]
+mod hole_order;
+
 use camcraft_app::mcp::Server;
 use camcraft_app::geo2d::Point2;
 use camcraft_app::operation::{Carried, Height, HeightReference, KindInfo, OpParams, OpType, PickCapability};
@@ -55,8 +60,10 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
         match k.ty {
             OpType::Contour => assert_eq!(cap, PickCapability::Ring, "the contour takes a ring pick"),
             OpType::WireContour => assert_eq!(cap, PickCapability::Threading, "the wire takes its threading point"),
+            // #3328: the first hole and the last hole of the list.
+            OpType::Drill | OpType::Bore | OpType::Thread => assert_eq!(cap, PickCapability::HoleOrder, "{}: a hole order pick", k.label),
             _ => {
-                let PickCapability::NotTaken(why) = cap else { panic!("{}: only the contour and the wire take a pick", k.label) };
+                let PickCapability::NotTaken(why) = cap else { panic!("{}: only the contour, the wire and the hole kinds take a pick", k.label) };
                 assert!(!why.is_empty(), "{}: the reason is named", k.label);
             }
         }
