@@ -120,6 +120,8 @@ mod lathe_view;
 // #1997: the orbit pivot ignores the work envelope; open frames the part.
 mod camera_target;
 mod structural;
+// #2772 parts 1-2 (PR #3674 item 5): the stated rotation axis group.
+mod rotary_stated_axis;
 // #2181: the transport row of the calculation before playback.
 mod transport_precalc;
 mod sim_op_steps;

@@ -111,8 +111,21 @@ fn holds_data(data: &[Datum], a_total: f64, line: Axis) -> Option<Axis> {
         if k.dot(k) <= 1e-8 {
             continue;
         }
-        let s = d.p.dot(u);
-        let cp = Point3::new(d.p.x - u.x * s, d.p.y - u.y * s, d.p.z - u.z * s);
+        // The radius is the facet's distance FROM THE STATED LINE, not
+        // from the world origin: a common model or WCS translation
+        // moves the part and its line together, and a radius read off
+        // the origin would scale the sagitta budget with the
+        // translation, letting a wrong line pass far from home (the
+        // review of PR #3674 - a 1 mm error defeated by +10000 mm).
+        // The radius is the facet's distance FROM THE STATED LINE, not
+        // from the world origin: a common model or WCS translation
+        // moves the part and its line together, and a radius read off
+        // the origin would scale the sagitta budget with the
+        // translation, letting a wrong line pass far from home (the
+        // review of PR #3674 - a 1 mm error defeated by +10000 mm).
+        let rel = Point3::new(d.p.x - ax.origin.x, d.p.y - ax.origin.y, d.p.z - ax.origin.z);
+        let s = rel.dot(u);
+        let cp = Point3::new(rel.x - u.x * s, rel.y - u.y * s, rel.z - u.z * s);
         let rr = cp.dot(cp).sqrt();
         if rr.is_finite() {
             r_wsum += rr * d.a;

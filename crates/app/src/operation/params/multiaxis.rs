@@ -84,7 +84,6 @@ impl OpParams {
                 lead_deg,
                 lag_deg,
                 max_tilt_deg,
-                picks: _,
                 ..
             }
             | OpParams::RotaryParallel {
