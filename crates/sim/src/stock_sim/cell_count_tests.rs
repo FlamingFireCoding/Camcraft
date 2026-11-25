@@ -4,6 +4,7 @@
 //! edge reads after a rigid move in floating point.
 
 use super::super::backend::{Backend, Stock};
+use super::super::carry_history::History;
 use super::*;
 
 /// 12.7 mm, `k` ulps long.
@@ -20,6 +21,7 @@ fn a_whole_number_of_cells_up_to_rounding_is_that_number() {
     assert_eq!(cells_across(12.8, 0.254), 51);
     assert_eq!(cells_across(12.7 + 1e-6, 0.254), 51);
     assert_eq!(cells_across(0.1, 0.254), 1);
+    assert_eq!(cells_across(1e-10, 0.254), 1);
 }
 
 #[test]
@@ -39,4 +41,13 @@ fn the_cell_ceiling_gate_counts_the_same_columns() {
     let x0 = -(x1 * (1.0 + 4.0 * f64::EPSILON) - x1);
     assert!((x1 - x0) / 0.254 > 4096.0);
     assert!(Stock::block(Backend::Column, x0, 0.0, x1, 0.254, 1.0, 0.254).is_ok());
+}
+
+#[test]
+fn the_exact_carry_read_counts_the_blocks_columns() {
+    // The box a side turn reads back: the same edges, a finite floor.
+    let mut h = History::block(-long(2), 0.0, -0.0, 1.0, 5.0, 0.254);
+    h.lo.z = 0.0;
+    let body = h.read(false).expect("read");
+    assert_eq!((body.dex.nx, body.dex.ny), (50, 4));
 }
