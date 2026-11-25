@@ -57,7 +57,7 @@ fn cleanup_engagement_is_checked_on_default_and_custom_limits() {
 fn cleanup_engagement_note_round_trips_for_2d_and_3d() {
     let note_2d = cleanup_engagement_note(102.5, Point3::new(1.25, -2.5, 0.0), 90.0);
     assert!(note_2d.starts_with(CLEANUP_ENGAGEMENT_NOTE_PREFIX), "{note_2d}");
-    assert_eq!(cleanup_engagement_exceeded(&[note_2d.clone()]), Some((102.5, 90.0)));
+    assert_eq!(cleanup_engagement_exceeded(std::slice::from_ref(&note_2d)), Some((102.5, 90.0)));
 
     let note_3d = note_2d.replacen("2D Adaptive (Trochoidal):", "3D Adaptive (Trochoidal):", 1);
     assert_eq!(cleanup_engagement_exceeded(&[note_3d]), Some((102.5, 90.0)));
