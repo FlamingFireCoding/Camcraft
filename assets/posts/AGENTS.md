@@ -317,10 +317,10 @@ goldens ride under `crates/post/tests/golden/waterjet/`
 (`waterjet_iso_post.rs`); the decision record is
 `docs/decisions/1882-waterjet-post.md`.
 
-## The wire EDM post
+## The wire EDM posts
 
-`wire-iso.cps` (#533, "Generic ISO Wire EDM") is the one
-`posting::WIRE_POSTS` entry: it serves `kind: wire_edm` machines only
+`posting::WIRE_POSTS` has four entries. `wire-iso.cps` (#533, "Generic
+ISO Wire EDM") is the first entry and the default: it serves `kind: wire_edm` machines only
 (`machine.kind`) and declares `wireEdm = true` - the engine refuses a
 wire section (`PARAM EdmCondition`) through any script without it. It
 writes only RS-274 / ISO 6983 motion and program words; every EDM code
@@ -367,6 +367,23 @@ per program and refuses by name taper, 4-axis, any `COMP` record, skims,
 `edm.awt`, an offset other than G54, and every stop or home ask. It was not
 run on a control; `docs/decisions/2700-g-edm-post.md` lists what is not
 confirmed. Its golden rides under `nc/g-edm/` (`g_edm_post.rs`).
+
+`agie-native.cps` ("Agie Wire EDM (AgieVision)", named in #4000) is the
+third `WIRE_POSTS` entry, never the default. It serves one machine: the
+AGIECUT Classic 2S (`agiecut-classic-2s.mch`, model `AGIECUT CLASSIC 2S`);
+every other machine is refused by name. The `.cps` holds only the
+metadata and the option `separationLengthMm` (group "AgieVision
+technology"); its `onOpen` refuses a plain one-file post. The desktop
+and the CLI write the job through `posting::agie` (`crates/app/src/posting_agie.rs`
+and `crates/post/src/agie/`): One program output to a new job directory
+of AgieVision ISO, SBR and SBL files with zero working steps. Its
+refusals say "The Agie Wire EDM job requires ...". Its old names
+"Agie native wire EDM" (#3537) and "Native wire EDM job files" (#4000)
+are hidden aliases in `posting::aliases` (`posting_aliases.rs`); no list
+shows them. Its job goldens ride under `crates/app/tests/golden/nc/agie-native/`
+and `crates/post/tests/golden/agie-setup/`; its `.cps` refusals under
+`crates/post/tests/recorded/golden/agie-native/`. The user guide is
+`docs/user-guide/agie-wire-edm.md`.
 
 ## Adding a post to the app
 

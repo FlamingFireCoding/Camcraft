@@ -30,6 +30,8 @@ use std::path::Path;
 
 #[path = "posting_agie.rs"]
 pub mod agie;
+#[path = "posting_aliases.rs"]
+pub mod aliases;
 
 #[path = "posting_waterjet.rs"]
 mod waterjet;
@@ -445,7 +447,7 @@ pub(crate) fn json_map_to_overrides(val: &Value) -> Result<BTreeMap<String, Opti
 
 /// Resolve a built-in post name or `.cps` file path to its [`PostRef`] and script text (#258, #2190).
 pub fn resolve_cps(cps: &str) -> Result<(PostRef, String), String> {
-    let cps = agie::current_name(cps);
+    let cps = aliases::current_name(cps);
     if BUILTINS.iter().any(|(n, _)| *n == cps) {
         return Ok((PostRef::Named(cps.to_owned()), builtin_post_text(cps)?.to_owned()));
     }
@@ -650,7 +652,7 @@ fn post_script_as(
 pub fn post_setup_unwritten(world: &World) -> Result<Posted, String> {
     let post = mounts::single(world, true)?.post;
     if agie::is_native(&post) {
-        return Err("Native wire EDM jobs require a job directory on the desktop or CLI".into());
+        return Err("Agie Wire EDM jobs require a job directory on the desktop or CLI".into());
     }
     let (label, cps) = script_of(&post)?;
     let posted = post_script_body_with(world, &cps, Some(&label), Some(&post), None);
