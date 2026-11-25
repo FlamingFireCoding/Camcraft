@@ -173,6 +173,17 @@ fn a_bad_catalog_is_a_named_error_not_a_panic() {
     assert!(err(file(ok, &[row("A", &good.replace("\"feed\"", "\"typo\":1,\"feed\""))])).contains("'A'"));
 }
 
+/// #3662: a single-form thread mill row with no `pitch_min` reads as a
+/// range of its one pitch, the same as the library and project readers.
+#[test]
+fn a_catalog_single_form_thread_mill_without_a_range_cuts_its_one_pitch() {
+    let def = r#"{"kind":"thread_mill_single","diameter":6,"corner_r":0,"tip_angle":60,"pitch":1.5,"flute_len":2,"shank_d":6,"shank_len":40,"holder_d":44,"holder_len":35,"material_group":"aluminum","rpm":6000,"feed":300}"#;
+    let text = format!(r#"{{"format":"camcraft-tools","version":1,"tools":[{{"name":"TMS","definition":{def}}}]}}"#);
+    let v = parse_catalog(&text).expect("a single-form row without a range parses");
+    assert_eq!(v[0].1.kind, ToolKind::ThreadMillSingle);
+    assert_eq!((v[0].1.pitch_min, v[0].1.pitch), (1.5, 1.5));
+}
+
 /// #1152: a library row states a body electrode's outline; the reader
 /// keeps it, and refuses by name a row whose sizes leave its outline.
 #[test]

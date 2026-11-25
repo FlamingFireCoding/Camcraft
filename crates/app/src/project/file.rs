@@ -460,8 +460,11 @@ pub struct ToolDto {
     /// #894 addition, additive (no version step): a single-form thread
     /// mill's finest pitch. Absent from every older file and written
     /// only when set; absent is the inert 0.0 every other kind means.
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub pitch_min: f64,
+    /// #3662: on a single-form mill an ABSENT key reads as its one pitch
+    /// (a converter that read only the tooth); a stated 0 stays 0, so
+    /// the sanity law refuses it by name as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pitch_min: Option<f64>,
     /// Tap thread hand; older tools default to right-hand.
     #[serde(default, skip_serializing_if = "camcraft_tools::thread_hand::ThreadHand::is_right")]
     pub thread_hand: camcraft_tools::thread_hand::ThreadHand,
@@ -694,7 +697,8 @@ impl ToolDto {
             corner_r: t.corner_r,
             tip_angle: t.tip_angle,
             pitch: t.pitch,
-            pitch_min: t.pitch_min,
+            // Written only when set, as before #3662 (0 is absent).
+            pitch_min: (t.pitch_min != 0.0).then_some(t.pitch_min),
             thread_hand: t.thread_hand,
             nose_radius: t.nose_radius,
             width: t.width,
@@ -740,6 +744,11 @@ impl ToolDto {
         // #3369: a preset form that states no points (a catalogue entry)
         // reads as the points its preset writes.
         camcraft_tools::form_mill::fill(&mut tool);
+        // #3662: a single-form thread mill whose definition has no
+        // `pitch_min` key reads as a range of its one pitch (never wider).
+        if self.pitch_min.is_none() {
+            camcraft_tools::thread_mill::read_unstated_range(&mut tool);
+        }
         tool
     }
 
@@ -774,7 +783,7 @@ impl ToolDto {
             corner_r: self.corner_r,
             tip_angle: self.tip_angle,
             pitch: self.pitch,
-            pitch_min: self.pitch_min,
+            pitch_min: self.pitch_min.unwrap_or(0.0),
             thread_hand: self.thread_hand,
             nose_radius: self.nose_radius,
             width: self.width,
