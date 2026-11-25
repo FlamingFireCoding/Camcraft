@@ -206,6 +206,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     if let OpParams::WireContour(op) = &params {
         let cond = wire.ok_or_else(|| unreached("wire condition"))?;
         let k = cond.0.wire_diameter * 0.5 + cond.0.gap;
+        // #3937: a selected chain with an arc, a circle or a joint gap is
+        // cut on its own lines and arcs.
+        if let Some(sketch) = &wire_sketch
+            && let Some(mut path) = sketch.generate_arcs(op, &cond.0, &hs)?
+        {
+            sketch.check_path(&path, k).map_err(GenError::Invalid)?;
+            sketch.annotate(&mut path);
+            return Ok((path, Vec::new()));
+        }
         let picks = if let Some(sketch) = &wire_sketch {
             Some((vec![sketch.nominal_ring(op).map_err(GenError::Invalid)?], Vec::new()))
         } else {
@@ -223,8 +232,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             || region_for_job(&mut picked_region, &mut section_z, &src, &params, &material, None),
             stock,
         )?;
+        let mut path = path;
         if let Some(sketch) = &wire_sketch {
             sketch.check_path(&path, k).map_err(GenError::Invalid)?;
+            sketch.annotate(&mut path);
         }
         return Ok((path, warnings));
     }
