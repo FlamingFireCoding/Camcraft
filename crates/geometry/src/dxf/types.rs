@@ -97,6 +97,8 @@ pub(super) struct State {
     pub limits: Limits,
     /// Curve evaluations left for this drawing's SPLINE and ELLIPSE fits.
     pub curve_work: usize,
+    /// The INSERT references read so far; expanded at EOF, when every BLOCK is known.
+    pub inserts: Vec<super::insert::InsertRef>,
 }
 
 impl State {

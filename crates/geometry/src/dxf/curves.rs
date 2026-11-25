@@ -32,7 +32,13 @@ fn per_unit(units: Units) -> f64 {
     }
 }
 
-fn fit_settings(state: &mut State, kind: &'static str) -> Fit<'static> {
+/// The curve tolerance in the drawing's units.
+pub(super) fn tolerance(state: &State) -> f64 {
+    CURVE_TOLERANCE_MM / per_unit(state.doc.units)
+}
+
+/// The fit settings; using them records the tolerance on the document.
+pub(super) fn fit_settings(state: &mut State, kind: &'static str) -> Fit<'static> {
     let k = per_unit(state.doc.units);
     let tol = CURVE_TOLERANCE_MM / k;
     let used = state.doc.curve_tolerance.map_or(tol, |old| old.max(tol));
@@ -143,23 +149,33 @@ pub(super) fn ellipse(record: Record<'_>, state: &mut State) -> Result<(), DxfEr
         state.push(layer, primitive);
         return Ok(());
     }
-    let curve = Ellipse {
-        c,
-        major: (m.x, m.y),
-        minor: (-m.y * ratio, m.x * ratio),
-    };
+    let parts = (c, (m.x, m.y), (-m.y * ratio, m.x * ratio));
+    let out = ellipse_arcs(state, KIND, parts, (start, sweep, full))?;
+    emit(state, layer, out, KIND)
+}
+
+/// An ellipse `c + major cos t + minor sin t` for t in `[start, start + sweep]` (sweep > 0),
+/// laid as tangent arcs. `minor` is perpendicular to `major` and not longer; it may point
+/// either way (a mirrored INSERT runs clockwise).
+pub(super) fn ellipse_arcs(
+    state: &mut State,
+    kind: &'static str,
+    (c, major, minor): (Point2, (f64, f64), (f64, f64)),
+    (start, sweep, full): (f64, f64, bool),
+) -> Result<Vec<Primitive>, DxfError> {
+    let curve = Ellipse { c, major, minor };
     // Pieces of at most a quarter turn, so each starts with a well-shaped biarc.
     let quarters = (sweep / FRAC_PI_2).ceil().max(1.0) as usize;
     let cuts: Vec<f64> = (0..=quarters)
         .map(|i| start + sweep * i as f64 / quarters as f64)
         .collect();
-    let fit = fit_settings(state, KIND);
+    let fit = fit_settings(state, kind);
     let mut budget = budget(state);
     let mut out = Vec::new();
     let last = full.then(|| curve.point(start));
     fit.section(&curve, &cuts, last, &mut budget, &mut out)?;
     state.curve_work = budget.evaluations;
-    emit(state, layer, out, KIND)
+    Ok(out)
 }
 
 fn budget(state: &State) -> Budget {
