@@ -201,10 +201,12 @@ fn layout_page_tool() {
         "Tool",
         &["Tool: EM-0600-4FL", crate::egui_app::tool_summary::EDIT_IN_LIBRARY, "Type", "Diameter", "Corner radius", "Flute length", "Holder"],
     );
+    // The door row wraps in a narrow pane, above the first summary row.
     let door = h.get_by_label(crate::egui_app::tool_summary::EDIT_IN_LIBRARY).rect();
+    let first = h.query_all_by_label("Type").next().map_or(f32::MAX, |n| n.rect().top());
     for b in ["Edit tool shape", "Delete"] {
         let r = h.get_by_role_and_label(egui::accesskit::Role::Pane, "Properties").get_by_label(b).rect();
-        assert!((r.center().y - door.center().y).abs() < 4.0 && r.left() > door.left(), "{b:?} {r:?} stands right of the door {door:?}");
+        assert!(r.top() >= door.top() - 1.0 && r.bottom() <= first + 1.0, "{b:?} {r:?} stands in the door row {door:?}");
     }
 }
 
