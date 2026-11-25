@@ -101,6 +101,8 @@ mod grid_tests;
 mod geodesic;
 #[cfg(test)]
 mod hop_tests;
+#[cfg(test)]
+mod ring_seam_tests;
 mod ladder;
 mod morph;
 mod pencil;

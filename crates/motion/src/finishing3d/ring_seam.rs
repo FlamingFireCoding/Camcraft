@@ -73,7 +73,10 @@ fn named(role: PickRole, q: Point2) -> String {
 /// The closest point to `q` on the closed ring `pts` (the last vertex
 /// wraps to the first): `(segment index, point, distance)`, the first
 /// segment winning a tie. `None` for an empty ring or no finite answer.
-fn nearest(pts: &[Point2], q: Point2) -> Option<(usize, Point2, f64)> {
+/// A foot at the end of its segment (`t` at 1, within rounding) is
+/// stated as the start of the next segment: the closing vertex is then
+/// segment 0, so the run-on never re-traces a whole lap for it.
+pub(super) fn nearest(pts: &[Point2], q: Point2) -> Option<(usize, Point2, f64)> {
     let n = pts.len();
     let mut best: Option<(usize, Point2, f64)> = None;
     for i in 0..n {
@@ -81,10 +84,10 @@ fn nearest(pts: &[Point2], q: Point2) -> Option<(usize, Point2, f64)> {
         let (dx, dy) = (b.x - a.x, b.y - a.y);
         let dd = dx * dx + dy * dy;
         let t = if dd > 0.0 { (((q.x - a.x) * dx + (q.y - a.y) * dy) / dd).clamp(0.0, 1.0) } else { 0.0 };
-        let f = Point2::new(a.x + dx * t, a.y + dy * t);
+        let (k, f) = if t > 1.0 - 1e-9 { ((i + 1) % n, b) } else { (i, Point2::new(a.x + dx * t, a.y + dy * t)) };
         let d = ((q.x - f.x).powi(2) + (q.y - f.y).powi(2)).sqrt();
         if d.is_finite() && best.is_none_or(|b| d < b.2) {
-            best = Some((i, f, d));
+            best = Some((k, f, d));
         }
     }
     best
