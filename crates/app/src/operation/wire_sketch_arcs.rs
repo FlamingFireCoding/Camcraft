@@ -95,6 +95,24 @@ pub fn lead_arc_refusal(w: &WireContourOp) -> Option<String> {
     ))
 }
 
+/// The tangent arc lead radius against the resolved condition's kerf
+/// offset (#3991, Validate early): the radius must be larger than the wire
+/// radius plus the spark gap, or the lead arc is no smoother than a
+/// corner. The command door reads this after the condition resolves; the
+/// generator keeps its own check for a loaded file or a changed
+/// condition. `None` when the op states no arc lead or a larger radius.
+#[must_use]
+pub fn lead_arc_radius_refusal(w: &WireContourOp, cond: &WireCondition) -> Option<String> {
+    let radius = w.lead_arc_radius?;
+    let k = cond.wire_diameter * 0.5 + cond.gap;
+    (!(radius.is_finite() && radius > k)).then(|| {
+        format!(
+            "Wire Contour: the tangent lead arc radius ({radius} mm) must be larger than the kerf offset ({k:.4} mm) of condition {} (wire {} mm, gap {} mm) - set a larger radius or the straight lead",
+            cond.id, cond.wire_diameter, cond.gap
+        )
+    })
+}
+
 impl SelectedWireChain {
     /// The chain as lines and arcs in world XY.
     fn arc_chain(&self) -> Result<ArcChain, GenError> {

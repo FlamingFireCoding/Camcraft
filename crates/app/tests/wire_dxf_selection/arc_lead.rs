@@ -2,8 +2,9 @@
 //! line-and-arc punch and an exact polygon entered and left on tangent
 //! arcs, verified by the wire laws and the wire verdict, and posted through
 //! the generic ISO, Sodick and G-EDM wire posts, each to its golden; a hole
-//! too near is refused by name; a pair the arc lead is not cut with is
-//! refused at the command door; the straight lead stays the default.
+//! too near is refused by name; a radius not over the kerf offset and a
+//! pair the arc lead is not cut with are refused at the command door;
+//! the straight lead stays the default.
 //!
 //! Regenerate the goldens after an intentional change, then read the diff:
 //! `WRITE_GOLDEN=1 cargo test -p camcraft-app --test wire_dxf_selection arc_lead`
@@ -112,12 +113,37 @@ fn a_hole_too_near_and_a_pair_the_arc_lead_is_not_cut_with_are_refused_by_name()
     let world = led(DIE, FIXTURE, "C110", WireSide::Die, (3.5, 0.0), false, 1.0);
     let why = refusal(&world);
     assert!(why.contains("too near the entry point") && why.contains("tangent lead arc of radius 1"), "{why}");
-    // A radius not over the kerf offset (0.165 mm).
-    let world = led(DIE, FIXTURE, "C110", WireSide::Die, (0.0, 0.0), false, 0.1);
-    let why = refusal(&world);
-    assert!(why.contains("must be larger than the kerf offset"), "{why}");
     // A taper beside the arc lead is refused at the command door.
     let op = WireContourOp { lead_arc_radius: Some(1.0), taper_deg: 1.0, ..wire_op() };
     let why = EditOperationParams::new(&world, "Cut", OpParams::WireContour(op)).err().expect("refused").to_string();
     assert!(why.contains("tangent arc lead") && why.contains("taper"), "{why}");
+}
+
+/// Validate early (#3991 review): a radius at or under the kerf offset of
+/// the resolved condition (C110: 0.25 mm wire, 0.04 mm gap, 0.165 mm) is
+/// refused when the command is made - an edit and a new operation alike.
+/// The refused edit leaves the operation and the undo history unchanged.
+#[test]
+fn a_radius_at_or_under_the_kerf_offset_is_refused_at_the_command_door() {
+    let (world, h) = document(DXF);
+    let e = model::find_by_name(&world, "Cut").expect("operation");
+    let before = model::operation_of(&world, &e).expect("op").params;
+    let done = h.done_len();
+    let offset = 0.25 * 0.5 + 0.04;
+    for radius in [offset, 0.1] {
+        let op = WireContourOp { lead_arc_radius: Some(radius), ..wire_op() };
+        let why = EditOperationParams::new(&world, "Cut", OpParams::WireContour(op.clone())).err().expect("edit refused").to_string();
+        assert!(why.contains("must be larger than the kerf offset (0.1650 mm)"), "{radius}: {why}");
+        let why = CreateOperation::new(&world, "Cut 2", "Wire", SrcRef::Entity("drawing".into()), OpParams::WireContour(op))
+            .err()
+            .expect("create refused")
+            .to_string();
+        assert!(why.contains("must be larger than the kerf offset"), "{radius}: {why}");
+    }
+    assert_eq!(model::operation_of(&world, &e).expect("op").params, before, "the refused edit changes nothing");
+    assert!(model::find_by_name(&world, "Cut 2").is_none(), "the refused create makes no operation");
+    assert_eq!(h.done_len(), done, "no history entry");
+    // Just over the offset passes the door.
+    let op = WireContourOp { lead_arc_radius: Some(offset + 0.001), ..wire_op() };
+    assert!(EditOperationParams::new(&world, "Cut", OpParams::WireContour(op)).is_ok());
 }
