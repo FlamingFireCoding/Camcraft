@@ -113,6 +113,9 @@ impl KindInfo {
             | OpType::SinkerBurn
             | OpType::SinkerSideBurn
             | OpType::SlotUndercut
+            // #2826: the flow band's own start and exit ride its
+            // picked chains' own ends, the planner's choice.
+            | OpType::RotaryFlow
             | OpType::VCarve => PickCapability::NotTaken(PICK_OWED),
         }
     }
@@ -168,6 +171,9 @@ impl OpParams {
             OpParams::SinkerBurn(p) => Some(&p.picks),
             OpParams::SinkerSideBurn(p) => Some(&p.burn.picks),
             OpParams::SlotUndercut(p) => Some(&p.picks),
+            // #2826: the flow band's picks ride the op's own chain
+            // selection, the planner reads them there.
+            OpParams::RotaryFlow { .. } => None,
             OpParams::Probe { .. } => None,
         }
     }
@@ -223,6 +229,9 @@ impl OpParams {
             OpParams::SinkerBurn(p) => Some(&mut p.picks),
             OpParams::SinkerSideBurn(p) => Some(&mut p.burn.picks),
             OpParams::SlotUndercut(p) => Some(&mut p.picks),
+            // #2826: the flow band's picks ride the op's own chain
+            // selection, the planner reads them there.
+            OpParams::RotaryFlow { .. } => None,
             OpParams::Probe { .. } => None,
         }
     }
