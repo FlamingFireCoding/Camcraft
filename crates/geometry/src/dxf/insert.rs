@@ -48,7 +48,7 @@ pub(super) fn read(record: Record<'_>, input: &mut Pairs<'_>, state: &mut State)
     let mut scale = [1.0; 3];
     for (slot, code) in scale.iter_mut().zip([41, 42, 43]) {
         *slot = record.number(code, Some(1.0))?;
-        if *slot == 0.0 || slot.abs() > 1e9 || slot.abs() < 1e-9 {
+        if !(1e-9..=1e9).contains(&slot.abs()) {
             return Err(error(&format!("INSERT {name}"), "scale factor must be nonzero and within 1e-9 to 1e9"));
         }
     }

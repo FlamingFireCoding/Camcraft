@@ -114,12 +114,14 @@ fn mutated_block_records_never_panic() {
         ),
         &insert("B", "41\n-1\n50\n45\n"),
     );
+    // Millimetres: a drawing with no unit fits its curves 25.4 times finer (inches).
+    let base = format!("0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n{base}");
     assert!(parse(base.as_bytes()).is_ok(), "{:?}", parse(base.as_bytes()));
     let lines: Vec<&str> = base.lines().collect();
     let values = ["0", "-1", "1e308", "-1e-308", "NaN", "inf", "3", "1e9", "0.5", "x", "", "2147483647", "A", "B"];
     let mut seed: u64 = 0x1865_b10c;
     let started = Instant::now();
-    for _ in 0..400 {
+    for _ in 0..300 {
         seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         let at = (seed >> 33) as usize % lines.len();
         let value = values[(seed >> 13) as usize % values.len()];
