@@ -63,6 +63,9 @@ fn list_operation_types_names_the_optional_fields_and_enum_words() {
     for name in ["condition", "taper_deg", "tabs", "capture", "skims"] {
         field(&kinds, "wire_contour", name);
     }
+    // A legacy key that the load reads but the file never writes is not offered.
+    let wire = kinds.iter().find(|k| k["key"] == "wire_contour").expect("wire_contour");
+    assert!(!wire["fields"].as_array().is_some_and(|f| f.iter().any(|f| f["name"] == "start")), "{wire}");
     let tabs = field(&kinds, "wire_contour", "tabs");
     assert!(tabs["shape"].as_str().is_some_and(|s| s.contains("cutoff_condition")), "{tabs}");
 

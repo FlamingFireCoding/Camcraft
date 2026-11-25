@@ -6,6 +6,7 @@
 //! Provenance: our own view over this repo's params DTOs.
 
 mod trace;
+mod written;
 
 use crate::project::{self, ParamsDto};
 use serde_json::{json, Value};
@@ -86,6 +87,12 @@ pub(super) fn complete(key: &str, defaults: &Value, fields: &mut Vec<Value>) -> 
         nodes.extend(inner.into_iter().filter(|(p, _)| p != key));
         stated = outer;
         known = true;
+    }
+    // A key the type reads but never writes is a legacy key that the
+    // load migrates (`skip_serializing`): it is not offered.
+    let dto: Option<ParamsDto> = serde_json::from_value(json!({ key: defaults })).ok();
+    if let Some(writes) = dto.as_ref().and_then(written::keys) {
+        names.retain(|n| writes.contains(n));
     }
     let in_defaults = |n: &str| defaults.get(n).is_some();
     for row in fields.iter_mut() {

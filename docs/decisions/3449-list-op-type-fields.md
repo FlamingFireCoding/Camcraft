@@ -7,7 +7,11 @@ struct's field names, each enum's variant names and each `Option`. A field
 that the defaults do not write gets `"optional": true`. An enum field gets
 `"values"`. An object or array field gets a short `"shape"` text. The
 existing hand rows (break_through, the Wire Contour extras, cavity_outline,
-minimum_cone_radius) stay, because they give real defaults.
+minimum_cone_radius) stay, because they give real defaults. A second
+small trace (`kind_fields/written.rs`) records the keys that the kind's
+params can write. A key that the type reads but never writes
+(`#[serde(skip_serializing)]`, for example the legacy wire `start` that
+the load migrates into `picks`) is not offered.
 
 **Why.** One rule for all kinds, read from the types themselves: a field
 that a params struct gains is listed without a hand edit (the issue's Done
