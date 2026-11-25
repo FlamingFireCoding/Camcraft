@@ -11,6 +11,7 @@
 use super::Units;
 use super::curve_fit::{Budget, Curve, Fit};
 use super::entities::{circle_range, common, coordinate, layer, point};
+use super::insert_curve::{CurveDef, defer};
 use super::nurbs::{MAX_DEGREE, Nurbs};
 use super::pairs::{Record, integer, number};
 use super::types::{DxfError, Primitive, State, error};
@@ -119,6 +120,10 @@ pub(super) fn ellipse(record: Record<'_>, state: &mut State) -> Result<(), DxfEr
         return Err(error(KIND, "zero-length parameter sweep"));
     }
     let start = t0.rem_euclid(TAU);
+    let (major, minor) = ((m.x, m.y), (-m.y * ratio, m.x * ratio));
+    if state.defer_curves && ratio != 1.0 {
+        return defer(state, layer, CurveDef::Ellipse { c, major, minor, start, sweep, full }, KIND);
+    }
     let axis = m.y.atan2(m.x);
     // The circle of radius a is at most a (1 - ratio) from the ellipse, at the minor ends.
     // A ratio of exactly 1 is the circle itself; a near one is a circle only while that
@@ -149,8 +154,7 @@ pub(super) fn ellipse(record: Record<'_>, state: &mut State) -> Result<(), DxfEr
         state.push(layer, primitive);
         return Ok(());
     }
-    let parts = (c, (m.x, m.y), (-m.y * ratio, m.x * ratio));
-    let out = ellipse_arcs(state, KIND, parts, (start, sweep, full))?;
+    let out = ellipse_arcs(state, KIND, (c, major, minor), (start, sweep, full))?;
     emit(state, layer, out, KIND)
 }
 
@@ -339,14 +343,23 @@ pub(super) fn spline(record: Record<'_>, state: &mut State) -> Result<(), DxfErr
         state.vertex(KIND)?;
     }
     let curve = Nurbs::new(degree, f.knots, f.points, f.weights)?;
-    let fit = fit_settings(state, KIND);
+    if state.defer_curves {
+        return defer(state, layer, CurveDef::Spline(curve), KIND);
+    }
+    let out = spline_arcs(state, &curve)?;
+    emit(state, layer, out, KIND)
+}
+
+/// A SPLINE curve laid as tangent arcs and lines, in the units of its control points.
+pub(super) fn spline_arcs(state: &mut State, curve: &Nurbs) -> Result<Vec<Primitive>, DxfError> {
+    let fit = fit_settings(state, "SPLINE");
     let mut budget = budget(state);
     let mut out = Vec::new();
-    for cuts in sections(&curve) {
-        fit.section(&curve, &cuts, None, &mut budget, &mut out)?;
+    for cuts in sections(curve) {
+        fit.section(curve, &cuts, None, &mut budget, &mut out)?;
     }
     state.curve_work = budget.evaluations;
-    emit(state, layer, out, KIND)
+    Ok(out)
 }
 
 fn push(list: &mut Vec<f64>, value: f64, cap: usize, what: &str) -> Result<(), DxfError> {

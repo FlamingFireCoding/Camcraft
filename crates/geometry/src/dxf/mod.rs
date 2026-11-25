@@ -14,6 +14,7 @@ mod dictionaries;
 mod document_writer;
 mod entities;
 mod insert;
+mod insert_curve;
 mod insert_place;
 mod nurbs;
 mod pairs;

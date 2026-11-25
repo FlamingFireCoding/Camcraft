@@ -8,6 +8,7 @@
 //! primitive counts against the vertex limit. A cycle, a missing block, an external
 //! reference and a zero scale are refused by name.
 use super::entities::{common, coordinate, layer_name};
+use super::insert_curve::{LayeredCurve, place_curve};
 use super::insert_place::{Affine, place};
 use super::pairs::{Pairs, Record};
 use super::reader::entity_list;
@@ -151,11 +152,41 @@ impl<'a> Definitions<'a> {
     }
 }
 
-/// A block body as read: its primitives, the Z plane they lie in, and its nested INSERTs.
+/// A block body as read: its primitives and curves in drawing order, the Z plane they lie in,
+/// and its nested INSERTs.
 struct Body {
-    primitives: Vec<LayeredPrimitive>,
+    items: Vec<Item>,
     elevation: Option<f64>,
     inserts: Vec<InsertRef>,
+}
+
+/// A SPLINE or ELLIPSE stays a curve until it is placed, then is fitted in world units.
+enum Item {
+    Primitive(LayeredPrimitive),
+    Curve(LayeredCurve),
+}
+
+impl Item {
+    fn layer(&self) -> &str {
+        match self {
+            Item::Primitive(p) => &p.layer,
+            Item::Curve(c) => &c.layer,
+        }
+    }
+}
+
+/// Merge the primitives and the deferred curves of a body in drawing order.
+fn items(primitives: Vec<LayeredPrimitive>, curves: Vec<LayeredCurve>) -> Vec<Item> {
+    let mut out = Vec::with_capacity(primitives.len() + curves.len());
+    let mut curves = curves.into_iter().peekable();
+    for (i, primitive) in primitives.into_iter().enumerate() {
+        while let Some(curve) = curves.next_if(|c| c.at <= i) {
+            out.push(Item::Curve(curve));
+        }
+        out.push(Item::Primitive(primitive));
+    }
+    out.extend(curves.map(Item::Curve));
+    out
 }
 
 struct Expansion<'d, 'a> {
@@ -214,10 +245,14 @@ impl Expansion<'_, '_> {
                 if let Some(z) = body.elevation {
                     state.elevation("INSERT", coordinate(m.z(z), &context)?)?;
                 }
-                for item in &body.primitives {
+                for item in &body.items {
                     // DXF rule: block geometry on layer "0" takes the layer of its INSERT.
-                    let to = if item.layer == "0" { layer } else { item.layer.as_str() };
-                    for primitive in place(state, &m, &item.primitive, &context)? {
+                    let to = if item.layer() == "0" { layer } else { item.layer() };
+                    let placed = match item {
+                        Item::Primitive(p) => place(state, &m, &p.primitive, &context)?,
+                        Item::Curve(c) => place_curve(state, &m, &c.curve, &context)?,
+                    };
+                    for primitive in placed {
                         count(state, &context)?;
                         state.push(to, primitive);
                     }
@@ -244,9 +279,15 @@ impl Expansion<'_, '_> {
         let elevation = state.doc.elevation.take();
         let annotations = std::mem::take(&mut state.doc.annotations);
         let inserts = std::mem::take(&mut state.inserts);
+        let curves = std::mem::take(&mut state.curves);
+        let defer = std::mem::replace(&mut state.defer_curves, true);
         let result = entity_list(&mut Pairs { rest: def.body }, state, None);
+        state.defer_curves = defer;
         let body = Rc::new(Body {
-            primitives: std::mem::replace(&mut state.doc.primitives, primitives),
+            items: items(
+                std::mem::replace(&mut state.doc.primitives, primitives),
+                std::mem::replace(&mut state.curves, curves),
+            ),
             elevation: std::mem::replace(&mut state.doc.elevation, elevation),
             inserts: std::mem::replace(&mut state.inserts, inserts),
         });

@@ -30,6 +30,8 @@ pub fn parse_with_limits(bytes: &[u8], limits: Limits) -> Result<Document, DxfEr
         limits,
         curve_work: EVALUATION_BUDGET,
         inserts: Vec::new(),
+        defer_curves: false,
+        curves: Vec::new(),
     };
     let mut blocks = Blocks::default();
     let mut definitions = Definitions::default();

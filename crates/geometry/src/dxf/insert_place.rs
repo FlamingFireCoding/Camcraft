@@ -51,23 +51,28 @@ impl Affine {
         self.sz * z + self.tz
     }
 
-    fn linear(&self, x: f64, y: f64) -> (f64, f64) {
+    pub fn linear(&self, x: f64, y: f64) -> (f64, f64) {
         let [a, b, c, d] = self.m;
         (a * x + b * y, c * x + d * y)
     }
 
-    fn point(&self, p: Point2, context: &str) -> Result<Point2, DxfError> {
+    pub fn point(&self, p: Point2, context: &str) -> Result<Point2, DxfError> {
         let (x, y) = self.linear(p.x, p.y);
         Ok(Point2::new(coordinate(x + self.t[0], context)?, coordinate(y + self.t[1], context)?))
     }
 
-    /// `Some(+1)` for a similarity that keeps the turn, `Some(-1)` for a mirror, else `None`.
+    /// `Some(+1)` for an exact similarity that keeps the turn, `Some(-1)` for an exact mirror,
+    /// else `None`. Only an exact matrix maps a circle to a circle without a stated bound: any
+    /// difference d in a matrix entry moves a point of a circle of radius r by up to r d, which
+    /// no relative threshold limits in drawing units. A near similarity thus takes the ellipse
+    /// path, where the deviation is measured in drawing units against the curve tolerance.
+    /// Equal INSERT scales give exact matrices, also when composed: `then` forms the two
+    /// diagonal (and the two other) entries from the same products.
     fn similarity(&self) -> Option<f64> {
         let [a, b, c, d] = self.m;
-        let eps = 1e-12 * a.abs().max(b.abs()).max(c.abs()).max(d.abs());
-        if (a - d).abs() <= eps && (b + c).abs() <= eps {
+        if a == d && b == -c {
             Some(1.0)
-        } else if (a + d).abs() <= eps && (b - c).abs() <= eps {
+        } else if a == -d && b == c {
             Some(-1.0)
         } else {
             None
@@ -90,6 +95,7 @@ pub(super) fn place(state: &mut State, m: &Affine, primitive: &Primitive, contex
     };
     let c = m.point(center, context)?;
     let [a, _, cc, _] = m.m;
+    let (p, q) = (m.linear(radius, 0.0), m.linear(0.0, radius));
     if let Some(turn) = m.similarity() {
         let r = radius * a.hypot(cc);
         circle_range(c, r, context)?;
@@ -101,8 +107,19 @@ pub(super) fn place(state: &mut State, m: &Affine, primitive: &Primitive, contex
         let start_angle = (phi + turn * start).rem_euclid(TAU);
         return Ok(vec![Primitive::Arc { center: c, radius: r, start_angle, sweep_angle: turn * sweep }]);
     }
-    // The image is c + p cos t + q sin t. Run it with a rising parameter.
-    let (mut p, mut q) = (m.linear(radius, 0.0), m.linear(0.0, radius));
+    conic(state, c, (p, q), (start, sweep, full), context)
+}
+
+/// The curve `c + p cos t + q sin t` for t from `start` over `sweep`, in world units: a circle
+/// or an arc when it is within the curve tolerance of one, else tangent arcs within it.
+pub(super) fn conic(
+    state: &mut State,
+    c: Point2,
+    (mut p, mut q): ((f64, f64), (f64, f64)),
+    (start, sweep, full): (f64, f64, bool),
+    context: &str,
+) -> Result<Vec<Primitive>, DxfError> {
+    // Run the curve with a rising parameter.
     let (mut start, mut sweep) = (start, sweep);
     if sweep < 0.0 {
         q = (-q.0, -q.1);
