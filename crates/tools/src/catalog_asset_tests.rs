@@ -155,22 +155,31 @@ fn a_catalog_electrode_keeps_its_outline() {
 
 /// #3369: the catalogue form mills write their outline from the preset,
 /// cut at the catalogue's diameter, and keep the pilot out of the cut.
+/// The inch bits keep their true inch numbers: a 3/16 in pilot (4.7625
+/// mm) under a 1/2 in cutting height, so a 11/16 in flute length (17.4625
+/// mm). A sharp V-groove whose height is its cone has two points: the tip
+/// on the axis and the top of the cone.
 #[test]
 fn the_catalog_form_mills_cut_at_their_catalogue_diameter() {
-    for (name, d, pilot) in [
-        ("FM-RO-R6", 25.0, 5.0),
-        ("FM-RO-R0250IN", 25.4, 4.8),
-        ("FM-CV-R6", 25.0, 5.0),
-        ("FM-CV-R0250IN", 25.4, 4.8),
-        ("FM-VG-90-12", 12.0, 0.0),
-        ("FM-VG-90-0500IN", 12.7, 0.0),
+    const IN: f64 = 25.4;
+    // (name, diameter, pilot length, flute length, outline points)
+    for (name, d, pilot, flute, n) in [
+        ("FM-RO-R6", 25.0, 5.0, 18.0, 5),
+        ("FM-RO-R0250IN", 1.0 * IN, 0.1875 * IN, 0.6875 * IN, 5),
+        ("FM-CV-R6", 25.0, 5.0, 18.0, 5),
+        ("FM-CV-R0250IN", 1.0 * IN, 0.1875 * IN, 0.6875 * IN, 5),
+        ("FM-VG-90-12", 12.0, 0.0, 6.0, 2),
+        ("FM-VG-90-0500IN", 0.5 * IN, 0.0, 0.25 * IN, 2),
     ] {
         let t = tool(name);
         assert_eq!(t.kind, ToolKind::FormMill, "{name}");
         assert_eq!(t.why_not_sane(), None, "{name}");
         let form = t.form.clone().unwrap_or_default();
-        assert!(form.preset.is_some() && form.points.len() >= 2, "{name}: the preset wrote the points");
-        assert!((form.pilot_len - pilot).abs() < 1e-12, "{name}");
+        assert!(form.preset.is_some(), "{name}: the catalogue states a preset");
+        assert_eq!(form.points.len(), n, "{name}: the preset wrote the points");
+        // The catalogue states the exact inch value: 1e-9 mm is float dust.
+        assert!((form.pilot_len - pilot).abs() < 1e-9, "{name}: pilot {} mm", form.pilot_len);
+        assert!((t.flute_len - flute).abs() < 1e-9, "{name}: flute length {} mm", t.flute_len);
         let m = t.meridian().unwrap_or_else(|e| panic!("{name}: {e}"));
         let widest = m.points().iter().fold(0.0_f64, |r, p| r.max(p.r));
         assert!((2.0 * widest - d).abs() < 1e-9, "{name}: cuts at {} mm", 2.0 * widest);

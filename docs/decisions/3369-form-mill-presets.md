@@ -75,7 +75,12 @@ Dropped: a point table for the form in the editor (later work, with
 **Catalog:** six bits, a roundover, a cove and a 90-degree V-groove, in
 mm (R6 on a 13 mm bearing, 25 mm cut; 12 mm V) and inch (1/4 in radius on
 a 1/2 in bearing, 1 in cut; 1/2 in V), the common sizes of public router
-bit catalogues.
+bit catalogues. The inch bits state their true inch numbers: a 3/16 in
+pilot (4.7625 mm) and a 11/16 in flute length (17.4625 mm). Dropped:
+rounded values (4.8 mm, 17.5 mm) chosen so that floats add up exactly. A
+check that adds lengths compares them with float dust as its slack
+(`AGREE`, 1e-6 mm, in the sanity law; 1e-9 mm in the holder stack test),
+not with exact float equality.
 
 **Cost to change later:** the undercut forms (#896) widen
 `form_mill::refusal`; a generator that reads the outline removes the form

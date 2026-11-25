@@ -26,7 +26,7 @@ fn each_preset_meets_its_catalogue_radius() {
     // (preset, pilot length, cutting radius, flute length): the radius is
     // the pilot radius plus the form across the axis.
     let cases = [
-        (FormPreset::Roundover { radius: 6.35, pilot_radius: 6.35, height: 12.7 }, 4.76, 12.7, 17.46),
+        (FormPreset::Roundover { radius: 6.35, pilot_radius: 6.35, height: 12.7 }, 0.1875 * 25.4, 12.7, 0.6875 * 25.4),
         (FormPreset::Roundover { radius: 6.0, pilot_radius: 6.5, height: 6.0 }, 0.0, 12.5, 6.0),
         (FormPreset::Cove { radius: 6.0, pilot_radius: 6.5, height: 13.0 }, 5.0, 12.5, 18.0),
         (FormPreset::Ogee { radius: 4.0, radius2: 3.0, step: 1.5, pilot_radius: 6.35, height: 12.7 }, 5.0, 14.85, 17.7),
@@ -48,7 +48,7 @@ fn each_preset_meets_its_catalogue_radius() {
 
 #[test]
 fn the_pilot_band_does_not_cut() {
-    let t = mill(FormPreset::Roundover { radius: 6.35, pilot_radius: 6.35, height: 12.7 }, 4.76);
+    let t = mill(FormPreset::Roundover { radius: 6.35, pilot_radius: 6.35, height: 12.7 }, 0.1875 * 25.4);
     let m = t.meridian().unwrap_or_else(|e| panic!("{e}"));
     // The tip face and the bearing's side are the pilot; the arc and the
     // body above it cut.
