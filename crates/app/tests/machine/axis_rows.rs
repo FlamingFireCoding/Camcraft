@@ -24,16 +24,16 @@ fn a_linear_is_reversed_and_set_back_and_its_other_keys_stay() {
     let mut m = grblhal();
     let x = pointer_of(&m, "X");
     m.set_axis_reversed(&x, true).expect("X reversed");
-    assert_eq!(m.value.pointer(&format!("{x}/direction")), Some(&json!(-1)));
+    assert_eq!(m.value().pointer(&format!("{x}/direction")), Some(&json!(-1)));
     assert_eq!(axis(&m, "X").direction, AxisDirection::Inverted);
     assert!(m.axis_rows().iter().any(|r| r.name == "X" && r.reversed));
     assert_eq!(validate_text(&m.text()), [], "{}", m.text());
 
     // Back to standard: unstated is the file's way of saying standard.
     m.set_axis_reversed(&x, false).expect("X standard");
-    assert_eq!(m.value.pointer(&format!("{x}/direction")), None);
+    assert_eq!(m.value().pointer(&format!("{x}/direction")), None);
     assert_eq!(axis(&m, "X").direction, AxisDirection::Standard);
-    unknown_keys_kept(&m.value);
+    unknown_keys_kept(m.value());
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn a_table_rotary_states_its_work_lengths_and_a_head_rotary_has_none() {
     assert_eq!(validate_text(&m.text()), [], "{}", m.text());
     let a = axis(&m, "A");
     assert_eq!((a.nose_to_axis, a.axis_to_table), (Some(98.08), Some(40.0)));
-    unknown_keys_kept(&m.value);
+    unknown_keys_kept(m.value());
 }
 
 /// A work length is above zero and only on a rotary that turns the work;
@@ -117,8 +117,8 @@ fn a_bad_work_length_is_refused_at_its_row() {
     let mut m = grblhal();
     let a = m.add_rotary_axis(Place::OnTable, "A", [-1.0, 0.0, 0.0]).expect("adds A");
     let b = m.add_rotary_axis(Place::CarriesHead, "B", [0.0, 1.0, 0.0]).expect("adds B");
-    m.value.pointer_mut(&a).expect("A")["nose_to_axis"] = json!(-1.0);
-    m.value.pointer_mut(&b).expect("B")["axis_to_table"] = json!(5.0);
+    m.value_mut().pointer_mut(&a).expect("A")["nose_to_axis"] = json!(-1.0);
+    m.value_mut().pointer_mut(&b).expect("B")["axis_to_table"] = json!(5.0);
     let r = m.refusals();
     let on = |label: &str| -> Vec<String> { field(&m, label).refusals(&r).iter().map(|r| r.key.clone()).collect() };
     assert_eq!(on("A nose to axis"), ["A nose_to_axis"]);

@@ -11,6 +11,7 @@
 use egui::{ComboBox, DragValue, Id, Label, Response, RichText, TextEdit, Ui};
 
 use camcraft_app::machine::chain::{suggested_letter, AxisRow, Place, Step};
+use camcraft_app::machine::chain_view::ChainView;
 use camcraft_app::machine::draft::MachineDraft;
 use camcraft_app::machine::validate::Refusal;
 
@@ -53,12 +54,6 @@ pub(crate) enum Edit {
     Add,
 }
 
-/// The validator keys that belong on an axis row.
-#[must_use]
-pub fn row_keys(name: &str) -> [String; 2] {
-    [name.to_owned(), format!("{name} axis")]
-}
-
 const TRADE_ABOVE: &str = "Trade places with the axis above";
 const TRADE_BELOW: &str = "Trade places with the axis below";
 const TRADE_KIND: &str = "An axis trades places only with one of its kind that moves the same thing; to put it elsewhere, remove it and add it again";
@@ -83,17 +78,19 @@ fn cell(ui: &mut Ui, words: &str, help: &str) -> Id {
     ui.label(words).on_hover_text(help).id
 }
 
-/// Draw the group. Returns the edit a click asks for; the caller
-/// applies it after the frame's other fields (`apply`).
+/// Draw the group from the draft's view of the chain, built once per
+/// edit (`MachineDraft::chain_view`; the frame-cost rule, #2238). Returns
+/// the edit a click asks for; the caller applies it after the frame's
+/// other fields (`apply`).
 pub(crate) fn draw(
     ui: &mut Ui,
-    draft: &MachineDraft,
+    view: &ChainView,
     form: &mut AxisForm,
     refusals: &[Refusal],
     pal: &Tokens,
     error: egui::Color32,
 ) -> Option<Edit> {
-    let rows = draft.axis_rows();
+    let rows = &view.rows;
     let mut edit: Option<Edit> = None;
     group_open(ui, "Axis chain", None, true, |ui| {
         if rows.is_empty() {
@@ -103,7 +100,7 @@ pub(crate) fn draw(
         // the controls stay together at any width of the pane.
         prop_grid(ui, "machine-axis-chain", |ui| {
             for i in 0..rows.len() {
-                if let Some(e) = axis_rows(ui, &rows, i, refusals, pal, error) {
+                if let Some(e) = axis_rows(ui, view, i, refusals, pal, error) {
                     edit = Some(e);
                 }
                 ui.allocate_space(egui::vec2(0.0, GROUP_GAP));
@@ -122,12 +119,13 @@ pub(crate) fn draw(
 /// remove, what it moves, its own fields, then its notes and refusals.
 fn axis_rows(
     ui: &mut Ui,
-    rows: &[AxisRow],
+    view: &ChainView,
     i: usize,
     refusals: &[Refusal],
     pal: &Tokens,
     error: egui::Color32,
 ) -> Option<Edit> {
+    let rows = &view.rows;
     let r = &rows[i];
     let mut edit = None;
     // A move trades only with a neighbour of the same kind that moves
@@ -157,12 +155,12 @@ fn axis_rows(
     if let Some(e) = row_fields(ui, r) {
         edit = Some(e);
     }
-    for note in r.letter_note().into_iter().chain(r.offset_note()) {
+    for note in &view.notes[i] {
         ui.label("");
         ui.add(Label::new(RichText::new(format!("Note: {note}")).color(pal.text_dim)).wrap());
         ui.end_row();
     }
-    let keys = row_keys(&r.name);
+    let keys = &view.keys[i];
     for refusal in refusals.iter().filter(|x| keys.contains(&x.key)) {
         ui.label("");
         super::error_text::error_text(ui, error, &refusal.to_string());

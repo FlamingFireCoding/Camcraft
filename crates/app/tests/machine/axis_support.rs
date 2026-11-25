@@ -23,8 +23,8 @@ pub fn grblhal() -> MachineDraft {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/machines/grblhal-3axis.mch");
     let mut m = MachineDraft::open(&MachineSource::File(p)).expect("opens");
     // Keys the editor knows nothing about, at the top and on an axis.
-    m.value["x_vendor_block"] = json!({ "probe": "OMP40" });
-    m.value["kinematics"]["default"]["parts"][0]["parts"][0]["parts"][0]["parts"][0]["note"] = json!("gib adjusted 2026");
+    m.value_mut()["x_vendor_block"] = json!({ "probe": "OMP40" });
+    m.value_mut()["kinematics"]["default"]["parts"][0]["parts"][0]["parts"][0]["parts"][0]["note"] = json!("gib adjusted 2026");
     m
 }
 
@@ -53,7 +53,7 @@ pub fn tilting_head() -> MachineDraft {
     let mut m = grblhal();
     m.add_rotary_axis(Place::CarriesHead, "A", [1.0, 0.0, 0.0]).expect("adds A");
     let b = m.add_rotary_axis(Place::CarriesHead, "B", [0.0, 1.0, 0.0]).expect("adds B");
-    let part = m.value.pointer_mut(&b).expect("B");
+    let part = m.value_mut().pointer_mut(&b).expect("B");
     part["pivot"] = json!([0.0, 0.0, 150.0]);
     part["offset"] = json!([0.0, 0.0, -40.0]);
     part["zero_offset"] = json!(0.5);
@@ -64,7 +64,7 @@ pub fn tilting_head() -> MachineDraft {
 }
 
 pub fn trunnion_keys(m: &MachineDraft, name: &str) -> Value {
-    let part = m.value.pointer(&pointer_of(m, name)).expect("part").clone();
+    let part = m.value().pointer(&pointer_of(m, name)).expect("part").clone();
     let keep = ["id", "pivot", "offset", "zero_offset", "rollover", "sign_convention", "note"];
     keep.iter().filter_map(|k| part.get(*k).map(|x| ((*k).to_owned(), x.clone()))).collect::<serde_json::Map<_, _>>().into()
 }
@@ -81,7 +81,7 @@ pub fn pointer_of(m: &MachineDraft, name: &str) -> String {
             }
         })
     }
-    walk(&m.value, "/kinematics/default/parts", name).unwrap_or_else(|| panic!("no part {name}"))
+    walk(m.value(), "/kinematics/default/parts", name).unwrap_or_else(|| panic!("no part {name}"))
 }
 
 

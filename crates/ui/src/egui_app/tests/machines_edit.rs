@@ -72,7 +72,7 @@ pub(super) fn type_into(h: &mut Harness<'static, ShellUi>, field: &str, text: &s
 }
 
 pub(super) fn draft_at(h: &Harness<'static, ShellUi>, pointer: &str) -> Option<serde_json::Value> {
-    h.state().state.machines_pane.editor.as_ref().and_then(|e| e.draft.value.pointer(pointer).cloned())
+    h.state().state.machines_pane.editor.as_ref().and_then(|e| e.draft.value().pointer(pointer).cloned())
 }
 
 pub(super) fn prompt(h: &Harness<'static, ShellUi>) -> Option<Prompt> {

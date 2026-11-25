@@ -198,7 +198,7 @@ fn an_offset_with_no_parent_rotary_shows_a_note_at_its_row() {
     assert!(h.query_by_label(note).is_none());
     {
         let editor = h.state_mut().state.machines_pane.editor.as_mut().expect("the editor is open");
-        let a = editor.draft.value.pointer_mut(&format!("{TABLE}/3")).expect("A on the table");
+        let a = editor.draft.value_mut().pointer_mut(&format!("{TABLE}/3")).expect("A on the table");
         a["offset"] = serde_json::json!([0.0, 0.0, -40.0]);
     }
     h.run();

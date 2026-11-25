@@ -252,14 +252,17 @@ pub(crate) fn draw(ui: &mut Ui, ed: &mut MachineFileEditor, dir: Option<&Path>, 
 
     let ink = if refusals.is_empty() { pal.accent } else { error };
     ui.label(RichText::new(verdict(refusals.len())).color(ink).strong());
-    // A refusal about an axis itself shows at its row in the chain.
-    let row_keys: Vec<String> = ed.draft.axis_rows().iter().flat_map(|r| axis_chain::row_keys(&r.name)).collect();
-    for r in fields::unplaced(&groups, &refusals).into_iter().filter(|r| !row_keys.contains(&r.key)) {
+    // A refusal about an axis itself shows at its row in the chain. The
+    // chain's rows, notes and keys are built once per edit (#2238).
+    let chain = crate::frame_cost::time("ui/machines.editor.axis_chain.view", || ed.draft.chain_view());
+    for r in fields::unplaced(&groups, &refusals).into_iter().filter(|r| !chain.at_a_row(&r.key)) {
         super::error_text::error_text(ui, error, &r.to_string());
     }
     ui.add_space(4.0);
 
-    let chain_edit = axis_chain::draw(ui, &ed.draft, &mut ed.axis_form, &refusals, pal, error);
+    let chain_edit = crate::frame_cost::time("ui/machines.editor.axis_chain", || {
+        axis_chain::draw(ui, &chain, &mut ed.axis_form, &refusals, pal, error)
+    });
 
     let mut edits: Vec<(String, fields::FieldKind, String)> = Vec::new();
     let mut add_coolant = false;

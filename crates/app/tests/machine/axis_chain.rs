@@ -15,11 +15,11 @@ fn an_a_about_minus_x_on_the_table_is_added_and_turns_the_work() {
     let at = m.add_rotary_axis(Place::OnTable, "A", [-1.0, 0.0, 0.0]).expect("adds");
     assert!(m.dirty);
     assert_eq!(validate_text(&m.text()), [], "{}", m.text());
-    unknown_keys_kept(&m.value);
+    unknown_keys_kept(m.value());
 
     // On the table part, beside Z and before the head.
     assert_eq!(at, "/kinematics/default/parts/0/parts/1");
-    let part = m.value.pointer(&at).expect("the pointer names the new part");
+    let part = m.value().pointer(&at).expect("the pointer names the new part");
     assert_eq!(part.get("type"), Some(&json!("rotary")));
     assert_eq!(names(&m), ["X", "Y", "Z", "A"]);
     let a = axis(&m, "A");
@@ -35,12 +35,12 @@ fn a_b_that_carries_the_head_tilts_the_tool() {
     let mut m = grblhal();
     m.add_rotary_axis(Place::CarriesHead, "B", [0.0, 1.0, 0.0]).expect("adds");
     assert_eq!(validate_text(&m.text()), [], "{}", m.text());
-    unknown_keys_kept(&m.value);
+    unknown_keys_kept(m.value());
 
     let b = axis(&m, "B");
     assert_eq!(b.turns_part, Some(false), "the head now rides on B");
     // The head and its coolants moved inside B, unchanged.
-    let head = m.value.pointer("/kinematics/default/parts/0/parts/1/parts/0").expect("head under B");
+    let head = m.value().pointer("/kinematics/default/parts/0/parts/1/parts/0").expect("head under B");
     assert_eq!(head.get("type"), Some(&json!("head")));
     assert_eq!(head.pointer("/tool_station/coolants/1/mCode"), Some(&json!("M7")));
 }
@@ -60,19 +60,19 @@ fn a_rotary_added_after_one_on_the_table_is_its_child_when_it_carries_the_head()
 #[test]
 fn removing_the_added_a_gives_back_the_file_as_it_was() {
     let mut m = grblhal();
-    let before = m.value.clone();
+    let before = m.value().clone();
     let at = m.add_rotary_axis(Place::OnTable, "A", [-1.0, 0.0, 0.0]).expect("adds");
     m.remove_axis(&at).expect("removes");
-    assert_eq!(m.value, before);
+    assert_eq!(*m.value(), before);
 }
 
 #[test]
 fn removing_a_rotary_that_carries_the_head_puts_the_head_back() {
     let mut m = grblhal();
-    let before = m.value.clone();
+    let before = m.value().clone();
     let at = m.add_rotary_axis(Place::CarriesHead, "B", [0.0, 1.0, 0.0]).expect("adds");
     m.remove_axis(&at).expect("removes");
-    assert_eq!(m.value, before);
+    assert_eq!(*m.value(), before);
 }
 
 #[test]
@@ -80,9 +80,9 @@ fn removing_z_keeps_the_axes_it_carried_in_its_place() {
     let mut m = grblhal();
     m.remove_axis("/kinematics/default/parts/0/parts/0").expect("removes Z");
     assert_eq!(names(&m), ["X", "Y"]);
-    unknown_keys_kept_after_z_went(&m.value);
+    unknown_keys_kept_after_z_went(m.value());
     // Z's controller row goes with it; X and Y keep theirs.
-    let ctrl = m.value.pointer("/controller/synced_configuration/parts").expect("controller");
+    let ctrl = m.value().pointer("/controller/synced_configuration/parts").expect("controller");
     assert!(ctrl.get("Z").is_none());
     assert!(ctrl.get("X").is_some() && ctrl.get("Y").is_some());
 }
@@ -96,7 +96,7 @@ fn unknown_keys_kept_after_z_went(v: &Value) {
 #[test]
 fn an_add_that_the_file_cannot_hold_is_refused_by_name_and_changes_nothing() {
     let mut m = grblhal();
-    let before = m.value.clone();
+    let before = m.value().clone();
     assert_eq!(m.add_linear_axis(Place::OnTable, "X"), Err("axis X: the machine already has an axis X".to_owned()));
     assert_eq!(
         m.add_rotary_axis(Place::OnTable, "Q", [1.0, 0.0, 0.0]),
@@ -110,18 +110,18 @@ fn an_add_that_the_file_cannot_hold_is_refused_by_name_and_changes_nothing() {
         m.add_rotary_axis(Place::OnTable, "A", [f64::NAN, 0.0, 0.0]),
         Err("axis A: the axis direction must be three finite numbers".to_owned())
     );
-    assert_eq!(m.value, before);
+    assert_eq!(*m.value(), before);
     assert!(!m.dirty);
 }
 
 #[test]
 fn a_remove_that_names_no_axis_is_refused_by_name() {
     let mut m = grblhal();
-    let before = m.value.clone();
+    let before = m.value().clone();
     for bad in ["/kinematics/default/parts/0", "/kinematics/default/parts/0/parts/9", "/general", "nonsense"] {
         assert_eq!(m.remove_axis(bad), Err(format!("{bad}: not an axis part")), "{bad}");
     }
-    assert_eq!(m.value, before);
+    assert_eq!(*m.value(), before);
 }
 
 #[test]
@@ -142,16 +142,16 @@ fn moving_a_rotary_up_changes_its_parent_and_chain_order_and_keeps_its_keys() {
     // The head still rides on the last rotary of the chain.
     assert_eq!(a.turns_part, Some(false));
     assert_eq!(b.turns_part, Some(false));
-    unknown_keys_kept(&m.value);
+    unknown_keys_kept(m.value());
 }
 
 #[test]
 fn a_move_down_undoes_a_move_up() {
     let mut m = tilting_head();
-    let before = m.value.clone();
+    let before = m.value().clone();
     let at = m.move_axis(&pointer_of(&m, "B"), Step::Up).expect("up");
     m.move_axis(&at, Step::Down).expect("down");
-    assert_eq!(m.value, before);
+    assert_eq!(*m.value(), before);
 }
 
 #[test]
@@ -181,12 +181,12 @@ fn a_move_trades_only_with_an_axis_of_the_same_kind() {
     let mut m = grblhal();
     let a = m.add_rotary_axis(Place::OnTable, "A", [-1.0, 0.0, 0.0]).expect("adds A");
     m.dirty = false;
-    let before = m.value.clone();
+    let before = m.value().clone();
     let rule = "a rotary trades places only with a rotary; to put it elsewhere, remove it and add it again";
     assert_eq!(m.move_axis(&a, Step::Up), Err(format!("axis A: {rule}")));
     let rule = "a linear trades places only with a linear; to put it elsewhere, remove it and add it again";
     assert_eq!(m.move_axis(&pointer_of(&m, "X"), Step::Down), Err(format!("axis X: {rule}")));
-    assert_eq!(m.value, before);
+    assert_eq!(*m.value(), before);
     assert!(!m.dirty, "a refused move changes nothing");
     // Linear with linear still trades: Y moves up past Z.
     m.move_axis(&pointer_of(&m, "Y"), Step::Up).expect("Y up");
@@ -201,31 +201,31 @@ fn a_rotary_that_turns_the_work_never_trades_with_one_that_tilts_the_tool() {
     let a = m.add_rotary_axis(Place::OnTable, "A", [-1.0, 0.0, 0.0]).expect("adds A");
     let b = m.add_rotary_axis(Place::CarriesHead, "B", [0.0, 1.0, 0.0]).expect("adds B");
     m.dirty = false;
-    let before = m.value.clone();
+    let before = m.value().clone();
     let tail = "trades places only with one that moves the";
     let again = "to put it elsewhere, remove it and add it again";
     assert_eq!(m.move_axis(&a, Step::Down), Err(format!("axis A: an axis that moves the work {tail} work; {again}")));
     assert_eq!(m.move_axis(&b, Step::Up), Err(format!("axis B: an axis that moves the tool {tail} tool; {again}")));
-    assert_eq!(m.value, before);
+    assert_eq!(*m.value(), before);
     assert!(!m.dirty, "a refused move changes nothing");
 }
 
 fn unknown_keys_kept_on_x_wherever_it_is(m: &MachineDraft) {
-    assert_eq!(m.value.pointer("/x_vendor_block/probe"), Some(&json!("OMP40")));
-    let x = m.value.pointer(&pointer_of(m, "X")).expect("X");
+    assert_eq!(m.value().pointer("/x_vendor_block/probe"), Some(&json!("OMP40")));
+    let x = m.value().pointer(&pointer_of(m, "X")).expect("X");
     assert_eq!(x.get("note"), Some(&json!("gib adjusted 2026")));
 }
 
 #[test]
 fn a_move_past_either_end_or_from_no_axis_is_refused_by_name() {
     let mut m = grblhal();
-    let before = m.value.clone();
+    let before = m.value().clone();
     let z = "/kinematics/default/parts/0/parts/0";
     let x = "/kinematics/default/parts/0/parts/0/parts/0/parts/0";
     assert_eq!(m.move_axis(z, Step::Up), Err("axis Z: already first in the chain".to_owned()));
     assert_eq!(m.move_axis(x, Step::Down), Err("axis X: already last in the chain".to_owned()));
     assert_eq!(m.move_axis("/general", Step::Up), Err("/general: not an axis part".to_owned()));
-    assert_eq!(m.value, before);
+    assert_eq!(*m.value(), before);
     assert!(!m.dirty);
 }
 

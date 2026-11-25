@@ -70,6 +70,15 @@ says what it costs to change.
     or the tool), then its own fields. The direction and the new axis's
     place are dropdowns. The first version wrapped the buttons and the six
     direction choices over three lines per rotary in a narrow pane.
+12. **The rows are built once per edit** (the frame-cost rule, #2238; the
+    review of 2026-11-24). `MachineDraft::chain_view` holds the rows, each
+    row's notes and the refusal keys that show at a row
+    (`crates/app/src/machine/chain_view.rs`). The draft is the file's one
+    writer: `value` is private, and every write, `value_mut` included,
+    drops the view. A still frame reads it back. `chain_view_builds`
+    counts the real builds for the pins. The draft's `refusals()` and
+    `groups()` still run on each frame, as on `main` before this PR; they
+    are not this group's and are left as they are.
 
 **Why**
 
@@ -88,6 +97,9 @@ the head's slot is refused for the same reason (decision 5).
 - A refusal for `offset` with no parent: see decision 6.
 - Offering `nose_to_axis` / `axis_to_table` on every rotary: the parser
   refuses them on a rotary that carries the head.
+- Keeping `value` public and keying the view by a copy of the JSON
+  (decision 12): each frame would still walk the whole file to compare it,
+  and a write through the public field could not drop the view.
 
 **Cost to change later**
 
