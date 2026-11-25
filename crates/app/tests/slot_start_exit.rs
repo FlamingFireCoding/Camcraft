@@ -14,8 +14,11 @@
 //! motion::machining2d (slot_picks).
 
 use camcraft_app::cl::{MoveKind, Toolpath};
-use camcraft_app::commands::{AddTool, CreateOperation, EditOperationParams, GenerateOperation, History, SetStock};
+use camcraft_app::commands::{
+    AddTool, CreateOperation, EditOperationParams, GenerateOperation, History, SetStock, SetWcsOrigin,
+};
 use camcraft_app::geo2d::Point2;
+use camcraft_app::geometry::{Point3, quat_from_euler};
 use camcraft_app::machining3d::Entry3D;
 use camcraft_app::mcp::Server;
 use camcraft_app::operation::{self, Height, KindInfo, OpParams, OpType, PickCapability, SrcRef, Tilt};
@@ -149,6 +152,62 @@ fn the_exit_is_at_the_end_nearest_the_exit_pick() {
     let (world, mut h) = job(slot(both));
     let (entry, exit) = entry_and_exit(&generate(&world, &mut h).expect("both picks hold"));
     assert!(at(entry, B) && at(exit, A), "{entry:?} .. {exit:?}");
+}
+
+fn picked_slot_with_wcs_yaw(yaw_deg: f64, start: bool) {
+    let model_picks = if start {
+        picks(Some(B), None)
+    } else {
+        picks(None, Some(A))
+    };
+    // Exercise rotation about the origin and about a translated work offset.
+    for origin in [Point3::new(0.0, 0.0, 0.0), Point3::new(4.0, -3.0, 0.0)] {
+        let (world, mut h) = job(slot(model_picks.clone()));
+        let rot = quat_from_euler(0.0, 0.0, yaw_deg.to_radians());
+        h.execute(
+            &world,
+            SetWcsOrigin::new(&world, Location { pos: origin, rot }).expect("place G54"),
+        );
+        let path =
+            generate(&world, &mut h).expect("the model-frame pick remains in reach under WCS yaw");
+        let (entry, exit) = entry_and_exit(&path);
+        assert!(
+            at(entry, B) && at(exit, A),
+            "yaw {yaw_deg}, origin {origin:?}: {entry:?} .. {exit:?}"
+        );
+        let OpParams::Slot { a, b, picks, .. } = params_of(&world) else {
+            panic!("the operation stays a Slot");
+        };
+        assert_eq!(
+            (a, b),
+            (A, B),
+            "generation keeps the stored model-frame endpoints"
+        );
+        assert_eq!(
+            picks, model_picks,
+            "generation keeps the stored model-frame picks"
+        );
+    }
+}
+
+#[test]
+fn the_start_pick_holds_under_90_degree_wcs_yaw() {
+    picked_slot_with_wcs_yaw(90.0, true);
+}
+
+#[test]
+fn the_start_pick_holds_under_180_degree_wcs_yaw() {
+    picked_slot_with_wcs_yaw(180.0, true);
+}
+
+#[test]
+fn the_exit_pick_holds_under_90_degree_wcs_yaw() {
+    picked_slot_with_wcs_yaw(90.0, false);
+}
+
+#[test]
+fn the_exit_pick_holds_under_180_degree_wcs_yaw() {
+    picked_slot_with_wcs_yaw(180.0, false);
 }
 
 #[test]
