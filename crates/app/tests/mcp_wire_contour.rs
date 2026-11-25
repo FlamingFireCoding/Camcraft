@@ -316,7 +316,8 @@ fn list_operation_types_and_skill_match_wire_contour_dto_and_tool_law() {
         bottom_z: serde_json::from_value(json!({ "reference": "fixed", "offset": 0.0 })).expect("bottom_z"),
         condition: "C110".into(),
         side: WireSideDto::Die,
-        start: None,
+        // #3449: the listing names `start` too, so it is populated here.
+        start: Some([0.0, 0.0]),
         picks: camcraft_app::project::PathPicksDto {
             start: vec![camcraft_app::project::PathPickDto(camcraft_app::path_picks::PathPick::xy(
                 camcraft_app::geo2d::Point2::new(0.0, 0.0),
