@@ -3178,7 +3178,6 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // `tolerance` is the VERIFY budget (the envelope law's,
             // as in RotaryOffset) - the kernel itself chords the
             // profile by that law's own tol/4 promise.
-            let _ = tolerance;
             // #122: the setup's stock rides along, so an allowance
             // above a part at its finished length is faced off.
             let path = crate::turning::facing(
@@ -3194,6 +3193,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     nose_radius: tool.nose_radius,
                 },
             )?;
+            // #3331: the user's start and exit picks, in the lathe (Z, X) plane.
+            let law = crate::turning::PickLaw { kind: "Facing", nose: tool.nose_radius, leave: 0.0, tolerance: *tolerance };
+            let path = crate::turning::with_picks(path, &material.facets, stock_facets.as_deref(), &params.path_picks(), &law)?;
             (region, path)
         }
         // M5.2 stage B: the profile kinds. The same tool door as
@@ -3240,6 +3242,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 },
                 turn_stock,
             )?;
+            // #3331: the user's start and exit picks, in the lathe (Z, X) plane.
+            let law = crate::turning::PickLaw { kind: "Profile Rough", nose: tool.nose_radius, leave: *stock_to_leave, tolerance: *tolerance };
+            let path = crate::turning::with_picks(path, &material.facets, stock_facets.as_deref(), &params.path_picks(), &law)?;
             (region, path)
         }
         OpParams::ProfileFinish {
@@ -3275,6 +3280,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 },
                 turn_stock,
             )?;
+            // #3331: the user's start and exit picks, in the lathe (Z, X) plane.
+            let law = crate::turning::PickLaw { kind: "Profile Finish", nose: tool.nose_radius, leave: 0.0, tolerance: *tolerance };
+            let path = crate::turning::with_picks(path, &material.facets, stock_facets.as_deref(), &params.path_picks(), &law)?;
             (region, path)
         }
         // M5.2 stage C: the blade kinds. The tool door names the

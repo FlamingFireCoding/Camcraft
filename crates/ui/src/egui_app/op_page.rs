@@ -170,6 +170,8 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
             let u = state.units();
             super::start_exit_rows::hole_order_groups(ui, u, &mut state.op_ui.params);
             super::start_exit_rows::not_taken_groups(ui, kind);
+            // #3331: a turning kind's picks, typed in the lathe (Z, X) plane.
+            super::turning_start_exit_rows::meridian_groups(ui, state.units(), &mut state.op_ui.params);
         }
         if tab == SEC_FEEDS {
             // M13.2: material, edge, flutes and the suggestion.

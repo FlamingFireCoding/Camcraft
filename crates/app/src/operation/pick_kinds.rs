@@ -34,6 +34,9 @@ pub enum PickCapability {
     /// The wire's threading point (`WireContourOp.picks`) and its exit
     /// (#3332): the end of an open run, or where a closed cut leaves.
     Threading,
+    /// A point in the lathe (Z, X) plane (#3331): the first pass starts
+    /// there and the last pass leaves there. Each pick states its Z.
+    Meridian,
     /// The kind does not take a pick; the reason, said by name in the
     /// refusal and on the operation page.
     NotTaken(&'static str),
@@ -46,6 +49,9 @@ pub const PICK_OWED: &str =
 /// The reason of a drill's cross holes and of a lathe's axial hole (#3328).
 pub const PICK_TURRET: &str = "a pick orders the Z holes of a mill, and the turret's holes keep the list order";
 
+/// The reason of lathe Threading (#3331): its own law places the start.
+pub const PICK_THREAD_LAW: &str = "the thread start law sets the start and the exit of a thread";
+
 /// The reason of the probe: it has no path to start.
 pub const PICK_NO_PATH: &str = "a probe touches the part and cuts no path";
 
@@ -55,7 +61,7 @@ impl PickCapability {
     pub fn takes(self, role: PickRole) -> bool {
         match self {
             Self::NotTaken(_) => false,
-            Self::Threading | Self::Ring | Self::Region | Self::HoleOrder | Self::Ends | Self::Raster => {
+            Self::Threading | Self::Ring | Self::Region | Self::HoleOrder | Self::Ends | Self::Raster | Self::Meridian => {
                 matches!(role, PickRole::Start | PickRole::Exit)
             }
         }
@@ -73,6 +79,9 @@ impl KindInfo {
             OpType::Probe => PickCapability::NotTaken(PICK_NO_PATH),
             // #3328: the first hole and the last hole of the list.
             OpType::Thread | OpType::Drill | OpType::Bore => PickCapability::HoleOrder,
+            // #3331 slice 1: the pick is a point in the lathe (Z, X) plane.
+            OpType::Facing | OpType::ProfileRough | OpType::ProfileFinish => PickCapability::Meridian,
+            OpType::Threading => PickCapability::NotTaken(PICK_THREAD_LAW),
             // #3325: the end where the pass starts, and where it stops.
             OpType::Slot => PickCapability::Ends,
             OpType::Face
@@ -97,13 +106,9 @@ impl KindInfo {
             | OpType::MultiAxisRough
             | OpType::Flow5D
             | OpType::MultiAxisContour
-            | OpType::Facing
-            | OpType::ProfileRough
-            | OpType::ProfileFinish
             | OpType::GrooveRough
             | OpType::GrooveFinish
             | OpType::Part
-            | OpType::Threading
             | OpType::Chamfering
             | OpType::TaperTurning
             | OpType::MultiPassTurning
@@ -281,6 +286,13 @@ impl OpParams {
             // #3328: the turret's radial holes have no XY order to pick.
             if matches!(self, OpParams::Drill { cross, .. } if !cross.is_empty()) {
                 return Some(format!("{}: a {what} point is not taken on cross holes - {PICK_TURRET}; clear it on this operation", info.label));
+            }
+            // #3331: a turning pick is a point of the lathe (Z, X) plane.
+            if cap == PickCapability::Meridian && picks.of(role).iter().any(|p| p.z.is_none()) {
+                return Some(format!(
+                    "{}: the {what} point needs a Z - a turning point is a point in the lathe (Z, X) plane; state its Z or clear it",
+                    info.label
+                ));
             }
         }
         match self {
