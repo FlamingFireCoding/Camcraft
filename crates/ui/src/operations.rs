@@ -184,8 +184,8 @@ pub(crate) fn retract_note(
     }
 }
 
-/// The chamfer's derived corner Z (width x tan(angle) below the top),
-/// resolved through the op's source like [`retract_note`].
+/// The chamfer's virtual tip Z, resolved through the op's source like
+/// [`retract_note`].
 pub(crate) fn corner_note(
     world: &World,
     setup: Option<&str>,
@@ -196,11 +196,11 @@ pub(crate) fn corner_note(
 ) -> String {
     match resolve_all(world, setup, src, tilt, [top]) {
         Ok([tz]) if (tz - drop).is_finite() => format!(
-            "the corner stands at {} - derived: width x tan(angle) below the top plane",
+            "the virtual cone tip stands at {} - derived: (tip offset + width) x tan(angle) below the top plane",
             units::len(tz - drop, units::of(world), 3)
         ),
-        Ok(_) => "the corner is unresolved: width x tan(angle) is not finite".to_owned(),
-        Err(why) => format!("the corner is unresolved: {why}"),
+        Ok(_) => "the cone tip is unresolved: (tip offset + width) x tan(angle) is not finite".to_owned(),
+        Err(why) => format!("the cone tip is unresolved: {why}"),
     }
 }
 
@@ -310,9 +310,16 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             // #3525: a cut deeper than the flute length - the cause of
             // the shank findings after it, its own line (advisory).
             Warning::FluteShort { .. } => (226, false),
+            // #3679: a feed plunge deeper than one stepdown below the
+            // uncut floor - a tool-load note, its own line (advisory).
+            Warning::PlungeTooDeep { .. } => (227, false),
             // #3748: a selected entry that is not the recommended Arc on
             // a start-side pass - advisory, its own line.
             Warning::EntryNotRecommended { .. } => (227, false),
+            // #3884: the stand-in entries and a selected Plunge into
+            // uncut stock of a start-side pass - advisory, own lines.
+            Warning::EntryStandIn { .. } => (228, false),
+            Warning::PlungeIntoStock { .. } => (229, false),
             // A lathe holder's rub (#369) splits part from stock too.
             Warning::HolderHit { part, .. } => (212 + *part as u8, false),
         }
@@ -342,7 +349,10 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             | Warning::DrillUndersize { at, .. }
             | Warning::StrategyFallback { at, .. }
             | Warning::FluteShort { at, .. }
-            | Warning::EntryNotRecommended { at, .. } => *at,
+            | Warning::PlungeTooDeep { at, .. }
+            | Warning::EntryNotRecommended { at, .. }
+            | Warning::EntryStandIn { at, .. }
+            | Warning::PlungeIntoStock { at } => *at,
         }
     }
     let mut lines: Vec<(String, Option<usize>)> = Vec::new();
@@ -437,6 +447,7 @@ mod height_row_tests {
             feed: 1200.0,
             plunge_feed: 300.0,
             climb: true,
+            picks: Default::default(),
         };
         assert_eq!(unresolved_note(&world, None, None, &ok), None, "all fixed - no alarm");
         let broken = OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false, blend_radius: None,
@@ -448,6 +459,7 @@ mod height_row_tests {
             feed: 1200.0,
             plunge_feed: 300.0,
             climb: true,
+            picks: Default::default(),
         };
         let note = unresolved_note(&world, None, None, &broken).expect("the stock is gone");
         assert!(note.contains("Cut Z"), "{note}");
@@ -536,6 +548,7 @@ mod height_row_tests {
             blend_turns: false, blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             chain_overrides: Vec::new(),
+            picks: Default::default(),
         }
     }
 

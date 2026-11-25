@@ -68,12 +68,15 @@
 //! region (die slug or punch). Our own code; no vendor post, control
 //! manual or CAM product behaviour was consulted.
 
+mod arcs;
 mod dist;
 mod finding;
 mod kerf;
 mod passes;
 mod slug;
 mod undercut;
+#[cfg(test)]
+mod arc_tests;
 #[cfg(test)]
 mod depth_tests;
 #[cfg(test)]
@@ -88,6 +91,7 @@ mod tol_tests;
 use crate::cl::Toolpath;
 use crate::geo2d::{Point2, Region};
 
+pub use arcs::ARC_SAG;
 pub use finding::{slugs_said, WireFinding, WireUnder};
 pub use slug::Slug;
 
@@ -269,6 +273,10 @@ pub fn judge(job: &WireJob<'_>) -> WireVerdict {
     }
     // A tabbed cut's skims (#538 x #539) are not cut: the hold law
     // reads one pass's main cut and its cut-off.
+    if job.cutoff_from.is_some() && wire.has_arcs() {
+        v.findings.push(WireFinding::Unreadable("a tabbed cut holds arc moves - tabs are read on straight moves only".into()));
+        return v;
+    }
     if job.cutoff_from.is_some() && !job.skim_offsets.is_empty() {
         v.findings.push(WireFinding::Unreadable("a tabbed cut states skim passes - skims are cut on an untabbed profile only".into()));
         return v;

@@ -57,6 +57,11 @@ mod test_import;
 mod program_info;
 #[path = "state_tool_library.rs"]
 mod tool_library_io;
+#[path = "state_tool_library_dialog.rs"]
+mod tool_library_dialog;
+pub use tool_library_dialog::{
+    EditorFace, HoldersView, LibraryPage, PreviewMode, ToolCategory, ToolEditorTab, ToolLibraryView, ToolSource,
+};
 #[path = "state_setup_mount.rs"]
 mod setup_mount;
 #[path = "state_pockets.rs"]
@@ -106,7 +111,7 @@ mod program_entry;
 pub use program_entry::EntryVerb;
 #[path = "state_tool_body.rs"]
 mod tool_body_ui;
-pub use tool_body_ui::{BodyDraft, BodyPickMode, ToolBodyUi, ZOOM_MAX, ZOOM_MIN, clamp_zoom};
+pub use tool_body_ui::{BodyDraft, BodyPickMode, Orbit, ToolBodyUi, ZOOM_MAX, ZOOM_MIN, clamp_zoom};
 #[path = "state_tool_body_lathe.rs"]
 mod tool_body_lathe_ui;
 pub use tool_body_lathe_ui::{LatheBodyDraft, LatheDraft};
@@ -1050,6 +1055,7 @@ impl Default for OpUi {
                 climb: true,
                 // Opt-in, like `seed_face` (M11.1 A).
                 blend_turns: false, blend_radius: None,
+                picks: Default::default(),
             },
         }
     }
@@ -1252,6 +1258,11 @@ pub struct ToolUi {
     /// #1152: a sinker body electrode's section - carried so an Apply
     /// never turns the body into the rectangle of its two sizes.
     pub outline: Vec<[f64; 2]>,
+    /// #3368: a chamfer mill's tip form and flat-tip diameter.
+    pub tip_form: camcraft_app::tools::TaperTip,
+    pub tip_diameter: f64,
+    /// #3369: a form mill's outline, pilot and preset numbers.
+    pub form: Option<camcraft_app::tools::FormSpec>,
 }
 
 impl Default for ToolUi {
@@ -1293,6 +1304,7 @@ impl ToolUi {
                 ToolKind::Keyseat => 19,
                 ToolKind::Dovetail => 20,
                 ToolKind::Lollipop => 21,
+                ToolKind::FormMill => 22,
             },
             diameter: t.diameter,
             corner_r: t.corner_r,
@@ -1322,6 +1334,9 @@ impl ToolUi {
             cutting: t.cutting.clone(),
             turning: t.turning,
             outline: t.outline.clone(),
+            tip_form: t.tip_form,
+            tip_diameter: t.tip_diameter,
+            form: t.form.clone(),
         }
     }
 
@@ -1351,6 +1366,7 @@ impl ToolUi {
             19 => ToolKind::Keyseat,
             20 => ToolKind::Dovetail,
             21 => ToolKind::Lollipop,
+            22 => ToolKind::FormMill,
             _ => ToolKind::EndMill,
         }
     }
@@ -1404,8 +1420,14 @@ impl ToolUi {
             cutting: self.cutting.clone(),
             turning: self.turning,
             outline: self.outline.clone(),
+            tip_form: self.tip_form,
+            tip_diameter: self.tip_diameter,
+            form: self.form.clone(),
         };
         tool.corner_r = tool.tip_corner_r();
+        // #3369: a form mill's preset writes its outline, diameter and
+        // flute length.
+        tool.settle_form();
         // #2015: the shown Unknown row, untouched, stays derived.
         camcraft_app::tool_cutting_rows::canonical(&mut tool);
         tool
@@ -1616,8 +1638,6 @@ pub enum LayoutRequest {
     Toggle(Panel),
     /// Open and focus a panel without toggling it closed.
     Show(Panel),
-    /// Open and focus the independent tool library.
-    ToolLibrary,
     /// Open the Debug info panel (#2262) as a dock tab, or close it.
     ToggleDebugInfo,
     /// Rebuild the default three-pane dock.
@@ -2172,6 +2192,8 @@ pub struct State {
     /// tool vanishes (the ghost law, mirrored from
     /// [`State::pane_target`]).
     pub tool_shape_editor: Option<String>,
+    /// #3892: the tool library window - `None` closed (view state).
+    pub tool_library: Option<ToolLibraryView>,
     /// #2397: Properties is showing the blank new-tool form. The Tool
     /// target with the empty name is the destination; this says which of
     /// its two faces shows - the pointer to the library, or the draft.
@@ -2517,6 +2539,7 @@ impl State {
                 ..ToolUi::default()
             },
             tool_shape_editor: None,
+            tool_library: None,
             new_tool_form: false,
             tool_body_ui: ToolBodyUi::default(),
             tool_profile_ui: ToolProfileUi::default(),

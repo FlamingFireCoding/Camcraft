@@ -20,11 +20,11 @@ fn a_broad_notch_keeps_its_nominal_corner_and_requires_an_exterior_entry() {
     assert_eq!(prepared[0], [-20., 0.]);
     assert_eq!(&prepared[1..], job.contour.as_slice());
     // The drilled hole cannot sit in the retained right-hand shoulder.
-    job.start = [15., 9.7];
+    job.start = Some([15., 9.7]);
     assert!(points(&job).unwrap_err().contains("start hole"));
     // This hole is outside, but the extension of the locally visible sloping
     // face crosses the other bank. Entry requires a supporting exterior face.
-    job.start = [5., 16.];
+    job.start = Some([5., 16.]);
     assert!(points(&job).unwrap_err().contains("start hole"));
 }
 
