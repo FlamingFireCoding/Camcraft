@@ -57,6 +57,11 @@ mod test_import;
 mod program_info;
 #[path = "state_tool_library.rs"]
 mod tool_library_io;
+#[path = "state_tool_library_dialog.rs"]
+mod tool_library_dialog;
+pub use tool_library_dialog::{
+    EditorFace, HoldersView, LibraryPage, PreviewMode, ToolCategory, ToolEditorTab, ToolLibraryView, ToolSource,
+};
 #[path = "state_setup_mount.rs"]
 mod setup_mount;
 #[path = "state_pockets.rs"]
@@ -106,7 +111,7 @@ mod program_entry;
 pub use program_entry::EntryVerb;
 #[path = "state_tool_body.rs"]
 mod tool_body_ui;
-pub use tool_body_ui::{BodyDraft, BodyPickMode, ToolBodyUi, ZOOM_MAX, ZOOM_MIN, clamp_zoom};
+pub use tool_body_ui::{BodyDraft, BodyPickMode, Orbit, ToolBodyUi, ZOOM_MAX, ZOOM_MIN, clamp_zoom};
 #[path = "state_tool_body_lathe.rs"]
 mod tool_body_lathe_ui;
 pub use tool_body_lathe_ui::{LatheBodyDraft, LatheDraft};
@@ -120,6 +125,8 @@ mod tool_cutter_ui;
 pub use tool_cutter_ui::ToolCutterUi;
 #[path = "state_recent.rs"]
 mod recent_ui;
+#[path = "state_read_only.rs"]
+mod read_only_ui;
 #[path = "state_wcs.rs"]
 mod wcs_ui;
 #[path = "state_view.rs"]
@@ -149,6 +156,9 @@ pub enum CommandKind {
     NewDocument,
     OpenProjectDialog,
     OpenProjectFile(PathBuf),
+    /// `camcraft-ui --read-only job.camproj` (#3609): the same open, then a
+    /// save over the file is refused until Save As writes another file.
+    OpenProjectReadOnly(PathBuf),
     /// A model or project the browser's async picker read (#31): its
     /// name and bytes, landed through the same import / open laws.
     OpenPicked(crate::file_pick::PickedFile),
@@ -1045,6 +1055,7 @@ impl Default for OpUi {
                 climb: true,
                 // Opt-in, like `seed_face` (M11.1 A).
                 blend_turns: false, blend_radius: None,
+                picks: Default::default(),
             },
         }
     }
@@ -1247,6 +1258,9 @@ pub struct ToolUi {
     /// #1152: a sinker body electrode's section - carried so an Apply
     /// never turns the body into the rectangle of its two sizes.
     pub outline: Vec<[f64; 2]>,
+    /// #3368: a chamfer mill's tip form and flat-tip diameter.
+    pub tip_form: camcraft_app::tools::TaperTip,
+    pub tip_diameter: f64,
 }
 
 impl Default for ToolUi {
@@ -1317,6 +1331,8 @@ impl ToolUi {
             cutting: t.cutting.clone(),
             turning: t.turning,
             outline: t.outline.clone(),
+            tip_form: t.tip_form,
+            tip_diameter: t.tip_diameter,
         }
     }
 
@@ -1399,6 +1415,8 @@ impl ToolUi {
             cutting: self.cutting.clone(),
             turning: self.turning,
             outline: self.outline.clone(),
+            tip_form: self.tip_form,
+            tip_diameter: self.tip_diameter,
         };
         tool.corner_r = tool.tip_corner_r();
         // #2015: the shown Unknown row, untouched, stays derived.
@@ -1611,8 +1629,6 @@ pub enum LayoutRequest {
     Toggle(Panel),
     /// Open and focus a panel without toggling it closed.
     Show(Panel),
-    /// Open and focus the independent tool library.
-    ToolLibrary,
     /// Open the Debug info panel (#2262) as a dock tab, or close it.
     ToggleDebugInfo,
     /// Rebuild the default three-pane dock.
@@ -1688,6 +1704,9 @@ pub struct State {
     pub status: String,
     /// Last successfully opened or saved project in this window.
     pub project_path: Option<PathBuf>,
+    /// `project_path` is open read-only (`--read-only`, #3609): a save
+    /// over it is refused, and a save to another file ends it.
+    pub project_read_only: bool,
     /// #1431: the browser build - Save, Save As and Post download, and
     /// the file commands a page cannot run are refused by name. Set from
     /// the target; the tests turn it on to drive the browser's law.
@@ -1986,6 +2005,9 @@ pub struct State {
     /// #183: the live MCP session's inbox when the app was started with
     /// `--mcp-port` / `CAMCRAFT_MCP_PORT`; drained with `pending`.
     pub mcp: Option<camcraft_app::mcp::Inbox>,
+    /// #3751: the UI link's inbox (`camcraft-cli --ui`), opened at start
+    /// unless `CAMCRAFT_UI_LINK=off`; drained with `mcp` in `mcp_host::pump`.
+    pub ui_link: Option<camcraft_app::mcp::Inbox>,
     /// #1946: in-app AI chat panel state (conversations, worker handle, toggles).
     pub ai_chat: crate::egui_app::ai_chat::AiChatState,
     /// Sender used by the AI chat worker to dispatch MCP requests in-process.
@@ -2161,6 +2183,8 @@ pub struct State {
     /// tool vanishes (the ghost law, mirrored from
     /// [`State::pane_target`]).
     pub tool_shape_editor: Option<String>,
+    /// #3892: the tool library window - `None` closed (view state).
+    pub tool_library: Option<ToolLibraryView>,
     /// #2397: Properties is showing the blank new-tool form. The Tool
     /// target with the empty name is the destination; this says which of
     /// its two faces shows - the pointer to the library, or the draft.
@@ -2339,6 +2363,7 @@ impl State {
             history: History::default(),
             status,
             project_path: None,
+            project_read_only: false,
             browser_build: cfg!(target_arch = "wasm32"),
             debug_info_open: false,
             report_open: false,
@@ -2452,6 +2477,7 @@ impl State {
             pending: VecDeque::new(),
             picker_in_click: false,
             mcp: None,
+            ui_link: None,
             ai_chat: crate::egui_app::ai_chat::AiChatState::new(),
             ai_mcp_tx,
             ai_mcp_inbox: Some(ai_mcp_inbox),
@@ -2504,6 +2530,7 @@ impl State {
                 ..ToolUi::default()
             },
             tool_shape_editor: None,
+            tool_library: None,
             new_tool_form: false,
             tool_body_ui: ToolBodyUi::default(),
             tool_profile_ui: ToolProfileUi::default(),
@@ -3433,6 +3460,7 @@ impl State {
                 self.reset_ai_document();
                 self.abandon_imports();
                 self.project_path = None;
+                self.project_read_only = false;
                 self.hidden_stocks.clear();
                 self.hidden_offsets.clear();
                 self.shown_setups.clear();
@@ -3470,6 +3498,7 @@ impl State {
             }
             CommandKind::OpenProjectDialog => self.open_project_dialog(),
             CommandKind::OpenProjectFile(path) => self.open_project_path(path),
+            CommandKind::OpenProjectReadOnly(path) => self.open_project_read_only(path),
             CommandKind::OpenPicked(file) => self.open_picked(file),
             CommandKind::SaveProjectDialog if self.browser_build => {
                 self.download_project(false);
@@ -3478,7 +3507,7 @@ impl State {
                 self.download_project(true);
             }
             CommandKind::SaveProjectDialog => {
-                if let Some(path) = self.project_path.clone().or_else(|| save_project_dialog(None)) {
+                if let Some(path) = self.save_target() {
                     self.save_project_path(path);
                 }
             }
@@ -4771,6 +4800,7 @@ impl State {
         self.reset_ai_document();
         self.abandon_imports();
         self.project_path = None;
+        self.project_read_only = false;
         self.hidden_stocks.clear();
         self.hidden_offsets.clear();
         self.shown_setups.clear();
@@ -4798,6 +4828,9 @@ impl State {
     }
 
     pub(crate) fn save_project_path(&mut self, path: PathBuf) {
+        if self.refuse_read_only_save(&path) {
+            return;
+        }
         // #3608: when the file on disk changed after the open or the last
         // save, the save waits for the Overwrite prompt; nothing is written.
         if !self.may_save_over(&path) {
@@ -4811,6 +4844,7 @@ impl State {
                 self.status = format!("saved {}", path.display());
                 self.note_recent(camcraft_app::recent::RecentKind::Project, &path);
                 self.project_path = Some(path);
+                self.project_read_only = false;
             }
             Err(err) => self.status = format!("save failed: {err}"),
         }
@@ -4821,8 +4855,10 @@ impl State {
         let filename = self.project_path.as_ref().and_then(|path| path.file_name());
         // A leading '*' while the document has unsaved changes (#107).
         let mark = if self.history.is_dirty() { "*" } else { "" };
+        // #3609: a project open read-only says so.
+        let read_only = if self.project_read_only { " (read-only)" } else { "" };
         match filename {
-            Some(name) => format!("{mark}CamCraft - {}", name.to_string_lossy()),
+            Some(name) => format!("{mark}CamCraft - {}{read_only}", name.to_string_lossy()),
             None => format!("{mark}CamCraft - Untitled"),
         }
     }

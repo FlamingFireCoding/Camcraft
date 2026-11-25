@@ -16,8 +16,20 @@ use camcraft_app::stock::StockShape;
 use flecs_ecs::prelude::World;
 use std::{collections::BTreeMap, fs};
 
+#[path = "agie_native/cutoff.rs"]
+mod cutoff;
+#[path = "agie_native/die.rs"]
+mod die;
+#[path = "agie_native/dxf.rs"]
+mod dxf;
+#[path = "agie_native/group.rs"]
+mod group;
+#[path = "agie_native/quality.rs"]
+mod quality;
 #[path = "agie_native/reentrant.rs"]
 mod reentrant;
+#[path = "agie_native/tangent.rs"]
+mod tangent;
 
 fn separation(value: f64) -> BTreeMap<String, OptionValue> {
     BTreeMap::from([("separationLengthMm".into(), OptionValue::Float(value))])
@@ -89,8 +101,13 @@ fn punch_setup(
         bottom_z: Height::fixed(0.0),
         condition: "AGIE_QN2".into(),
         side: WireSide::Punch,
-        start: Some(start),
+        picks: camcraft_app::path_picks::PathPicks {
+            start: vec![camcraft_app::path_picks::PathPick::xy(camcraft_app::geo2d::Point2::new(start[0], start[1]))],
+            exit: Vec::new(),
+        },
         capture: true,
+        both_pieces_restrained: false,
+        stock_centered_in_xy_travel: false,
         tabs: None,
         taper_deg: 0.0,
         burnout: None,

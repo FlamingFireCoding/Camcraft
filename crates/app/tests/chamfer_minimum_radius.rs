@@ -1,7 +1,7 @@
 //! #3153 operation-layer pins for the 2D Chamfer cone band.
 //!
 //! Gate map (#3153): covers app::operation (generate, params, staleness),
-//! app::project (ParamsDto and v79 migration), app::posting, and
+//! app::project (ParamsDto and v80 migration), app::posting, and
 //! motion::machining2d::chamfer through the public application seam.
 
 use camcraft_app::cl::MoveKind;
@@ -47,6 +47,8 @@ fn taper(diameter: f64, flute_len: f64) -> Tool {
         cutting: Vec::new(),
         outline: Vec::new(),
         turning: None,
+        tip_diameter: 0.0,
+        tip_form: Default::default(),
     }
 }
 
@@ -64,6 +66,7 @@ fn params(minimum_cone_radius: f64) -> OpParams {
         side: Side::Outside,
         tolerance: 0.01,
         tilt: None,
+        picks: Default::default(),
     }
 }
 

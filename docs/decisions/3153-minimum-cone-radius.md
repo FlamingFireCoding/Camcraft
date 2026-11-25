@@ -14,7 +14,7 @@ of moving the cone into material.
 
 The zero-radius branch bypasses every geometric offset call. The
 operation therefore keeps the former point order, move positions and
-staleness bytes. Project v79 omits a zero `minimum_cone_radius` and
+staleness bytes. Project v80 omits a zero `minimum_cone_radius` and
 requires a newer reader only because a positive value changes a posted
 path.
 
@@ -72,6 +72,6 @@ Legacy floating-point bytes are part of zero-offset compatibility.
 boundary preservation. A coverage allowance based on chamfer width
 could accept a missing selected span and is therefore not used.
 
-**Versioning:** Project format v79 is incompatible with v78 readers.
+**Versioning:** Project format v80 is incompatible with v79 readers (v79 is the #3368 tip-form step, taken on main first).
 The fix round records that existing format break with a
-`BREAKING CHANGE:` commit footer and corrects the PR body to v79.
+`BREAKING CHANGE:` commit footer and corrects the PR body to v80.

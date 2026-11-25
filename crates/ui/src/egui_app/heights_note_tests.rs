@@ -57,6 +57,7 @@ fn tilted_corner_note_uses_the_same_local_frame_as_its_top_row() {
         feed: 800.0, plunge_feed: 200.0, climb: true,
         side: camcraft_app::machining2d::Side::Outside,
         tolerance: 0.01, tilt: state.op_ui.params.tilt(),
+        picks: Default::default(),
     };
     let mut harness = heights_tab(state);
     harness.run();
@@ -81,6 +82,7 @@ fn chamfer_geometry_exposes_tip_offset() {
         side: camcraft_app::machining2d::Side::Outside,
         tolerance: 0.01,
         tilt: state.op_ui.params.tilt(),
+        picks: Default::default(),
     };
     let mut harness = Harness::builder()
         .with_size(Vec2::new(600.0, 900.0))
@@ -121,6 +123,7 @@ fn clearance_stock_contour() -> State {
         helix_radius: 1.0, blend_turns: false, blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         chain_overrides: Vec::new(),
+        picks: Default::default(),
     });
     state.pending.push_back(CommandKind::SetStock {
         shape: StockShape::Box { dx: 40.0, dy: 40.0, dz: 10.0 },
@@ -167,6 +170,7 @@ fn clearance_stock_advice_follows_draft_height_and_prior_face_before_generate() 
         holes: Default::default(), blend_turns: false, blend_radius: None, tilt: None,
         stepover: 4.0, clearance_z: Height::fixed(20.0), cut_z: Height::fixed(5.0),
         top_z: None, stepdown: None, feed: 1200.0, plunge_feed: 300.0, climb: true,
+        picks: Default::default(),
     };
     state.history.execute(&state.world, CreateOperation::new(
         &state.world, "Face", "EM-0400-2FL", SrcRef::Stock, face,

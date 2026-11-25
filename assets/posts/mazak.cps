@@ -127,7 +127,9 @@ function fu(v) { return pt(fn(v)); }  // a length word, with its point
 function fa(v) { return pt(has(v) ? trimNum(Number(v).toFixed(3)) : "0"); }  // angle (deg) at 3 decimals with point
 function ff(v) {  // a feed: whole mm/min, or in/min at two decimals
   if (!(has(v) && v > 0)) return "0";
-  return inch ? trimNum((v / 25.4).toFixed(2)) : String(Math.round(v));
+  // #3690: a whole inch F without a point can use 0.01 in/min units.
+  // MAZATROL MATRIX EIA/ISO programming manual, sections 7-2 and 7-3.
+  return pt(inch ? trimNum((v / 25.4).toFixed(2)) : String(Math.round(v)));
 }
 function eps() { return inch ? "0.0001" : "0.001"; } // one output step, the probe checks' band
 function ni(v) { return has(v) ? String(Math.round(v)) : "0"; }

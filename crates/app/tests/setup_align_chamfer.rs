@@ -122,6 +122,7 @@ fn chamfer() -> OpParams {
         side: Side::Auto,
         tolerance: 0.01,
         tilt: None,
+        picks: Default::default(),
     }
 }
 

@@ -165,18 +165,6 @@ pub struct Approach {
     /// Where the cutter radius is compensated (M13.11, the contour's
     /// choice; every other ladder reads it as `Computer`).
     pub compensation: Compensation,
-    /// The user's start point (#1448, model XY in mm): the closed 2D
-    /// contour ring nearest it begins its cut at the pick's projection
-    /// onto it, with the lead-in there - or the operation is refused by
-    /// name. `None` - every earlier file - keeps the automatic seam.
-    /// Only the closed contour reads it; every other kind refuses it.
-    pub start_point: Option<crate::geo2d::Point2>,
-    /// The user's exit point (#1473, model XY in mm): the closed 2D
-    /// contour ring nearest it is cut all the way round, then on along
-    /// itself to the pick's projection, where the lead-out leaves - or
-    /// the operation is refused by name. `None` - every earlier file -
-    /// leaves at the seam (or after the overlap).
-    pub exit_point: Option<crate::geo2d::Point2>,
     /// Can the tool plunge axially into solid (M11.3, the user's safety
     /// call)? Not a saved parameter: the application lays the tool's own
     /// `center_cutting` over it for each generation, so a stored op
@@ -204,10 +192,14 @@ pub const CENTER_CUT_REFUSAL: &str = "entry refused: the tool is not centre-cutt
 /// A low return crossed an earlier feed and has no proved rapid landing.
 pub const MICROLIFT_REFUSAL: &str = "entry refused: a crossing microlift has no proved rapid landing; use another entry or pocket strategy";
 
+/// #3746: a start-side pass (Inside or Outside) has no air entry and no
+/// named stand-in that is not a plunge into material.
+pub const AIR_ENTRY_REFUSAL: &str = "entry refused: the start-side pass has no safe entry";
+
 /// The refusal a ladder raises for an unsafe entry or return.
 #[must_use]
 pub fn refusal(path: &crate::cl::Toolpath) -> Option<String> {
-    path.notes.iter().find(|n| n.starts_with(CENTER_CUT_REFUSAL) || n.starts_with(MICROLIFT_REFUSAL)).cloned()
+    path.notes.iter().find(|n| n.starts_with(CENTER_CUT_REFUSAL) || n.starts_with(MICROLIFT_REFUSAL) || n.starts_with(AIR_ENTRY_REFUSAL)).cloned()
 }
 
 /// The default axis-alignment tolerance, degrees.
@@ -267,8 +259,6 @@ impl Approach {
         axis_start: false,
         axis_tol: DEFAULT_AXIS_TOL,
         compensation: Compensation::Computer,
-        start_point: None,
-        exit_point: None,
         center_cutting: true,
         material_top: None,
     };
@@ -353,13 +343,6 @@ impl Approach {
             Some(Lead::Linear { length } | Lead::Perpendicular { length }) if len(length) => {}
             Some(Lead::Arc { radius } | Lead::Tangential { radius }) if radius > 0.0 && len(radius) => {}
             Some(_) => return Err("bad lead-out parameters"),
-        }
-        let coord = |v: f64| v.is_finite() && v.abs() <= 1.0e6;
-        if self.start_point.is_some_and(|q| !(coord(q.x) && coord(q.y))) {
-            return Err("the start point must be two finite coordinates within 1 km of the origin");
-        }
-        if self.exit_point.is_some_and(|q| !(coord(q.x) && coord(q.y))) {
-            return Err("the exit point must be two finite coordinates within 1 km of the origin");
         }
         Ok(())
     }

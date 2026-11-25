@@ -310,6 +310,12 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             // #3525: a cut deeper than the flute length - the cause of
             // the shank findings after it, its own line (advisory).
             Warning::FluteShort { .. } => (226, false),
+            // #3679: a feed plunge deeper than one stepdown below the
+            // uncut floor - a tool-load note, its own line (advisory).
+            Warning::PlungeTooDeep { .. } => (227, false),
+            // #3748: a selected entry that is not the recommended Arc on
+            // a start-side pass - advisory, its own line.
+            Warning::EntryNotRecommended { .. } => (227, false),
             // A lathe holder's rub (#369) splits part from stock too.
             Warning::HolderHit { part, .. } => (212 + *part as u8, false),
         }
@@ -338,7 +344,9 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             | Warning::SinkerFinishOrder { at, .. }
             | Warning::DrillUndersize { at, .. }
             | Warning::StrategyFallback { at, .. }
-            | Warning::FluteShort { at, .. } => *at,
+            | Warning::FluteShort { at, .. }
+            | Warning::PlungeTooDeep { at, .. } => *at,
+            | Warning::EntryNotRecommended { at, .. } => *at,
         }
     }
     let mut lines: Vec<(String, Option<usize>)> = Vec::new();
@@ -433,6 +441,7 @@ mod height_row_tests {
             feed: 1200.0,
             plunge_feed: 300.0,
             climb: true,
+            picks: Default::default(),
         };
         assert_eq!(unresolved_note(&world, None, None, &ok), None, "all fixed - no alarm");
         let broken = OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false, blend_radius: None,
@@ -444,6 +453,7 @@ mod height_row_tests {
             feed: 1200.0,
             plunge_feed: 300.0,
             climb: true,
+            picks: Default::default(),
         };
         let note = unresolved_note(&world, None, None, &broken).expect("the stock is gone");
         assert!(note.contains("Cut Z"), "{note}");
@@ -532,6 +542,7 @@ mod height_row_tests {
             blend_turns: false, blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             chain_overrides: Vec::new(),
+            picks: Default::default(),
         }
     }
 
