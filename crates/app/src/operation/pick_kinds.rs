@@ -71,7 +71,9 @@ impl KindInfo {
     #[must_use]
     pub fn pick(&self) -> PickCapability {
         match self.ty {
-            OpType::Contour => PickCapability::Ring,
+            // #3330: the 5-axis contour's waterline rings are seated at
+            // the start pick and run on to the exit pick.
+            OpType::Contour | OpType::Contour5D => PickCapability::Ring,
             OpType::WireContour => PickCapability::Threading,
             OpType::Probe => PickCapability::NotTaken(PICK_NO_PATH),
             // #3331 slice 1: the pick is a point in the lathe (Z, X) plane.
@@ -94,7 +96,6 @@ impl KindInfo {
             | OpType::Finish3D
             | OpType::Deburr
             | OpType::MultiAxisDeburr
-            | OpType::Contour5D
             | OpType::Parallel5D
             | OpType::Swarf
             | OpType::AdvancedSwarf
