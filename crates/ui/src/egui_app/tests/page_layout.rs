@@ -193,13 +193,19 @@ fn layout_page_model() {
 fn layout_page_tool() {
     let _g = snapshot_guard();
     let h = page(UiTarget::Tool("EM-0600-4FL".into()));
-    // #2014: the selected tool's settings are a label-left property grid
-    // in collapsible groups; the rows below the Geometry header follow it.
+    // #3930: the selected tool's page is a read-only summary: the heading,
+    // the door row ("Edit in tool library", "Edit tool shape", "Delete"),
+    // then the label-left rows.
     assert_page_layout(
         &h,
         "Tool",
-        &["Tool: EM-0600-4FL", "Delete", "Edit tool shape", "Geometry", "Type", "Diameter", "Corner radius", "Flute length"],
+        &["Tool: EM-0600-4FL", crate::egui_app::tool_summary::EDIT_IN_LIBRARY, "Type", "Diameter", "Corner radius", "Flute length", "Holder"],
     );
+    let door = h.get_by_label(crate::egui_app::tool_summary::EDIT_IN_LIBRARY).rect();
+    for b in ["Edit tool shape", "Delete"] {
+        let r = h.get_by_role_and_label(egui::accesskit::Role::Pane, "Properties").get_by_label(b).rect();
+        assert!((r.center().y - door.center().y).abs() < 4.0 && r.left() > door.left(), "{b:?} {r:?} stands right of the door {door:?}");
+    }
 }
 
 /// #2007 / #2397: the tool page's Profile tab moved into the tool shape
