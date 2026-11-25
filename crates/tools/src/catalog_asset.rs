@@ -83,9 +83,10 @@ struct Def {
     tip_angle: f64,
     #[serde(default)]
     pitch: f64,
-    /// A single-form thread mill's finest pitch (#894).
+    /// A single-form thread mill's finest pitch (#894). #3662: absent on
+    /// a single-form mill reads as its one pitch.
     #[serde(default)]
-    pitch_min: f64,
+    pitch_min: Option<f64>,
     /// Tap thread hand; older tools default to right-hand.
     #[serde(default)]
     thread_hand: crate::thread_hand::ThreadHand,
@@ -162,7 +163,7 @@ impl Def {
             corner_r: self.corner_r,
             tip_angle: self.tip_angle,
             pitch: self.pitch,
-            pitch_min: self.pitch_min,
+            pitch_min: self.pitch_min.unwrap_or(0.0),
             thread_hand: self.thread_hand,
             nose_radius: self.nose_radius,
             width: self.width,
@@ -219,9 +220,14 @@ pub fn parse_catalog(text: &str) -> Result<Vec<(String, Tool)>, String> {
             return Err(format!("tool catalog: tool '{name}' appears twice"));
         }
         let def: Def = serde_json::from_value(row.definition).map_err(|e| format!("tool catalog: tool '{name}': {e}"))?;
+        let unstated_range = def.pitch_min.is_none();
         let mut tool = def.into_tool();
         // #3369: a preset form writes its own points.
         crate::form_mill::fill(&mut tool);
+        // #3662: a single-form thread mill with no range cuts its one pitch.
+        if unstated_range {
+            crate::thread_mill::read_unstated_range(&mut tool);
+        }
         if let Some(why) = tool.why_not_sane() {
             return Err(format!("tool catalog: tool '{name}' is refused: {why}"));
         }

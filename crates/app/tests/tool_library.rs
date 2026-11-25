@@ -6,6 +6,7 @@
 //! import by name with nothing applied; undo removes exactly the imported
 //! tools and redo brings them back. #3904: a drawn cutter rides the file
 //! (version 5), is judged by name, and lands and undoes with its tool.
+//! #3662: the converted cutters (`converted_3662`).
 //! Provenance: our own tests over our own format and commands.
 //!
 //! Gate map (M4.4): covers app::tool_library, app::commands (tool_import, tool).
@@ -22,6 +23,9 @@ use camcraft_app::tools::{Tool, catalog};
 use camcraft_app::world::new_world;
 use flecs_ecs::prelude::World;
 use serde_json::{Value, json};
+
+#[path = "tool_library/converted_3662.rs"]
+mod converted_3662;
 
 fn cat(name: &str) -> Tool {
     catalog().into_iter().find(|(n, _)| *n == name).map(|(_, t)| t).expect("catalog tool")
