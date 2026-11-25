@@ -120,6 +120,8 @@ mod lathe_view;
 // #1997: the orbit pivot ignores the work envelope; open frames the part.
 mod camera_target;
 mod structural;
+// #2772 parts 1-2 (PR #3674 item 5): the stated rotation axis group.
+mod rotary_stated_axis;
 // #2181: the transport row of the calculation before playback.
 mod transport_precalc;
 mod sim_op_steps;
@@ -2014,6 +2016,7 @@ fn headless_run_succeeds() {
 #[test]
 #[ignore = "release lane (#255): pixel snapshot golden, run and regenerated only at minor/major cuts (gate -Tier release); structural twin in tests/structural.rs"]
 fn egui_shell_snapshot() {
+    let _gpu = super::gpu_test_lock::gpu_guard(); // #3379
     let _g = snapshot_guard();
     let mut harness = shell_harness();
     harness.run_steps(3);
@@ -2044,6 +2047,7 @@ fn snapshot_guard() -> std::sync::MutexGuard<'static, ()> {
 #[test]
 #[ignore = "release lane (#255): pixel snapshot golden, run and regenerated only at minor/major cuts (gate -Tier release); structural twin in tests/structural.rs"]
 fn egui_shell_snapshot_light() {
+    let _gpu = super::gpu_test_lock::gpu_guard(); // #3379
     let _g = snapshot_guard();
     let mut harness = shell_harness();
     theme_set(&harness.state_mut().state.world, &ThemeRef::Named("light".to_owned()));
@@ -2164,6 +2168,7 @@ fn tool_settings_edit_live_and_the_shape_editor_follows_its_tool() {
 #[test]
 #[ignore = "release lane (#255): pixel snapshot golden, run and regenerated only at minor/major cuts (gate -Tier release); structural twin in tests/structural.rs"]
 fn tool_editor_snapshot() {
+    let _gpu = super::gpu_test_lock::gpu_guard(); // #3379
     let _g = snapshot_guard();
     let mut harness = shell_harness();
     harness.state_mut().state.ui_target = UiTarget::Tool("EM-0600-4FL".to_owned());

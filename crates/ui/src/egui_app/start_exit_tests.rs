@@ -208,7 +208,7 @@ fn the_hole_kinds_type_their_first_and_last_hole() {
 }
 
 #[test]
-fn the_wire_geometry_tab_groups_the_start_hole_and_says_the_exit_is_not_taken() {
+fn the_wire_geometry_tab_shows_the_start_hole_and_an_editable_exit() {
     let mut state = opened(face());
     let machine = camcraft_app::machine::parse_mch(include_str!("../../../app/tests/edm/wire-iso-fixture.mch"))
         .expect("wire machine fixture");
@@ -224,14 +224,26 @@ fn the_wire_geometry_tab_groups_the_start_hole_and_says_the_exit_is_not_taken() 
     state.sync_ops_ui();
     if let OpParams::WireContour(wire) = &mut state.op_ui.params {
         wire.picks.start = vec![PathPick::xy(Point2::new(2.0, 3.0))];
+        wire.picks.exit = vec![PathPick::xy(Point2::new(7.0, 8.0))];
     }
     state.op_tab = super::super::op_tabs::SEC_GEO;
     let mut harness = page(state);
     harness.run();
-    for label in [START_GROUP, EXIT_GROUP, "Start hole stated", "Start hole X", "Start hole Y"] {
+    for label in [START_GROUP, EXIT_GROUP, "Start hole stated", "Start hole X", "Start hole Y", "Exit point stated", "Exit X", "Exit Y", "Clear exit"] {
         assert!(harness.query_by_label(label).is_some(), "Wire Contour has {label} on Geometry");
     }
-    assert_eq!(harness.query_all_by_label_contains(super::NOT_TAKEN).count(), 1, "only the exit is not taken");
+    assert_eq!(harness.query_all_by_label_contains(super::NOT_TAKEN).count(), 0, "the wire takes both picks");
+    assert!(same(draft(&harness).1, 7.0, 8.0), "the saved exit is preserved while drawn");
+    harness.get_by_label("Apply").click();
+    harness.run();
+    harness.state_mut().drain_actions();
+    let name = harness.state().selected_operation().expect("selected wire operation");
+    let committed_exit = |state: &State| {
+        let op = model::find_by_name(&state.world, &name)
+            .and_then(|e| model::operation_of(&state.world, &e)).expect("wire operation");
+        points(&op.params).1
+    };
+    assert!(same(committed_exit(harness.state()), 7.0, 8.0), "Apply stores the exit");
     harness.get_by_label(START_GROUP).click();
     harness.run();
     for label in ["Start hole stated", "Start hole X", "Start hole Y"] {
@@ -244,6 +256,24 @@ fn the_wire_geometry_tab_groups_the_start_hole_and_says_the_exit_is_not_taken() 
         Some([2.0, 3.0]),
         "folding the group preserves the threading point"
     );
+    harness.get_by_label("Clear exit").click();
+    harness.run();
+    assert_eq!(draft(&harness).1, None, "Clear exit restores the automatic exit");
+    assert!(harness.query_by_label("Exit X").is_none(), "the cleared exit rows leave the tree");
+    assert!(same(committed_exit(harness.state()), 7.0, 8.0), "clearing waits for Apply");
+    harness.get_by_label("Apply").click();
+    harness.run();
+    harness.state_mut().drain_actions();
+    assert_eq!(committed_exit(harness.state()), None, "Apply clears the stored exit");
+    let st = harness.state_mut();
+    assert!(st.history.undo(&st.world));
+    assert!(same(committed_exit(harness.state()), 7.0, 8.0), "undo restores the stated exit");
+    let st = harness.state_mut();
+    assert!(st.history.redo(&st.world));
+    assert_eq!(committed_exit(harness.state()), None, "redo clears the stated exit again");
+    harness.get_by_label("Exit point stated").click();
+    harness.run();
+    assert!(same(draft(&harness).1, 0.0, 0.0), "the switch seeds an exit for typing");
 }
 
 #[test]

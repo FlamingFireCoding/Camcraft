@@ -47,8 +47,9 @@ pub fn strategy_fallback(path: &Toolpath) -> Option<Warning> {
 /// #3748: the start-side pass whose user selected a Helix, Ramp or Plunge
 /// lead-in where the Arc entry from the air applies - one advisory
 /// warning that names the selected type, the recommended Arc and the
-/// reason. The ladder writes the advice note only where that air room
-/// exists (`machining2d::entry_advice`); the entry runs as selected.
+/// reason. The ladder writes the advice note on each Inside or Outside
+/// ring pass (`machining2d::entry_advice`, #3884: not gated on the air
+/// room); the entry runs as selected.
 #[must_use]
 pub fn entry_not_recommended(path: &Toolpath) -> Option<Warning> {
     use crate::machining2d::{PassStart, advised, entry_advice};
@@ -1967,18 +1968,35 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #2848: picked faces. Rotary Parallel keeps its cut over
             // them (the axis still reads the whole model); a selection
             // the kind cannot use refuses here, by name.
-            let picked = super::rotary_picks::usable(rotary_picks.take(), &material.facets)?;
-            let run = |q: &Finish3DParams| if is_contour {
-                crate::multiaxis::rotary_contour(&material.facets, q, &axis)
-            } else {
-                crate::multiaxis::rotary_parallel_over(&material.facets, stock_facets.as_deref(), picked.as_deref(), q, &axis)
-            };
+            // #2772 parts 1-2: a stated rotation axis first - the op's
+            // own direction, else the machine's stated rotary lines,
+            // each anchored through the work offset origin and judged
+            // against the model's faces (`axis_stated::judged_any`);
+            // nothing stated keeps today's free fit.
             let kind = if is_contour { "Rotary Contour" } else { "Rotary Parallel" };
-            // M13.5 B: the letter is the machine's. The fitted line
-            // the kernel will turn about must be a rotary the mounted
-            // machine states (A/B on a table, or the spindle's C -
-            // issue #33 - whose angle the path then states).
-            let spindle_c = rotary_letter_gate(machine_rotaries.as_ref(), &material.facets, kind)?;
+            let lines = crate::rotary_stated::lines_of(
+                crate::rotary_stated::op_stated(&params),
+                machine_rotaries.as_ref().map(|(_, r)| r.as_slice()),
+                wcs_origin,
+            )
+            .transpose()
+            .map_err(|e| GenError::Invalid(format!("{kind}: {e}")))?;
+            let ax = match &lines {
+                Some(ls) => crate::multiaxis::axis_stated::judged_any(&material.facets, ls)?,
+                None => crate::multiaxis::axis::fit(&material.facets)?,
+            };
+            let picked = super::rotary_picks::usable(rotary_picks.take(), &material.facets, &ax)?;
+            let run = |q: &Finish3DParams| if is_contour {
+                crate::multiaxis::rotary_contour_stated(&material.facets, ax, q, &axis)
+            } else {
+                crate::multiaxis::rotary_parallel_over_stated(&material.facets, stock_facets.as_deref(), picked.as_deref(), ax, q, &axis)
+            };
+            // M13.5 B: the letter is the machine's. The line the
+            // kernel will turn about - stated (#2772) or fitted - must
+            // be a rotary the mounted machine states (A/B on a table,
+            // or the spindle's C - issue #33 - whose angle the path
+            // then states).
+            let spindle_c = super::rotary_gate::letter_gate(machine_rotaries.as_ref(), lines.as_ref().map(|_| &ax), &material.facets, kind)?;
             let path = super::plunge_solid::guard_posed(
                 kind, tool.center_cutting, tool.kind == crate::tools::ToolKind::BallNose, stock_facets.as_deref(), m_gen, frame.as_ref(), &fp, run,
             )?;
@@ -2065,15 +2083,32 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             if let Some(picks) = rotary_picks.take() {
                 picks?;
             }
+            // #2772 parts 1-2: a stated rotation axis first - the op's
+            // own direction, else the machine's stated rotary lines,
+            // each anchored through the work offset origin and judged
+            // against the model's faces (`axis_stated::judged_any`);
+            // nothing stated keeps today's free fit.
+            let lines = crate::rotary_stated::lines_of(
+                crate::rotary_stated::op_stated(&params),
+                machine_rotaries.as_ref().map(|(_, r)| r.as_slice()),
+                wcs_origin,
+            )
+            .transpose()
+            .map_err(|e| GenError::Invalid(format!("Rotary Offset: {e}")))?;
+            let ax = match &lines {
+                Some(ls) => crate::multiaxis::axis_stated::judged_any(&material.facets, ls)?,
+                None => crate::multiaxis::axis::fit(&material.facets)?,
+            };
             // M13.5 B: the machine's letter for the line the ladder
             // wraps about, or the refusal by name.
-            let spindle_c = rotary_letter_gate(machine_rotaries.as_ref(), &material.facets, "Rotary Offset")?;
+            let spindle_c = super::rotary_gate::letter_gate(machine_rotaries.as_ref(), lines.as_ref().map(|_| &ax), &material.facets, "Rotary Offset")?;
             // M13.8: the ladder peels from the setup STOCK's outer
-            // radius about the fitted axis (the part's skin when no
+            // radius about the axis (the part's skin when no
             // separate stock is set, or when the stock sits inside it).
-            let path = crate::multiaxis::rotary_offset_in(
+            let path = crate::multiaxis::rotary_offset_stated(
                 &material.facets,
                 stock_facets.as_deref(),
+                ax,
                 &pp,
                 &axis,
             )?;
@@ -2092,7 +2127,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // revolved about the same fitted axis, so a move in the air
             // outside its radius is clean and one into it is judged.
             super::plunge_solid::audit_bar(
-                "Rotary Offset", tool.center_cutting, &material.facets, stock_facets.as_deref(), &path, d * 0.5,
+                "Rotary Offset", tool.center_cutting, &material.facets, stock_facets.as_deref(), &path, d * 0.5, &ax,
             )?;
             (region, path)
         }
@@ -2508,17 +2543,14 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         // the kernel states the law on the face alone. The tool must
         // be a chamfer mill whose cone is the supplement of the
         // authored angle (a 45-degree chamfer takes the shop's
-        // 90-degree tool), and its diameter must reach the face's
-        // full width - `width / tan(alpha)` of cone height is exactly
-        // the corner depth, so the reach door is the whole flute law
-        // for a well-made cone. `side` cannot change the ride's circle -
-        // the cone meets its wall the same circle whether the material
-        // stands inside it (bore) or outside (boss) - it says which
-        // wall the region picks (the sim judges), and so which way
-        // climb travels it (#1555: material right of travel under M3).
+        // 90-degree tool), and its cone must reach the selected band's
+        // outer radius. The ideal cone has to stand
+        // `(minimum_cone_radius + width) * tan(angle)` above its virtual
+        // tip. `side` names the air side for loops and open runs.
         OpParams::Chamfer2D {
             width,
             angle_deg,
+            minimum_cone_radius,
             feed,
             plunge_feed,
             climb,
@@ -2538,28 +2570,44 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     tool_name, tool.tip_angle
                 )));
             }
-            if tool.diameter < 2.0 * width - 1e-9 {
+            let outer_radius = minimum_cone_radius + width;
+            if tool.diameter * 0.5 < outer_radius - 1e-9 {
+                if *minimum_cone_radius == 0.0 {
+                    return Err(GenError::Invalid(format!(
+                        "a {width} mm chamfer reaches {} mm from the wall; '{}' is only {} mm across",
+                        width, tool_name, tool.diameter
+                    )));
+                }
                 return Err(GenError::Invalid(format!(
-                    "a {width} mm chamfer reaches {} mm from the wall; '{}' is only {} mm across",
-                    width, tool_name, tool.diameter
+                    "a {width} mm chamfer with a {minimum_cone_radius} mm tip offset reaches \
+                     {outer_radius} mm from the cone axis; '{}' has only {} mm of tool radius",
+                    tool_name,
+                    tool.diameter * 0.5
                 )));
             }
-            if tool.flute_len < width * angle_deg.to_radians().tan() - 1e-9 {
+            let reach = outer_radius * angle_deg.to_radians().tan();
+            if tool.flute_len < reach - 1e-9 {
                 // The depth is DERIVED, and a derived float must not
                 // reach the user as its bits: tan(45 degrees) is
                 // 0.9999999999999999, and a refusal that quotes
                 // "3.9999999999999996 mm" reads as a bug, not a law.
                 // A tenth is the shop's reading precision.
+                if *minimum_cone_radius == 0.0 {
+                    return Err(GenError::Invalid(format!(
+                        "the cone of '{}' is {} mm of flute, short of the {:.1} mm depth this face stands at",
+                        tool_name, tool.flute_len, reach
+                    )));
+                }
                 return Err(GenError::Invalid(format!(
-                    "the cone of '{}' is {} mm of flute, short of the {:.1} mm depth this face stands at",
-                    tool_name,
-                    tool.flute_len,
-                    width * angle_deg.to_radians().tan()
+                    "the cone of '{}' is {} mm of flute, short of the {:.1} mm cone reach \
+                     for a {minimum_cone_radius} mm tip offset plus a {width} mm chamfer",
+                    tool_name, tool.flute_len, reach
                 )));
             }
             let cp = ChamferParams {
                 width: *width,
                 angle_deg: *angle_deg,
+                minimum_cone_radius: *minimum_cone_radius,
                 clearance_z: hl.clearance,
                 retract_z: hl.retract,
                 top_z: req_z(hl.top, "Top of Part Z")?,
@@ -4089,7 +4137,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             warns.extend(strategy_fallback(&path));
             // #3748: a selected entry that is not the recommended Arc on a
             // start-side pass - one advisory warning, the entry kept.
-            warns.extend(entry_not_recommended(&path));
+            let advice = entry_not_recommended(&path);
+            // #3884: each stand-in entry and a selected Plunge into uncut
+            // stock of a start-side pass - a warning, not a note only.
+            warns.extend(crate::machining2d::entry_warnings(&path, advice.is_some()));
+            warns.extend(advice);
             // The rotary kinds' bands and rapids (M13): `Mode::Rotary`
             // stood the vertical-column laws down; the radial field
             // reads rest material in the frame the work turns in.
@@ -4101,6 +4153,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     stock_facets.as_deref(),
                     &cutter,
                     (tol, material.excess),
+                    rotary_axis.as_ref(),
                 );
             }
             // The all-air verdict (M13.8): a finish that provably cuts
@@ -4292,24 +4345,6 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             Ok((path_world, warns))
         }
     }
-}
-
-/// The rotary kinds' letter door (M13.5 B): the line the kernel will
-/// turn the part about, fitted from the same facets it reads, held
-/// against the mounted machine's rotary inventory. A fit that fails
-/// here is left to the kernel, which refuses it by its own name; a
-/// line no stated rotary holds refuses here. The spindle's C answers
-/// the fitted line (issue #33) - the path is then stamped with its C.
-fn rotary_letter_gate(
-    machine: Option<&(String, Vec<crate::machine::AxisLimits>)>,
-    facets: &[Triangle],
-    kind: &str,
-) -> Result<Option<crate::multiaxis::axis::Axis>, GenError> {
-    let Ok(ax) = crate::multiaxis::axis::fit(facets) else {
-        return Ok(None);
-    };
-    let letter = super::rotary_gate::rotary_letter(machine, [ax.dir.x, ax.dir.y, ax.dir.z], kind)?;
-    Ok((letter == Some('C')).then_some(ax))
 }
 
 /// The fixture laws (c2)/(d2) at generation, exactly as the post gate

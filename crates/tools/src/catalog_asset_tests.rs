@@ -6,7 +6,7 @@
 use crate::catalog_asset::{CATALOG_JSON, parse_catalog};
 use crate::tools::{Tool, ToolKind, ToolMaterial, catalog, probe_tool, torch_tool};
 
-const ORDER: [&str; 57] = [
+const ORDER: [&str; 63] = [
     "EM-0200-2FL", "EM-0300-2FL", "EM-0400-2FL", "EM-0600-4FL", "EM-0800-4FL", "EM-1000-4FL", "EM-1200-2FL",
     // #3036: BN-0300, BB-0600-R1 and the metric tap-drill and clearance drills sit in their families.
     "BN-0300", "BN-0600", "BN-1000", "BB-0600-R1", "BB-1000-R1",
@@ -21,6 +21,8 @@ const ORDER: [&str; 57] = [
     "TS-2000-0600", "KS-1600-0300", "DT-2000-60", "LP-1000",
     // #1883: the waterjet nozzle.
     "WJ-KERF-080",
+    // #3369: roundover, cove and V-groove form mills, in mm and inch.
+    "FM-RO-R6", "FM-RO-R0250IN", "FM-CV-R6", "FM-CV-R0250IN", "FM-VG-90-12", "FM-VG-90-0500IN",
 ];
 
 fn tool(name: &str) -> Tool {
@@ -171,6 +173,17 @@ fn a_bad_catalog_is_a_named_error_not_a_panic() {
     assert!(err(file(ok, &[row("A", &good.replace("\"feed\"", "\"typo\":1,\"feed\""))])).contains("'A'"));
 }
 
+/// #3662: a single-form thread mill row with no `pitch_min` reads as a
+/// range of its one pitch, the same as the library and project readers.
+#[test]
+fn a_catalog_single_form_thread_mill_without_a_range_cuts_its_one_pitch() {
+    let def = r#"{"kind":"thread_mill_single","diameter":6,"corner_r":0,"tip_angle":60,"pitch":1.5,"flute_len":2,"shank_d":6,"shank_len":40,"holder_d":44,"holder_len":35,"material_group":"aluminum","rpm":6000,"feed":300}"#;
+    let text = format!(r#"{{"format":"camcraft-tools","version":1,"tools":[{{"name":"TMS","definition":{def}}}]}}"#);
+    let v = parse_catalog(&text).expect("a single-form row without a range parses");
+    assert_eq!(v[0].1.kind, ToolKind::ThreadMillSingle);
+    assert_eq!((v[0].1.pitch_min, v[0].1.pitch), (1.5, 1.5));
+}
+
 /// #1152: a library row states a body electrode's outline; the reader
 /// keeps it, and refuses by name a row whose sizes leave its outline.
 #[test]
@@ -183,4 +196,38 @@ fn a_catalog_electrode_keeps_its_outline() {
     let ell = vec![[-5.0, -4.0], [5.0, -4.0], [5.0, 0.0], [-1.0, 0.0], [-1.0, 4.0], [-5.0, 4.0]];
     assert_eq!(v[0].1, crate::electrode::electrode_outline_tool(&ell, 16.0, 15.0));
     assert!(parse_catalog(&file(def(12.0))).expect_err("sizes off the outline").contains("'E-L' is refused"));
+}
+
+/// #3369: the catalogue form mills write their outline from the preset,
+/// cut at the catalogue's diameter, and keep the pilot out of the cut.
+/// The inch bits keep their true inch numbers: a 3/16 in pilot (4.7625
+/// mm) under a 1/2 in cutting height, so a 11/16 in flute length (17.4625
+/// mm). A sharp V-groove whose height is its cone has two points: the tip
+/// on the axis and the top of the cone.
+#[test]
+fn the_catalog_form_mills_cut_at_their_catalogue_diameter() {
+    const IN: f64 = 25.4;
+    // (name, diameter, pilot length, flute length, outline points)
+    for (name, d, pilot, flute, n) in [
+        ("FM-RO-R6", 25.0, 5.0, 18.0, 5),
+        ("FM-RO-R0250IN", 1.0 * IN, 0.1875 * IN, 0.6875 * IN, 5),
+        ("FM-CV-R6", 25.0, 5.0, 18.0, 5),
+        ("FM-CV-R0250IN", 1.0 * IN, 0.1875 * IN, 0.6875 * IN, 5),
+        ("FM-VG-90-12", 12.0, 0.0, 6.0, 2),
+        ("FM-VG-90-0500IN", 0.5 * IN, 0.0, 0.25 * IN, 2),
+    ] {
+        let t = tool(name);
+        assert_eq!(t.kind, ToolKind::FormMill, "{name}");
+        assert_eq!(t.why_not_sane(), None, "{name}");
+        let form = t.form.clone().unwrap_or_default();
+        assert!(form.preset.is_some(), "{name}: the catalogue states a preset");
+        assert_eq!(form.points.len(), n, "{name}: the preset wrote the points");
+        // The catalogue states the exact inch value: 1e-9 mm is float dust.
+        assert!((form.pilot_len - pilot).abs() < 1e-9, "{name}: pilot {} mm", form.pilot_len);
+        assert!((t.flute_len - flute).abs() < 1e-9, "{name}: flute length {} mm", t.flute_len);
+        let m = t.meridian().unwrap_or_else(|e| panic!("{name}: {e}"));
+        let widest = m.points().iter().fold(0.0_f64, |r, p| r.max(p.r));
+        assert!((2.0 * widest - d).abs() < 1e-9, "{name}: cuts at {} mm", 2.0 * widest);
+        assert_eq!(m.cutting().contains(&false), pilot > 0.0, "{name}: only a pilot does not cut");
+    }
 }

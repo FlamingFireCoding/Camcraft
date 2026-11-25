@@ -196,10 +196,21 @@ pub const MICROLIFT_REFUSAL: &str = "entry refused: a crossing microlift has no 
 /// named stand-in that is not a plunge into material.
 pub const AIR_ENTRY_REFUSAL: &str = "entry refused: the start-side pass has no safe entry";
 
+/// #3884 (the maintainer's rule on #3741: an Outside pass goes down in air
+/// outside the stock, never by a helix or a ramp): a selected Arc on an
+/// Outside ring pass that has no entry in air.
+pub const OUTSIDE_AIR_REFUSAL: &str =
+    "entry refused: no air room for an Outside entry: set a stock, or choose an Inside start or a Helix, Ramp or Plunge entry";
+
 /// The refusal a ladder raises for an unsafe entry or return.
 #[must_use]
 pub fn refusal(path: &crate::cl::Toolpath) -> Option<String> {
-    path.notes.iter().find(|n| n.starts_with(CENTER_CUT_REFUSAL) || n.starts_with(MICROLIFT_REFUSAL) || n.starts_with(AIR_ENTRY_REFUSAL)).cloned()
+    path.notes
+        .iter()
+        .find(|n| {
+            [CENTER_CUT_REFUSAL, MICROLIFT_REFUSAL, AIR_ENTRY_REFUSAL, OUTSIDE_AIR_REFUSAL].iter().any(|r| n.starts_with(r))
+        })
+        .cloned()
 }
 
 /// The default axis-alignment tolerance, degrees.
