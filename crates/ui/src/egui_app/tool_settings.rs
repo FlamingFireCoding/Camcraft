@@ -221,6 +221,8 @@ pub(super) fn seed_kind(state: &mut State, before: usize) {
     super::tool_thread_mill_row::seed(&mut state.tool_ui);
     // The undercut cutters (#1444): head wider than neck, and dovetail flank angle.
     super::tool_undercut_row::seed(&mut state.tool_ui);
+    // #3368: only a chamfer mill states a tip; its form keeps sane numbers.
+    super::tool_taper_tip_row::seed(&mut state.tool_ui);
     // The torch (#670): no spindle, no corner - a kerf. The sinker
     // electrode (#541) and EDM wire (#2011) turn none either.
     if matches!(
