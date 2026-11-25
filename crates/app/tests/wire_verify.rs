@@ -95,8 +95,13 @@ fn a_correct_die_and_a_correct_punch_pass_and_name_the_piece_they_free() {
     let line = c.line.expect("the judged line");
     assert!(line.starts_with(posting::WIRE_VERDICT), "{line}");
     let (die, punch) = line.split_once("; Punch1").expect("both judged");
-    assert!(die.contains("Die1 frees") && die.ends_with("(waste) into the stated capture"), "the die's slug is waste: {line}");
-    assert!(punch.contains("frees") && punch.ends_with("(the part) into the stated capture"), "the punch drops: {line}");
+    assert!(die.contains("Die1 frees") && die.contains("(waste) into the stated capture"), "the die's slug is waste: {line}");
+    assert!(punch.contains("frees") && punch.contains("(the part) into the stated capture"), "the punch drops: {line}");
+    // #3215: the 2 mm fillets are cut as arcs read from the facets, judged
+    // under the model's chord, and the line says so.
+    for cut in [die, punch] {
+        assert!(cut.contains("kerf judged under the model's chord tolerance 0.0060 mm"), "{line}");
+    }
     let report = posting::verification_report(&world);
     assert!(report.problems.iter().all(|p| !p.contains("wire")), "{:?}", report.problems);
     assert!(report.not_judged.is_some_and(|n| n.contains(posting::WIRE_VERDICT)), "said, not silent");

@@ -224,8 +224,12 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         // #1109: an open run is entered from the stock's edge - the
         // setup's stock outline, read only when a run is picked.
         let stock = || stock_facets.as_deref().and_then(|f| slice::project(f, FOOTPRINT_SAMPLES).ok()).filter(|r| !r.is_empty());
+        // #3215: a model's profile has its arcs read back from the facets,
+        // bounded by the model's chord; a drawn chain keeps its polygon.
+        let arcs = wire_sketch.is_none().then_some(crate::geometry::import::step::CHORD_CAP + material.excess);
         let (path, warnings) = super::wire_op::generate_wire(
             op,
+            arcs,
             Ok(cond),
             &hs,
             picks,

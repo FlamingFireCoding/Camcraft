@@ -30,6 +30,9 @@ mod sinker_fixture;
 // #3332: the exit pick of a Wire Contour, over this suite's documents.
 #[path = "wire_post/exit_pick.rs"]
 mod exit_pick;
+// #3215: a meshed model's circles and fillets posted as arcs.
+#[path = "wire_post/model_arcs.rs"]
+mod model_arcs;
 
 use flecs_ecs::prelude::World;
 
