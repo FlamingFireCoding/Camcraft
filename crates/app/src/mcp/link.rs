@@ -325,40 +325,6 @@ fn write_entry(file: &Path, entry: &Entry) -> std::io::Result<()> {
     std::fs::rename(&tmp, file)
 }
 
-/// Whether a process id is currently alive (#3874).
-#[cfg(windows)]
-#[must_use]
-pub fn pid_alive(pid: u32) -> bool {
-    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ACCESS_DENIED};
-    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
-    unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if !handle.is_null() {
-            CloseHandle(handle);
-            true
-        } else {
-            GetLastError() == ERROR_ACCESS_DENIED
-        }
-    }
-}
-
-/// Whether a process id is currently alive (#3874).
-#[cfg(unix)]
-#[must_use]
-pub fn pid_alive(pid: u32) -> bool {
-    unsafe {
-        libc::kill(pid as libc::pid_t, 0) == 0
-            || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
-    }
-}
-
-/// Whether a process id is currently alive (#3874).
-#[cfg(not(any(windows, unix)))]
-#[must_use]
-pub fn pid_alive(_pid: u32) -> bool {
-    true
-}
-
 /// Every readable discovery file in `dir`, by process id. A file that is
 /// not one (a temp file, another format) is skipped and logged.
 #[must_use]

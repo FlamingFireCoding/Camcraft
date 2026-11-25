@@ -766,7 +766,6 @@ dependencies = [
  "clipper2-rust",
  "flecs_ecs",
  "keyring",
- "libc",
  "png 0.18.1",
  "rayon",
  "reqwest",
@@ -779,7 +778,6 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "web-time",
- "windows-sys 0.61.2",
 ]
 
 [[package]]

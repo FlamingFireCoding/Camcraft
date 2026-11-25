@@ -196,7 +196,7 @@ fn false_server_on_stale_entry_is_refused_with_no_tool_calls_sent() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind false server");
     let addr = listener.local_addr().expect("addr");
 
-    // A stale entry pointing to our false server port with current process id so pid_alive passes
+    // A stale entry pointing to our false server port.
     let stale_entry = Entry {
         format: link::FORMAT,
         pid: std::process::id(),
