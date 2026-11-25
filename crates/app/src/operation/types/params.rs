@@ -955,7 +955,12 @@ pub enum OpParams {
     /// as the 5-axis kinds lean off the normal. A mesh with no axis of
     /// revolution refuses by name, says that 4-axis work on a part that
     /// is not turned is not supported yet, and points at the 5-Axis kinds; a
-    /// part lying flat on its axis points at Rotary Parallel.
+    /// part lying flat on its axis points at Rotary Parallel. A
+    /// STATED rotation axis (#2772) is read first: the machine's
+    /// stated rotary line through the work offset origin, or the
+    /// op's own `stated_axis` direction, judged against the model's
+    /// faces - a line they disagree with refuses by name, never a
+    /// silent fall back to the free fit.
     RotaryContour {
         tolerance: f64,
         clearance_z: Height,
@@ -970,6 +975,14 @@ pub enum OpParams {
         lead_deg: f64,
         lag_deg: f64,
         max_tilt_deg: f64,
+        /// #2772 parts 1-2: the op's own stated rotation axis, a
+        /// DIRECTION (a ratio, never unit-scaled - the machine
+        /// file's own law for its `axis` vector) through the
+        /// setup's work offset origin, overriding the machine's
+        /// stated rotary line. Absent follows the machine; the
+        /// model's faces must agree with the line or the op
+        /// refuses by name, never a silent fall back to the fit.
+        stated_axis: Option<[f64; 3]>,
         picks: crate::path_picks::PathPicks,
     },
     /// The laid-down sibling of [`Self::RotaryContour`]: generatrix
@@ -993,6 +1006,9 @@ pub enum OpParams {
         lead_deg: f64,
         lag_deg: f64,
         max_tilt_deg: f64,
+        /// #2772 parts 1-2: the op's own stated rotation axis - see
+        /// [`Self::RotaryContour`]`'s `stated_axis`.
+        stated_axis: Option<[f64; 3]>,
         picks: crate::path_picks::PathPicks,
     },
     /// The rotary family's rough ladder (M5.1 stage E2): the pocket
@@ -1029,6 +1045,9 @@ pub enum OpParams {
         lead_deg: f64,
         lag_deg: f64,
         max_tilt_deg: f64,
+        /// #2772 parts 1-2: the op's own stated rotation axis - see
+        /// [`Self::RotaryContour`]`'s `stated_axis`.
+        stated_axis: Option<[f64; 3]>,
         picks: crate::path_picks::PathPicks,
     },
     /// Multi-axis roughing (M5.1 stage E3): the [`Self::Pocket3D`]

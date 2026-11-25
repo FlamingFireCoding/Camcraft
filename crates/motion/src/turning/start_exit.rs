@@ -81,7 +81,7 @@ pub fn with_picks(
 
     if let Some(pick) = picks.first(PickRole::Start) {
         let what = "start point";
-        let p = bar.in_air(&f, pick, what).map_err(&refuse)?;
+        let p = bar.in_air(&f, pick, what).map_err(refuse)?;
         let (Some(first), Some(open)) = (path.moves.iter().position(|m| m.kind == MoveKind::Feed), path.moves.first().copied()) else {
             return Err(refuse(format!("the path has no pass to start at the {what} - clear it")));
         };
@@ -110,7 +110,7 @@ pub fn with_picks(
 
     if let Some(pick) = picks.first(PickRole::Exit) {
         let what = "exit point";
-        let p = bar.in_air(&f, pick, what).map_err(&refuse)?;
+        let p = bar.in_air(&f, pick, what).map_err(refuse)?;
         let (Some(last), Some(home)) = (path.moves.iter().rposition(|m| m.kind == MoveKind::Feed), path.moves.last().copied()) else {
             return Err(refuse(format!("the path has no pass to leave at the {what} - clear it")));
         };

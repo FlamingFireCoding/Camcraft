@@ -14,7 +14,7 @@ use super::kinds::KindInfo;
 use super::types::{OpParams, OpType};
 
 /// What a pick means on a kind, and so how the viewport snaps it. Every
-/// capability except [`Self::NotTaken`] takes a start pick.
+/// capability except [`Self::NotTaken`] takes a start pick and an exit pick.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PickCapability {
     /// A point on a closed ring: the ring is re-sequenced to start there
@@ -31,7 +31,8 @@ pub enum PickCapability {
     /// The corner of the first raster row and the end of the last row.
     /// Snaps to a corner.
     Raster,
-    /// The wire's threading point (`WireContourOp.picks`): a start only.
+    /// The wire's threading point (`WireContourOp.picks`) and its exit
+    /// (#3332): the end of an open run, or where a closed cut leaves.
     Threading,
     /// A point in the lathe (Z, X) plane (#3331): the first pass starts
     /// there and the last pass leaves there. Each pick states its Z.
@@ -57,8 +58,9 @@ impl PickCapability {
     pub fn takes(self, role: PickRole) -> bool {
         match self {
             Self::NotTaken(_) => false,
-            Self::Threading => role == PickRole::Start,
-            Self::Ring | Self::Region | Self::HoleOrder | Self::Ends | Self::Raster | Self::Meridian => true,
+            Self::Threading | Self::Ring | Self::Region | Self::HoleOrder | Self::Ends | Self::Raster | Self::Meridian => {
+                matches!(role, PickRole::Start | PickRole::Exit)
+            }
         }
     }
 }
@@ -273,6 +275,34 @@ impl OpParams {
                 ));
             }
         }
-        None
+        match self {
+            OpParams::WireContour(w) => wire_exit_refusal(w),
+            _ => None,
+        }
     }
+}
+
+/// The wire's exit pick beside what it is not cut with (#3332): the exit
+/// is read on a vertical, single-pass, untabbed cut of one profile or
+/// one open run. Each other cut starts or ends its passes at the
+/// threading point, so the pair is refused by name at the command door
+/// and at generation, never cut as something else. `None` when the op
+/// states no exit point or none of those.
+#[must_use]
+pub(super) fn wire_exit_refusal(w: &super::types::WireContourOp) -> Option<String> {
+    w.picks.first(PickRole::Exit)?;
+    let with = if w.four_axis.is_some() {
+        "a 4-axis cut - its two profiles are paired from the start hole, and the wire returns there".to_owned()
+    } else if w.burnout.is_some() {
+        "a no-core burnout - its rings are cut from the start hole, and the wire returns there".to_owned()
+    } else if w.tabs.is_some() {
+        "tabs - each stretch between tabs and the tab cut-off start from the threading point with the wire threaded".to_owned()
+    } else if !w.skims.is_empty() {
+        format!("{} skim pass(es) - every pass starts and ends at the threading point", w.skims.len())
+    } else if w.taper_deg != 0.0 {
+        format!("a {:.3} degree taper - a leaning cut returns to the threading point", w.taper_deg)
+    } else {
+        return None;
+    };
+    Some(format!("Wire Contour: an exit point is stated with {with}; clear the exit point or that setting"))
 }

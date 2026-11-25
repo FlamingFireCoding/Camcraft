@@ -554,6 +554,11 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v79 -> v80 (#3153): absent `minimum_cone_radius` is zero, the
         // ideal-tip Chamfer path that every v78/v79 file already stated. A
         // v79 reader must refuse v80 rather than drop a positive band radius.
+        // v80 -> v81 (#2772): a rotary op may state its own rotation
+        // axis (`stated_axis`); absent stays absent and follows the
+        // machine, else the fit, as every v80 file read its axis. No
+        // rung between v80 and v81 rewrites an entity, so the step-up
+        // is the stamp itself.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         if from < 68 {

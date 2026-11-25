@@ -61,7 +61,7 @@ pub enum PreviewMode {
 
 /// The editor's view state that stays when another tool opens: the tab,
 /// the preview view, the 3D view's orbit and (#3897) the preview's
-/// toggles. Both toggles start on.
+/// toggles. The toggles start on.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EditorFace {
     pub tab: ToolEditorTab,
@@ -71,6 +71,8 @@ pub struct EditorFace {
     pub dims: bool,
     /// #3897: the preview draws the holder (the 3D model and the side view).
     pub holder: bool,
+    /// #3908: the 3D model draws the helical flutes (display only).
+    pub flutes: bool,
 }
 
 impl Default for EditorFace {
@@ -81,6 +83,7 @@ impl Default for EditorFace {
             orbit: Orbit::default(),
             dims: true,
             holder: true,
+            flutes: true,
         }
     }
 }

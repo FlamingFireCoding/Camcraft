@@ -1618,6 +1618,7 @@ fn seed_rotary_contour(c: &Carried) -> OpParams {
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 90.0,
+        stated_axis: None,
         picks: crate::path_picks::PathPicks::default(),
     }
 }
@@ -1636,6 +1637,7 @@ fn seed_rotary_parallel(c: &Carried) -> OpParams {
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 90.0,
+        stated_axis: None,
         picks: crate::path_picks::PathPicks::default(),
     }
 }
@@ -1698,6 +1700,7 @@ fn seed_rotary_offset(c: &Carried) -> OpParams {
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 90.0,
+        stated_axis: None,
         picks: crate::path_picks::PathPicks::default(),
     }
 }
