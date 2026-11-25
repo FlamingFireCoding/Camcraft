@@ -50,6 +50,7 @@ mod arc_laws;
 mod arc_offset;
 mod arc_span;
 mod burnout;
+mod exit;
 mod laws;
 mod pairing;
 mod preimage;
@@ -73,6 +74,7 @@ pub use tabs::{cutoff_split, TabParams, MAX_TABS};
 pub use taper::{wire_contour_tapered, WireCorner, WireTaper};
 
 pub use burnout::{clearance_door, wire_burnout, CORE_AREA_TOL, RING_STEP};
+pub use exit::{wire_contour_exit, END_TIE};
 pub use open::{CLEARANCE_MAX, EDGE_TOL};
 
 use crate::cl::{MoveKind, PathBuilder, Toolpath};

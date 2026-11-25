@@ -28,12 +28,13 @@ mod common;
 
 use camcraft_app::cl::{angles_to_axis, axis_to_angles, Move, MoveKind};
 use camcraft_app::geometry::Point3;
+use flecs_ecs::prelude::World;
 use camcraft_app::stock_sim::{
     rotary_kind_lift, rotary_pose_tol, simulate_document, simulate_rotary_slice, SimOp, FIELD_VERDICT_EPS,
     ROTARY_VERDICT_REFUSAL,
 };
 use camcraft_app::stock_view::field_view;
-use common::rotary_bar::{field_stock, params, program, run, world_for, Kind, BAR_R, CELL, HALF_L, R};
+use common::rotary_bar::{field_stock, params, program, run, world_for, world_for_stated, Kind, BAR_R, CELL, HALF_L, R};
 
 /// The verdict-class chord sag at the tool's farthest point.
 const POSE_TOL: f64 = 1e-4;
@@ -179,17 +180,23 @@ fn in_bar(lying: bool, p: Point3) -> bool {
 }
 
 fn parity(kind: Kind) {
-    let lying = kind.lying();
     let world = world_for(kind);
-    let (moves, _) = program(&world);
-    let (f, stats, wall) = run(&world, CELL, POSE_TOL);
-    let uncut = field_stock(&world, CELL);
+    parity_on(&world, kind.lying(), &format!("{kind:?}"));
+}
+
+/// The same parity about a world the caller built (#2772 parts 1-2:
+/// the STATED axis of a mounted machine, judged against the same
+/// facets, carried by the same consumers).
+fn parity_on(world: &World, lying: bool, label: &str) {
+    let (moves, _) = program(world);
+    let (f, stats, wall) = run(world, CELL, POSE_TOL);
+    let uncut = field_stock(world, CELL);
     let law_sag = H * H / (8.0 * R);
     let bound = stats.center_sag + FIELD_VERDICT_EPS + law_sag;
     let band = (R + BAR_R) * stats.half_angle + law_sag + FIELD_VERDICT_EPS;
     let per = wall.as_secs_f64() * 1e3 / stats.sub_chords.max(1) as f64;
     println!(
-        "{kind:?}: {} moves, {} turning -> {} sub-chords, half-angle {:.3e}, centre sag {:.3e}, wall {:.2?} ({per:.3} ms/sub-chord)",
+        "{label}: {} moves, {} turning -> {} sub-chords, half-angle {:.3e}, centre sag {:.3e}, wall {:.2?} ({per:.3} ms/sub-chord)",
         moves.len(), stats.turning_moves, stats.sub_chords, stats.half_angle, stats.center_sag, wall
     );
     assert!(stats.center_sag <= POSE_TOL);
@@ -208,13 +215,13 @@ fn parity(kind: Kind) {
             // tessellated crown), never an analytic circle above it.
             let skin = uncut.top(x, y);
             let got = f.top(x, y);
-            assert!(got.is_finite() && skin.is_finite(), "{kind:?}: no top at ({x}, {y})");
+            assert!(got.is_finite() && skin.is_finite(), "{label}: no top at ({x}, {y})");
             match law_floor(&cs, x, y, skin) {
                 // Untouched from above by more than the flute's chord
                 // band: the field must leave the column's own top.
                 Floor::Standing(clear) if clear > band => {
                     let e = (got - skin).abs();
-                    assert!(e <= bound, "{kind:?}: standing top at ({x}, {y}): field {got:.7} vs uncut {skin:.7}, |delta| {e:.3e} > {bound:.3e}");
+                    assert!(e <= bound, "{label}: standing top at ({x}, {y}): field {got:.7} vs uncut {skin:.7}, |delta| {e:.3e} > {bound:.3e}");
                     standing += 1;
                 }
                 Floor::Standing(_) => {}
@@ -233,22 +240,22 @@ fn parity(kind: Kind) {
                     let e = (got - want).abs();
                     worst = worst.max(e);
                     tops += 1;
-                    assert!(e <= bound, "{kind:?}: floor top at ({x}, {y}): field {got:.7} vs law {want:.7}, |delta| {e:.3e} > {bound:.3e}");
+                    assert!(e <= bound, "{label}: floor top at ({x}, {y}): field {got:.7} vs law {want:.7}, |delta| {e:.3e} > {bound:.3e}");
                 }
             }
         }
     }
     println!(
-        "{kind:?} height parity: {tops} sphere-cut tops, worst |delta| {worst:.3e} (bound {bound:.3e}); {standing} standing tops exact; {flutes} flute-cut, {grazing} grazing, {slivers} sliver columns skipped"
+        "{label} height parity: {tops} sphere-cut tops, worst |delta| {worst:.3e} (bound {bound:.3e}); {standing} standing tops exact; {flutes} flute-cut, {grazing} grazing, {slivers} sliver columns skipped"
     );
     // A laid bar's crown is read whole from above. A standing bar's
     // rings cut its flanks and bore under its cap, and a column
     // marched from above reads the cap or the top ring's floor in the
     // neck's annulus; the sign scan judges the tunnels.
     if lying {
-        assert!(tops > 50, "{kind:?}: the sphere-cut floor must be read, got {tops}");
+        assert!(tops > 50, "{label}: the sphere-cut floor must be read, got {tops}");
     } else {
-        assert!(tops + standing > 50, "{kind:?}: the cap and the top ring's floor must be read, got {tops} + {standing}");
+        assert!(tops + standing > 50, "{label}: the cap and the top ring's floor must be read, got {tops} + {standing}");
     }
 
     let (mut checked, mut misses, mut worst_sign) = (0usize, 0usize, 0.0f64);
@@ -274,9 +281,9 @@ fn parity(kind: Kind) {
             }
         }
     }
-    println!("{kind:?} sign parity: {checked} cell centres, {misses} misses, worst {worst_sign:.3e} (band {band:.3e})");
-    assert_eq!(misses, 0, "{kind:?}: sign misses off the band");
-    assert!(checked > 500, "{kind:?}: the scan must cover the skin, got {checked}");
+    println!("{label} sign parity: {checked} cell centres, {misses} misses, worst {worst_sign:.3e} (band {band:.3e})");
+    assert_eq!(misses, 0, "{label}: sign misses off the band");
+    assert!(checked > 500, "{label}: the scan must cover the skin, got {checked}");
 }
 
 /// The eye's chord-class cost of a kind's program at the verdict
@@ -312,6 +319,20 @@ fn the_contour_kind_reads_the_radial_law() {
 #[ignore = "heavy lane (M13.1 rotary parity): Offset's program at the verdict class (89,685 sub-chords), the law marched per column - run at milestone close with --release -- --ignored"]
 fn the_offset_kind_reads_the_radial_law() {
     parity(Kind::Offset);
+}
+
+/// #2772 parts 1-2: the same Parallel parity about the microARC 4's
+/// STATED A line ([1, 0, 0] through the work offset origin), judged
+/// against the same facets and chorded by the same consumers
+/// (`rotary_axis_of` reads the stated axis first). The path is the
+/// fitted one bit for bit - the quick suite pins that - so this lane
+/// proves the STATED axis flows the whole sim pipeline at the verdict
+/// class.
+#[test]
+#[ignore = "heavy lane (M13.1 rotary parity, #2772 stated axis): Parallel's program on the stated A line, the law marched per column - run at milestone close with --release -- --ignored"]
+fn the_stated_axis_parallel_reads_the_radial_law() {
+    let world = world_for_stated(Kind::Parallel);
+    parity_on(&world, true, "Parallel (stated A)");
 }
 
 #[test]

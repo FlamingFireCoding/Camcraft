@@ -846,6 +846,7 @@ impl ParamsDto {
                 lead_deg,
                 lag_deg,
                 max_tilt_deg,
+                stated_axis,
                 picks,
             } => ParamsDto::RotaryContour {
                 tolerance: *tolerance,
@@ -859,6 +860,7 @@ impl ParamsDto {
                 lead_deg: *lead_deg,
                 lag_deg: *lag_deg,
                 max_tilt_deg: *max_tilt_deg,
+                stated_axis: *stated_axis,
                 picks: PathPicksDto::from_picks(picks),
             },
             OpParams::RotaryParallel {
@@ -874,6 +876,7 @@ impl ParamsDto {
                 lead_deg,
                 lag_deg,
                 max_tilt_deg,
+                stated_axis,
                 picks,
             } => ParamsDto::RotaryParallel {
                 tolerance: *tolerance,
@@ -888,6 +891,7 @@ impl ParamsDto {
                 lead_deg: *lead_deg,
                 lag_deg: *lag_deg,
                 max_tilt_deg: *max_tilt_deg,
+                stated_axis: *stated_axis,
                 picks: PathPicksDto::from_picks(picks),
             },
             // The wrap ladder (M5.1 stage E2): the pocket's bridge,
@@ -911,6 +915,7 @@ impl ParamsDto {
                 lead_deg,
                 lag_deg,
                 max_tilt_deg,
+                stated_axis,
                 picks,
             } => ParamsDto::RotaryOffset {
                 links: links_to_dto(links, &p.default_links()),
@@ -943,6 +948,7 @@ impl ParamsDto {
                 lead_deg: *lead_deg,
                 lag_deg: *lag_deg,
                 max_tilt_deg: *max_tilt_deg,
+                stated_axis: *stated_axis,
                 picks: PathPicksDto::from_picks(picks),
             },
             // The stamped ladder (M5.1 stage E3): the pocket's bridge
@@ -2252,6 +2258,7 @@ impl ParamsDto {
                 lead_deg,
                 lag_deg,
                 max_tilt_deg,
+                stated_axis,
                 picks,
             } => OpParams::RotaryContour {
                 tolerance: *tolerance,
@@ -2265,6 +2272,7 @@ impl ParamsDto {
                 lead_deg: *lead_deg,
                 lag_deg: *lag_deg,
                 max_tilt_deg: *max_tilt_deg,
+                stated_axis: *stated_axis,
                 picks: picks.to_picks(),
             },
             ParamsDto::RotaryParallel {
@@ -2280,6 +2288,7 @@ impl ParamsDto {
                 lead_deg,
                 lag_deg,
                 max_tilt_deg,
+                stated_axis,
                 picks,
             } => OpParams::RotaryParallel {
                 tolerance: *tolerance,
@@ -2294,6 +2303,7 @@ impl ParamsDto {
                 lead_deg: *lead_deg,
                 lag_deg: *lag_deg,
                 max_tilt_deg: *max_tilt_deg,
+                stated_axis: *stated_axis,
                 picks: picks.to_picks(),
             },
             // The wrap ladder reads back whole; `validate_kind` has
@@ -2318,6 +2328,7 @@ impl ParamsDto {
                 lead_deg,
                 lag_deg,
                 max_tilt_deg,
+                stated_axis,
                 picks,
             } => OpParams::RotaryOffset {
                 links: links_from_dto(links.as_ref(), crate::links::Links::ROUGH3D),
@@ -2349,6 +2360,7 @@ impl ParamsDto {
                 lead_deg: *lead_deg,
                 lag_deg: *lag_deg,
                 max_tilt_deg: *max_tilt_deg,
+                stated_axis: *stated_axis,
                 picks: legacy_picks(picks, links.as_ref()),
             },
             // The stamped ladder reads back whole; `validate_kind` has

@@ -18,6 +18,12 @@
 //!   that move plus the drawing's widest joint gap passes [`MARGIN_FLOOR`],
 //!   the path is laid that much farther on the waste side, so the kerf
 //!   never reaches the product, and the path says so.
+//! - **Arc joints** (#3959). Two arcs whose snapped ends differ by no more
+//!   than [`JOIN_MAX`] meet at the mean of the two ends, arc to arc: no
+//!   connector move of a few nanometres is written between them. Each arc
+//!   end then stands up to half the gap off its circle, which the laws
+//!   read (a spiral reading) and the margin holds. A wider gap keeps a real
+//!   connector line.
 //!
 //! Provenance: our own implementation over the public wire EDM practice
 //! the module head cites; RS-274 / ISO 6983 circular interpolation for
@@ -41,6 +47,11 @@ use super::{laws, WireParams, WireSide, MIN_LEAD};
 /// The least margin (mm) the path is moved out by: 1 nm. Under it the
 /// kerf law's own [`super::PATH_TOL`] (10 nm) holds the difference.
 const MARGIN_FLOOR: f64 = 1e-6;
+
+/// The widest gap (mm) two neighbour arcs are joined across at the mean
+/// of their ends (2.5 um, the walk's own joint reach). A gap past it is a
+/// real move and keeps its connector line.
+const JOIN_MAX: f64 = 10.0 * super::arc_chain::JOINT_TOL;
 
 fn invalid(why: String) -> GenError {
     GenError::Invalid(format!("wire contour: {why}"))
@@ -83,7 +94,8 @@ pub fn wire_contour_arcs(chain: &ArcChain, p: &WireParams) -> Result<Toolpath, G
             Span::Line { .. } => None,
         })
         .fold(0.0, f64::max);
-    let margin = snap + chain.max_gap() + miss;
+    let shift = 0.5 * arc_gaps(&first.iter().copied().map(snapped).collect::<Vec<_>>());
+    let margin = snap + chain.max_gap() + miss + shift;
     let margin = if margin > MARGIN_FLOOR { margin } else { 0.0 };
     let walk = if margin > 0.0 { parallel_walk(chain.spans(), sign * (k + margin), p.sharp_corners)?.0 } else { first };
     simple(&walk, k)?;
@@ -145,6 +157,12 @@ pub fn wire_contour_arcs(chain: &ArcChain, p: &WireParams) -> Result<Toolpath, G
             chain.max_gap() * 1e6,
             miss * 1e6
         ));
+        if shift > 0.0 {
+            said.push(format!(
+                "wire EDM: neighbour arcs meet at the mean of their written ends, up to {:.1} nm off each arc's circle - the margin above holds it",
+                shift * 1e6
+            ));
+        }
     }
     said.extend(rest.map(|r| laws::sharp_note(r, k)));
     path.notes.extend(said);
@@ -250,9 +268,32 @@ fn snapped(s: Span) -> Span {
     Span::Arc { c: c2, r, a: onto(a), b: onto(b), ccw, sweep }
 }
 
+/// The widest gap (mm) between the end of an arc and the start of the
+/// arc after it, the closing pair included, that [`stitch`] joins at
+/// their mean.
+fn arc_gaps(seq: &[Span]) -> f64 {
+    let n = seq.len();
+    (0..n)
+        .filter_map(|i| {
+            let (s, t) = (seq[i], seq[(i + 1) % n]);
+            let g = dist(s.end(), t.start());
+            joins(&s, &t, g).then_some(g)
+        })
+        .fold(0.0, f64::max)
+}
+
+/// Two arcs whose ends `g` apart meet at their mean: the gap is under
+/// [`JOIN_MAX`], and the half gap is under a quarter of each arc's chord,
+/// so no end crosses the other and no arc turns into a full circle.
+fn joins(s: &Span, t: &Span, g: f64) -> bool {
+    let chord = |x: &Span| dist(x.start(), x.end());
+    s.is_arc() && t.is_arc() && g > 0.0 && g <= JOIN_MAX && 2.0 * g < chord(s) && 2.0 * g < chord(t)
+}
+
 /// Make each span start where the one before it ends: a line's end moves
-/// to its neighbour arc's, and two arcs that do not share their end are
-/// joined by a short line (no longer than the margin allows).
+/// to its neighbour arc's; two arcs that do not share their end meet at the
+/// mean of the two ends ([`joins`], #3959); only two arcs farther apart are
+/// joined by a line, a real move.
 fn stitch(seq: Vec<Span>) -> Vec<Span> {
     let mut out: Vec<Span> = Vec::with_capacity(seq.len());
     for mut s in seq {
@@ -266,6 +307,12 @@ fn stitch(seq: Vec<Span>) -> Vec<Span> {
                 *b = ss;
             } else if let Span::Line { a, .. } = &mut s {
                 *a = e;
+            } else if joins(last, &s, dist(e, ss)) {
+                let m = mul(add(e, ss), 0.5);
+                if let (Span::Arc { b, .. }, Span::Arc { a, .. }) = (last, &mut s) {
+                    *b = m;
+                    *a = m;
+                }
             } else {
                 joiner = Some(Span::Line { a: e, b: ss });
             }

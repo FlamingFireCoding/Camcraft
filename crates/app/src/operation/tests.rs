@@ -351,6 +351,7 @@ fn rotary_twins_stamp_apart_and_with_their_stepover() {
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 90.0,
+        stated_axis: None,
         picks: Default::default(),
     };
     let parallel = |stepover: Option<f64>| OpParams::RotaryParallel {
@@ -366,6 +367,7 @@ fn rotary_twins_stamp_apart_and_with_their_stepover() {
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 90.0,
+        stated_axis: None,
         picks: Default::default(),
     };
     let digest = |p: &OpParams| {
@@ -406,6 +408,7 @@ fn rotary_offset_stamp_moves_with_its_wrap_numbers() {
             lead_deg: 0.0,
             lag_deg: 0.0,
             max_tilt_deg: 90.0,
+            stated_axis: None,
             picks: Default::default(),
         }
     };
