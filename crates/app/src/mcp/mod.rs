@@ -46,6 +46,7 @@ mod job;
 mod listen;
 pub mod link;
 mod link_client;
+pub mod link_owner;
 mod port_flag;
 mod wire;
 mod live;
