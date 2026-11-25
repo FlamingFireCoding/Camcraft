@@ -74,7 +74,7 @@ fn each_old_name_selects_the_new_post_by_command_script_and_lookup() {
 }
 
 #[test]
-fn a_project_saved_with_each_old_name_opens_posts_and_saves_the_new_name() {
+fn a_project_saved_with_each_old_name_opens_and_saves_the_new_name() {
     let world = camcraft_app::world::new_world();
     let mut h = History::default();
     h.execute(&world, SelectPost::new(&world, PostRef::Named(agie::POST.into())).expect("select"));
@@ -98,7 +98,9 @@ fn a_project_saved_with_each_old_name_opens_posts_and_saves_the_new_name() {
         let opened = camcraft_app::world::new_world();
         project::open(&opened, &old_text).expect("a project with the old name opens");
         assert_eq!(posting::document_post_of(&opened), PostRef::Named(agie::POST.into()));
-        assert!(posting::script_source(&opened).is_ok(), "the old project posts with the shipped script");
+        // The script resolves here; `agie_native::legacy_name` posts the
+        // opened project and compares its job files with the goldens.
+        assert!(posting::script_source(&opened).is_ok(), "the old project resolves the shipped script");
         let doc = setup_post_options::script_document(&opened);
         assert_eq!(doc.for_post(&key), &ov, "the option under the old key moves to the new key");
         assert!(doc.by_post.keys().all(|k| !k.contains(old)));

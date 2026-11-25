@@ -37,6 +37,12 @@ Agie also builds die-sinking machines.
   rename; the refusal now says "The Agie Wire EDM job requires ...".
 - Change the script receipt `format` value. Dropped: scripts read it, so
   a change is a breaking change.
+- Post the legacy project in `wire_post_alias.rs` (the #4022 review asked
+  for a posting round-trip). Dropped: the control-checked punch fixture
+  and the job goldens live in the `agie_native` suite. The posting
+  round-trip is the submodule `agie_native/legacy_name.rs`, which reuses
+  that fixture. A copy of the fixture in a second test binary would
+  drift.
 - Keep the site anchor `#native-wire-edm-job-files`. Dropped: the one
   link to it (`posting.md`) now points to the new heading anchor
   `#agie-wire-edm-agievision`.

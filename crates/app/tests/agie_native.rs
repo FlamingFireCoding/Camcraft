@@ -24,6 +24,8 @@ mod die;
 mod dxf;
 #[path = "agie_native/group.rs"]
 mod group;
+#[path = "agie_native/legacy_name.rs"]
+mod legacy_name;
 #[path = "agie_native/opening.rs"]
 mod opening;
 #[path = "agie_native/quality.rs"]
