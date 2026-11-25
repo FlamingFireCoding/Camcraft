@@ -47,6 +47,7 @@ mod arc_chain;
 mod arc_cut;
 mod arc_dist;
 mod arc_laws;
+mod arc_lead;
 mod arc_offset;
 mod arc_span;
 mod burnout;
@@ -64,7 +65,8 @@ mod tabs;
 mod taper;
 
 pub use arc_chain::{ArcChain, JOINT_TOL};
-pub use arc_cut::wire_contour_arcs;
+pub use arc_cut::{wire_contour_arcs, wire_contour_arcs_led};
+pub use arc_lead::WireLead;
 pub use arc_span::Span as ArcSpan;
 pub use skims::{check_passes, wire_passes, WirePass};
 

@@ -109,6 +109,9 @@ pub(super) fn wire_gate(world: &World, setup: Option<&str>, tool: &str, params: 
             if let Some(why) = operation::wire_op::tabs_taper_refusal(w) {
                 return Err(CommandError::Invalid(why));
             }
+            if let Some(why) = operation::wire_sketch_arcs::lead_arc_refusal(w) {
+                return Err(CommandError::Invalid(why));
+            }
             operation::wire_op::condition_of(world, setup, tool, w).map_err(CommandError::Invalid)?;
             // #1800: a taper the mounted machine cannot post is refused
             // here, by the machine check's own words, not first at the post.
