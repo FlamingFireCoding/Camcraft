@@ -184,8 +184,8 @@ pub(crate) fn retract_note(
     }
 }
 
-/// The chamfer's derived corner Z (width x tan(angle) below the top),
-/// resolved through the op's source like [`retract_note`].
+/// The chamfer's virtual tip Z, resolved through the op's source like
+/// [`retract_note`].
 pub(crate) fn corner_note(
     world: &World,
     setup: Option<&str>,
@@ -196,11 +196,11 @@ pub(crate) fn corner_note(
 ) -> String {
     match resolve_all(world, setup, src, tilt, [top]) {
         Ok([tz]) if (tz - drop).is_finite() => format!(
-            "the corner stands at {} - derived: width x tan(angle) below the top plane",
+            "the virtual cone tip stands at {} - derived: (tip offset + width) x tan(angle) below the top plane",
             units::len(tz - drop, units::of(world), 3)
         ),
-        Ok(_) => "the corner is unresolved: width x tan(angle) is not finite".to_owned(),
-        Err(why) => format!("the corner is unresolved: {why}"),
+        Ok(_) => "the cone tip is unresolved: (tip offset + width) x tan(angle) is not finite".to_owned(),
+        Err(why) => format!("the cone tip is unresolved: {why}"),
     }
 }
 

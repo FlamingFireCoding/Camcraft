@@ -463,6 +463,7 @@ impl ParamsDto {
             OpParams::Chamfer2D {
                 width,
                 angle_deg,
+                minimum_cone_radius,
                 clearance_z,
                 retract_z,
                 top_z,
@@ -476,6 +477,7 @@ impl ParamsDto {
             } => ParamsDto::Chamfer2D {
                 width: *width,
                 angle_deg: *angle_deg,
+                minimum_cone_radius: *minimum_cone_radius,
                 clearance_z: (*clearance_z).into(),
                 retract_z: (*retract_z).map(Into::into),
                 top_z: (*top_z).into(),
@@ -1888,6 +1890,7 @@ impl ParamsDto {
             ParamsDto::Chamfer2D {
                 width,
                 angle_deg,
+                minimum_cone_radius,
                 clearance_z,
                 retract_z,
                 top_z,
@@ -1901,6 +1904,7 @@ impl ParamsDto {
             } => OpParams::Chamfer2D {
                 width: *width,
                 angle_deg: *angle_deg,
+                minimum_cone_radius: *minimum_cone_radius,
                 clearance_z: (*clearance_z).into(),
                 retract_z: (*retract_z).map(Into::into),
                 top_z: (*top_z).into(),

@@ -5670,10 +5670,11 @@ fn a_project_save_into_a_folder_without_write_access_is_refused_and_kept() {
 /// file steps to `TIP_FORM_PROJECT_VERSION`, so an older build refuses it
 /// instead of reading the tip as sharp (a smaller tool). A file with only
 /// sharp tapers keeps `PROJECT_VERSION` and writes no tip key, so an older
-/// build still opens it.
+/// build still opens it. Since #3153 stepped `PROJECT_VERSION` past the
+/// tip-form step (v80), every file says `PROJECT_VERSION` and the tip keys
+/// ride the unconditional ladder.
 #[test]
 fn a_tip_form_round_trips_and_steps_the_project_version() {
-    const { assert!(project::TIP_FORM_PROJECT_VERSION > project::PROJECT_VERSION) };
     let Some((_, sharp)) = catalog().into_iter().find(|(n, _)| *n == "CM-0600-90") else {
         panic!("the catalog has CM-0600-90");
     };
@@ -5693,7 +5694,8 @@ fn a_tip_form_round_trips_and_steps_the_project_version() {
     let ball = Tool { tip_form: camcraft_app::tools::TaperTip::Ball, corner_r: 0.5, ..sharp.clone() };
     let text = saved_with(&[("CM", sharp.clone()), ("FLAT", flat.clone()), ("BALL", ball.clone())]);
     let doc: serde_json::Value = serde_json::from_str(&text).expect("json");
-    assert_eq!(doc["version"], serde_json::json!(project::TIP_FORM_PROJECT_VERSION), "a tip form steps the version");
+    assert_eq!(doc["version"], serde_json::json!(project::written_project_version(true)), "a tip form steps the version");
+    assert!(project::written_project_version(true) >= project::TIP_FORM_PROJECT_VERSION, "an older build refuses a tip-form file");
     let world = new_world();
     project::open(&world, &text).expect("this build reads its own tip-form file");
     for (name, want) in [("CM", &sharp), ("FLAT", &flat), ("BALL", &ball)] {

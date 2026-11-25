@@ -174,7 +174,12 @@ use super::*;
 /// nothing, what every v77 machine was, so a v77 file steps up unchanged.
 /// An old reader must refuse a v78 file rather than drop the reservations
 /// and post a cutting tool at a reserved probe pocket.
-pub const PROJECT_VERSION: u32 = 78;
+/// v80 (#3153): a 2D Chamfer may select a positive `minimum_cone_radius`
+/// (the tip offset). The zero default is omitted, so a v78/v79 Chamfer reads
+/// and cuts exactly as before. v79 stays the #3368 tip-form step, which a
+/// v80 reader reads as is. An old reader must refuse v80 rather than
+/// drop a positive radius and post the old tip-on-wall cone.
+pub const PROJECT_VERSION: u32 = 80;
 
 /// v79 (#3368), a conditional step: only a file that holds a flat or
 /// ball taper tip says 79. A file without one still says

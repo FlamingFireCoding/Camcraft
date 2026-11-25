@@ -2509,17 +2509,14 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         // the kernel states the law on the face alone. The tool must
         // be a chamfer mill whose cone is the supplement of the
         // authored angle (a 45-degree chamfer takes the shop's
-        // 90-degree tool), and its diameter must reach the face's
-        // full width - `width / tan(alpha)` of cone height is exactly
-        // the corner depth, so the reach door is the whole flute law
-        // for a well-made cone. `side` cannot change the ride's circle -
-        // the cone meets its wall the same circle whether the material
-        // stands inside it (bore) or outside (boss) - it says which
-        // wall the region picks (the sim judges), and so which way
-        // climb travels it (#1555: material right of travel under M3).
+        // 90-degree tool), and its cone must reach the selected band's
+        // outer radius. The ideal cone has to stand
+        // `(minimum_cone_radius + width) * tan(angle)` above its virtual
+        // tip. `side` names the air side for loops and open runs.
         OpParams::Chamfer2D {
             width,
             angle_deg,
+            minimum_cone_radius,
             feed,
             plunge_feed,
             climb,
@@ -2539,28 +2536,44 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     tool_name, tool.tip_angle
                 )));
             }
-            if tool.diameter < 2.0 * width - 1e-9 {
+            let outer_radius = minimum_cone_radius + width;
+            if tool.diameter * 0.5 < outer_radius - 1e-9 {
+                if *minimum_cone_radius == 0.0 {
+                    return Err(GenError::Invalid(format!(
+                        "a {width} mm chamfer reaches {} mm from the wall; '{}' is only {} mm across",
+                        width, tool_name, tool.diameter
+                    )));
+                }
                 return Err(GenError::Invalid(format!(
-                    "a {width} mm chamfer reaches {} mm from the wall; '{}' is only {} mm across",
-                    width, tool_name, tool.diameter
+                    "a {width} mm chamfer with a {minimum_cone_radius} mm tip offset reaches \
+                     {outer_radius} mm from the cone axis; '{}' has only {} mm of tool radius",
+                    tool_name,
+                    tool.diameter * 0.5
                 )));
             }
-            if tool.flute_len < width * angle_deg.to_radians().tan() - 1e-9 {
+            let reach = outer_radius * angle_deg.to_radians().tan();
+            if tool.flute_len < reach - 1e-9 {
                 // The depth is DERIVED, and a derived float must not
                 // reach the user as its bits: tan(45 degrees) is
                 // 0.9999999999999999, and a refusal that quotes
                 // "3.9999999999999996 mm" reads as a bug, not a law.
                 // A tenth is the shop's reading precision.
+                if *minimum_cone_radius == 0.0 {
+                    return Err(GenError::Invalid(format!(
+                        "the cone of '{}' is {} mm of flute, short of the {:.1} mm depth this face stands at",
+                        tool_name, tool.flute_len, reach
+                    )));
+                }
                 return Err(GenError::Invalid(format!(
-                    "the cone of '{}' is {} mm of flute, short of the {:.1} mm depth this face stands at",
-                    tool_name,
-                    tool.flute_len,
-                    width * angle_deg.to_radians().tan()
+                    "the cone of '{}' is {} mm of flute, short of the {:.1} mm cone reach \
+                     for a {minimum_cone_radius} mm tip offset plus a {width} mm chamfer",
+                    tool_name, tool.flute_len, reach
                 )));
             }
             let cp = ChamferParams {
                 width: *width,
                 angle_deg: *angle_deg,
+                minimum_cone_radius: *minimum_cone_radius,
                 clearance_z: hl.clearance,
                 retract_z: hl.retract,
                 top_z: req_z(hl.top, "Top of Part Z")?,
