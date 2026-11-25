@@ -16,7 +16,7 @@ use super::super::super::layout;
 use super::super::{shell_harness, CommandKind, Tab};
 use super::{
     blank_harness, has_op_row, pump_until_idle, select_provider, submit_prompt,
-    toggle_ai_chat_via_view_door, BlockingTransport, ScriptedTransport,
+    toggle_ai_chat_via_view_door, BlockingTransport, HANG_GUARD, ScriptedTransport,
 };
 
 #[test]
@@ -154,7 +154,7 @@ fn cancel_stops_running_worker_via_atomic_flag_and_leaves_document_unchanged() {
     let before_done = h.state().state.history.done_len();
 
     submit_prompt(&mut h, "Long running request");
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + HANG_GUARD;
     while !started.load(Ordering::SeqCst) {
         assert!(Instant::now() < deadline, "worker never started");
         std::thread::sleep(Duration::from_millis(5));
@@ -167,6 +167,35 @@ fn cancel_stops_running_worker_via_atomic_flag_and_leaves_document_unchanged() {
     assert!(saw_cancel.load(Ordering::SeqCst), "Arc<AtomicBool> cancel stopped worker");
     assert!(h.query_by_label_contains("Cancelled").is_some());
     assert_eq!(h.state().state.history.done_len(), before_done);
+}
+
+#[test]
+fn cancel_after_long_ui_stall_still_reaches_blocked_worker() {
+    // Pins #4021: a slow machine can stall the UI thread between the worker start
+    // and the Cancel click. The worker must wait for the flag, not for a clock.
+    let mut h = blank_harness();
+    h.run();
+    toggle_ai_chat_via_view_door(&mut h);
+
+    let started = Arc::new(AtomicBool::new(false));
+    let saw_cancel = Arc::new(AtomicBool::new(false));
+    let transport = Arc::new(BlockingTransport {
+        started: Arc::clone(&started),
+        saw_cancel: Arc::clone(&saw_cancel),
+    });
+    h.state_mut().state.ai_chat.set_transport(transport);
+
+    submit_prompt(&mut h, "Long running request");
+    while !started.load(Ordering::SeqCst) {
+        std::thread::sleep(Duration::from_millis(5));
+        h.run();
+    }
+    std::thread::sleep(Duration::from_secs(6));
+    h.get_by_role_and_label(Role::Button, "Cancel").click();
+    pump_until_idle(&mut h);
+
+    assert!(saw_cancel.load(Ordering::SeqCst), "worker saw the cancel flag");
+    assert!(h.query_by_label_contains("Cancelled").is_some());
 }
 
 #[test]
