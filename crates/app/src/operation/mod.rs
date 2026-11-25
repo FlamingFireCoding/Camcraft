@@ -134,7 +134,7 @@ mod agie_die;
 pub(crate) use agie_profile::{AgieSketch, agie_job, agie_quality, agie_sketch_job};
 mod wire_ruled;
 pub(crate) mod wire_sketch;
-mod wire_sketch_arcs;
+pub(crate) mod wire_sketch_arcs;
 mod agie_inspection;
 mod agie_opening;
 pub(crate) use agie_inspection::prepare_inspection;
