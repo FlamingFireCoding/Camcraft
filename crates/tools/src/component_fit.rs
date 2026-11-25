@@ -127,10 +127,10 @@ pub fn check_insert_fit(holder: &ToolComponent, port: &str, insert: &ToolCompone
     if seat.size != ins.size {
         return no(FitProperty::Size, format!("{:02}", seat.size), format!("{:02}", ins.size));
     }
-    if let Some(t) = seat.thickness {
-        if t != ins.thickness {
-            return no(FitProperty::Thickness, t.code(), ins.thickness.code());
-        }
+    if let Some(t) = seat.thickness
+        && t != ins.thickness
+    {
+        return no(FitProperty::Thickness, t.code(), ins.thickness.code());
     }
     let takes = seat.clamping.takes();
     let has = ins.fixing.hole();
@@ -141,10 +141,10 @@ pub fn check_insert_fit(holder: &ToolComponent, port: &str, insert: &ToolCompone
             format!("{} (fixing {})", hole_name(has), ins.fixing.letter()),
         );
     }
-    if let Some(h @ (Hand::R | Hand::L)) = ins.hand {
-        if h != seat.hand {
-            return no(FitProperty::Hand, seat.hand.letter().into(), h.letter().into());
-        }
+    if let Some(h @ (Hand::R | Hand::L)) = ins.hand
+        && h != seat.hand
+    {
+        return no(FitProperty::Hand, seat.hand.letter().into(), h.letter().into());
     }
     Ok(())
 }

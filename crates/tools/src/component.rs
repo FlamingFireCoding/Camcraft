@@ -118,14 +118,14 @@ impl ToolComponent {
                 if let Some(why) = tool.why_not_sane() {
                     return Err(ComponentError::Tool { name: named, why });
                 }
-                if let ConnectionCode::Cylindrical { d } | ConnectionCode::Weldon { d } = mcs {
-                    if (d - tool.shank_d).abs() > BORE_SLACK {
-                        return Err(ComponentError::ShankMismatch {
-                            name: named,
-                            shank_d: tool.shank_d,
-                            mcs: mcs.to_string(),
-                        });
-                    }
+                if let ConnectionCode::Cylindrical { d } | ConnectionCode::Weldon { d } = mcs
+                    && (d - tool.shank_d).abs() > BORE_SLACK
+                {
+                    return Err(ComponentError::ShankMismatch {
+                        name: named,
+                        shank_d: tool.shank_d,
+                        mcs: mcs.to_string(),
+                    });
                 }
             }
             ComponentKind::ToolItem { mcs, seats } => {

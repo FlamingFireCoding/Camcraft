@@ -270,9 +270,9 @@ fn parse_corner(shape: InsertShape, s: &str) -> Option<Corner> {
 fn tail_hand(tail: &str) -> Option<Hand> {
     let head = tail.split('-').next().unwrap_or("");
     let b = head.as_bytes();
-    match b {
-        &[h] => Hand::from_letter(char::from(h)),
-        &[e, h] if b"FETSKP".contains(&e) => Hand::from_letter(char::from(h)),
+    match *b {
+        [h] => Hand::from_letter(char::from(h)),
+        [e, h] if b"FETSKP".contains(&e) => Hand::from_letter(char::from(h)),
         _ => None,
     }
 }
