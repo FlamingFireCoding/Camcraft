@@ -174,17 +174,19 @@ use super::*;
 /// nothing, what every v77 machine was, so a v77 file steps up unchanged.
 /// An old reader must refuse a v78 file rather than drop the reservations
 /// and post a cutting tool at a reserved probe pocket.
-/// v79 (#3368) is the tip-form conditional rung (its own const below);
-/// v80 stays free for the Rotary Flow step (#2826) whose held branch
-/// numbers it - the gap is deliberate, so that live claim keeps its
-/// number when it refreshes.
+/// v79 (#3368) is the tip-form conditional rung (its own const below).
+/// v80 (#3153): a 2D Chamfer may select a positive `minimum_cone_radius`
+/// (the tip offset). The zero default is omitted, so a v78/v79 Chamfer reads
+/// and cuts exactly as before. v79 stays the #3368 tip-form step, which a
+/// v80 reader reads as is. An old reader must refuse v80 rather than
+/// drop a positive radius and post the old tip-on-wall cone.
 /// v81 (#2772): the rotary kinds' operations may state their own
 /// rotation axis (`stated_axis`, a direction through the setup's work
 /// offset origin, overriding the machine's stated rotary line). Absent
-/// is what every v78 file stated: follow the machine, else fit the axis
-/// off the model - so a v78 (and a v79 tip-form) file steps up
-/// unchanged. An old reader must refuse a v81 file rather than drop
-/// the statement and turn the part about an axis the user never named.
+/// is what every v80 file stated: follow the machine, else fit the axis
+/// off the model - so a v78, v79 and v80 file steps up unchanged. An
+/// old reader must refuse a v81 file rather than drop the statement
+/// and turn the part about an axis the user never named.
 pub const PROJECT_VERSION: u32 = 81;
 
 /// v79 (#3368), a conditional step of the release it shipped in: only
@@ -192,7 +194,7 @@ pub const PROJECT_VERSION: u32 = 81;
 /// reader had to refuse such a file rather than read the tip as sharp
 /// (a sharp tip is a smaller tool than the real one, and a toolpath
 /// planned for it can gouge). The ladder has since stepped past it
-/// (#2772's v81): every file this build writes says
+/// (#3153's v80, then #2772's v81): every file this build writes says
 /// [`PROJECT_VERSION`], tip form or not, and a v79 file reads as the
 /// v78 file it is, plus the tip keys this build reads natively.
 ///
@@ -475,8 +477,11 @@ pub struct ToolDto {
     /// #894 addition, additive (no version step): a single-form thread
     /// mill's finest pitch. Absent from every older file and written
     /// only when set; absent is the inert 0.0 every other kind means.
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub pitch_min: f64,
+    /// #3662: on a single-form mill an ABSENT key reads as its one pitch
+    /// (a converter that read only the tooth); a stated 0 stays 0, so
+    /// the sanity law refuses it by name as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pitch_min: Option<f64>,
     /// Tap thread hand; older tools default to right-hand.
     #[serde(default, skip_serializing_if = "camcraft_tools::thread_hand::ThreadHand::is_right")]
     pub thread_hand: camcraft_tools::thread_hand::ThreadHand,
@@ -709,7 +714,8 @@ impl ToolDto {
             corner_r: t.corner_r,
             tip_angle: t.tip_angle,
             pitch: t.pitch,
-            pitch_min: t.pitch_min,
+            // Written only when set, as before #3662 (0 is absent).
+            pitch_min: (t.pitch_min != 0.0).then_some(t.pitch_min),
             thread_hand: t.thread_hand,
             nose_radius: t.nose_radius,
             width: t.width,
@@ -755,6 +761,11 @@ impl ToolDto {
         // #3369: a preset form that states no points (a catalogue entry)
         // reads as the points its preset writes.
         camcraft_tools::form_mill::fill(&mut tool);
+        // #3662: a single-form thread mill whose definition has no
+        // `pitch_min` key reads as a range of its one pitch (never wider).
+        if self.pitch_min.is_none() {
+            camcraft_tools::thread_mill::read_unstated_range(&mut tool);
+        }
         tool
     }
 
@@ -789,7 +800,7 @@ impl ToolDto {
             corner_r: self.corner_r,
             tip_angle: self.tip_angle,
             pitch: self.pitch,
-            pitch_min: self.pitch_min,
+            pitch_min: self.pitch_min.unwrap_or(0.0),
             thread_hand: self.thread_hand,
             nose_radius: self.nose_radius,
             width: self.width,

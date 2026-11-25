@@ -102,12 +102,16 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
     if let OpParams::WireContour(wire) = &next {
         back.insert("taper_deg".into(), json!(wire.taper_deg));
     }
-    // An opt-in flag (`blend_turns`) is written only when ON, so `false`
-    // never comes back: it is kept when `true` would have come back.
+    // Opt-in fields (`blend_turns`, `minimum_cone_radius`) are omitted at
+    // their false/zero default, but a literal patch of that default is
+    // still a known field: it is kept when a true/positive probe would
+    // have come back.
     for (k, v) in patch {
-        if *v == Value::Bool(false) && !back.contains_key(k) && flag_kept(&key, &fields_of(base), k) {
-            back.insert(k.clone(), Value::Bool(false));
-        } else if k == "corner_relief" && !back.contains_key(k) && corner_relief_kept(&key, &fields_of(base)) {
+        let opt_in = (*v == Value::Bool(false) || v.as_f64() == Some(0.0))
+            && opt_in_kept(&key, &fields_of(base), k, v.is_boolean());
+        let corner_relief =
+            k == "corner_relief" && corner_relief_kept(&key, &fields_of(base));
+        if !back.contains_key(k) && (opt_in || corner_relief) {
             back.insert(k.clone(), v.clone());
         } else if k == "pass_start" && *v == json!("auto") && !back.contains_key(k) && pass_start_kept(&key, &fields_of(base)) {
             // #3316: `auto` is never written, so it never comes back.
@@ -166,13 +170,24 @@ fn probe_kept(key: &str, fields: &Map<String, Value>, k: &str, val: Value) -> bo
         .unwrap_or(false)
 }
 
-/// True when the kind `key` has a boolean field `k`: set to `true`, it
-/// survives the typed round-trip. A misspelled key never does.
-fn flag_kept(key: &str, fields: &Map<String, Value>, k: &str) -> bool {
+/// True when `key` has an opt-in field `k`: a true (boolean) or positive
+/// (number) probe survives the typed round-trip. A boolean flag must come
+/// back `true`. A misspelled key never does.
+fn opt_in_kept(key: &str, fields: &Map<String, Value>, k: &str, boolean: bool) -> bool {
     let mut probe = fields.clone();
-    probe.insert(k.to_owned(), Value::Bool(true));
+    probe.insert(
+        k.to_owned(),
+        if boolean { Value::Bool(true) } else { Value::from(1.0) },
+    );
     project::params_from_json(&json!({ key: probe }))
-        .map(|p| fields_of(&p).get(k) == Some(&Value::Bool(true)))
+        .map(|p| {
+            let back = fields_of(&p);
+            if boolean {
+                back.get(k) == Some(&Value::Bool(true))
+            } else {
+                back.contains_key(k)
+            }
+        })
         .unwrap_or(false)
 }
 

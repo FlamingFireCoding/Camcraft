@@ -71,21 +71,22 @@ clause of the disagreement refusal when the radial drop lands.
   translation) and by the app-level mutation the review probed
   (bar at Y+10000, stated X, clearance 100: WCS Y=10000 generates,
   Y=10001 and Y=10002 refuse by name).
-- **The project version is v81, not v78.** Upstream main took v78
-  (`reserved_tools`, #2604) and a conditional v79 (tip form, #3368);
-  the #2826 held branch numbers its Rotary Flow step v80. v78 is
-  refused (main's reader accepts it and silently drops
+- **The project version is v81, not v78.** Upstream main owns v78
+  (`reserved_tools`, #2604), the conditional v79 (tip form, #3368)
+  and, since the second refresh, v80 (`minimum_cone_radius`, #3153).
+  v78 is refused (main's reader accepts it and silently drops
   `stated_axis` on re-save - the review's finding), v79 is refused
   (it is upstream's live tip-form version; a v79 stated-axis file
-  would read as v78 and drop the same way), v80 is left to #2826's
-  live claim. The next correctly-ordered free version is v81, marked
+  would read as v78 and drop the same way), and v80 is main's own
+  step. The next correctly-ordered free version is v81, marked
   breaking: older readers refuse a v81 file rather than turn the
   part about an axis the user never named. The v79 tip-form
   conditional stays: `tip_form_read_version` is now inert (the
-  ladder reads a v79 file natively at 79), and the tip-form test's
-  compile-time assert is inverted to pin `PROJECT_VERSION >
-  TIP_FORM_PROJECT_VERSION`. #2826 must renumber its v80 step at
-  its refresh, whatever this branch had taken.
+  ladder reads a v79 file natively at 79), and the tip-form test
+  carries #3153's asserts plus the v79-reads-natively pin. The #2826
+  held branch numbered its Rotary Flow step v80 before main took
+  v80; it must renumber past main's ladder when it refreshes,
+  whatever this branch had taken.
 - **The page's help follows the resolver.** The stated-axis group's
   hint said an absent direction uses the fitted axis before the
   machine line; `rotary_stated::lines_of` reads the machine's stated

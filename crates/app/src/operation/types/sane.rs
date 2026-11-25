@@ -100,6 +100,12 @@ impl OpParams {
                     corner_relief.validate().err().map(|e| e.to_string())
                 }
             }),
+            OpParams::Chamfer2D {
+                minimum_cone_radius,
+                ..
+            } if !(minimum_cone_radius.is_finite() && *minimum_cone_radius >= 0.0) => {
+                Some("tip offset must be finite and non-negative".into())
+            }
             _ => None,
         }
     }
@@ -400,6 +406,7 @@ impl OpParams {
             OpParams::Chamfer2D {
                 width,
                 angle_deg,
+                minimum_cone_radius,
                 clearance_z,
                 retract_z,
                 top_z,
@@ -410,6 +417,7 @@ impl OpParams {
             } => {
                 pos(*width)
                     && (0.0..90.0).contains(angle_deg)
+                    && nneg(*minimum_cone_radius)
                     && pos(*tolerance)
                     && clearance_z.is_sane()
                     && retract_z.is_none_or(|r| r.is_sane())
