@@ -69,5 +69,19 @@ mod tool_table_xml;
 // #891: turning surface speed, feed per rev and the max-rpm clamp.
 pub mod turning_data;
 
+// #3642: reusable tool components (ISO 13399 kinds), the ISO 1832
+// insert code, the ISO 5608 holder code, connection codes and the fit
+// checks between them.
+pub mod component;
+pub mod component_fit;
+#[cfg(test)]
+mod component_fit_tests;
+pub mod connection_code;
+pub mod insert_codes;
+#[cfg(test)]
+mod insert_designation_tests;
+pub mod insert_iso1832;
+pub mod insert_seat;
+
 // #743: DXF half-profile parsing and projection into validated holder profiles.
 pub mod tool_profile_dxf;
