@@ -12,7 +12,9 @@
 8. **The turned frame.** A Face laid along an open boundary works in a turned frame. The picks are stated in the part's frame and are turned into the laid frame before the corner is read.
 9. **A tilted (3+2) Face refuses a pick by name**, as the tilted 2D Contour does. The pick is model X and Y, and the tilted plane has a different X and Y.
 10. **The page.** The Face Geometry tab shows a Start point group and an Exit point group with typed X and Y, a switch and a Clear button. Apply commits the draft through `EditOperationParams`.
-11. **Where the code is.** The planning rule is a new module, `motion::machining2d::face_raster`. `face_picked` is the new entry point. `face_over_kept` calls it with no pick.
+11. **A rotated work offset (review of PR #3997).** A work offset with a Z rotation carries the geometry into the generator frame. The picks are stated in the setup's frame, so `wcs_yaw::rotate_params` carries each start and exit pick with the geometry. The rule reads `OpParams::path_picks_mut`, so it holds for each kind that stores picks, not for Face only.
+12. **The picks are judged on the rows that are cut (review of PR #3997).** A hole or a "Do not touch" keep-out can cut a row short or take it. At each level, the first piece of the first row must start on the side of the start pick, and the last piece of the last row must end on the side of the exit pick. If not, the cut is refused by name: the text names the blocked pick, and the viewport marks it. The protected area stays clear. The rule is one check on the final row pieces (`face_raster::Raster::held`), so it covers the keep-out and the holes law together. A row that is cut short but still starts (or ends) on the picked side is accepted.
+13. **Where the code is.** The planning rule is a new module, `motion::machining2d::face_raster`. `face_picked` is the new entry point. `face_over_kept` calls it with no pick.
 
 **Why.**
 
@@ -28,6 +30,7 @@
 - Mirror the region in Y to start at the high edge: dropped. The band snaps its last row to the high edge, so a mirrored band cuts different rows. The holes, the keep-out closure and the arc senses must be mirrored too.
 - With an exit pick alone, keep the automatic start corner and refuse half of the exits: dropped. The planner can reach each exit, so a refusal has no cause that the user stated.
 - Judge the exit pick by its nearest corner when a start pick is stated: dropped. The issue says "side". The last row is always at the edge across from the start, so a corner rule refuses each exit beside the first row.
+- When a keep-out takes a terminal row, move the entry or the exit to the nearest row that is left, with a note: dropped. The pick names a corner, and a path that starts or ends at a different place is not what the user stated. A refusal that names the pick lets the user decide.
 - A viewport Pick button on the Face page: not in this change. The viewport pick of `start_exit_pick` writes to the 2D Contour only, and PR #3978 changes that file. The typed rows do not depend on it.
 - A pick on a tilted Face, projected into the tilted plane: not in this change. It is refused by name.
 

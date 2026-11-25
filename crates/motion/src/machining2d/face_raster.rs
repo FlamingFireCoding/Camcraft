@@ -3,7 +3,9 @@
 //! runs, and so where the last row ends. The rows themselves are the
 //! facer's own band and never change - a pick only orders them. An exit
 //! that the row count cannot reach from the start corner is refused by
-//! name; a pick is never moved without a note.
+//! name; a pick is never moved without a note. A pick is judged again on
+//! the rows that are cut (`held`): a hole or a keep-out that takes its
+//! row is refused by name, never answered at a different corner.
 //!
 //! Provenance: our own planning rule over the serpentine (boustrophedon)
 //! raster of general machining practice - the row count's parity decides
@@ -26,6 +28,12 @@ pub(super) struct Raster {
     first_forward: bool,
     /// What the plan must say on the path (an exit met on its side only).
     pub note: Option<String>,
+    /// The footprint's low and high X: the sides a pick names.
+    xs: (f64, f64),
+    /// The start pick and its X side (`true` is low X), for `held`.
+    start: Option<(Point2, bool)>,
+    /// The exit pick and the X side where the last row must end.
+    exit: Option<(Point2, bool)>,
 }
 
 /// The raster of `rows` rows over the footprint box `lo..hi` at `cut_z`:
@@ -77,7 +85,8 @@ pub(super) fn plan(
             );
         }
     }
-    Ok(Raster { up, first_forward, note })
+    let side = |p: Option<Point2>| p.map(|p| (p, low_x(p)));
+    Ok(Raster { up, first_forward, note, xs: (lo.x, hi.x), start: side(start), exit: side(exit) })
 }
 
 impl Raster {
@@ -103,6 +112,37 @@ impl Raster {
     /// `rho` along the step direction: where a corner arc's centre stands.
     pub fn step(&self, rho: f64) -> f64 {
         if self.up { rho } else { -rho }
+    }
+
+    /// The picks judged on the rows that level `z` cuts (#3326 review):
+    /// `pieces` are the rows in cut order after the holes and the keep-out
+    /// cut them short. The first piece of the first row must start on the
+    /// start pick's side, and the last piece of the last row must end on
+    /// the exit pick's side. A row that is taken, or cut short past its
+    /// middle, would move the entry or the exit to a place that the pick
+    /// did not name: refused by name, with the pick marked. No pick:
+    /// nothing is judged.
+    pub fn held(&self, pieces: &[Vec<(f64, f64)>], z: f64) -> Result<(), GenError> {
+        let low_x = |x: f64| (x - self.xs.0).abs() <= (x - self.xs.1).abs();
+        let blocked = |what: &str, row: &str, at: Point2| {
+            GenError::invalid_at(
+                format!(
+                    "Face: the {what} point is blocked at Z {z:.3} - a hole or a protected 'Do not touch' item takes the {row} row beside it, so the raster cannot {what} at that corner; clear or move the {what} point, or free the row"
+                ),
+                Point3::new(at.x, at.y, z),
+            )
+        };
+        if let Some((at, low)) = self.start
+            && !pieces.first().and_then(|row| row.first()).is_some_and(|&(x0, _)| low_x(x0) == low)
+        {
+            return Err(blocked("start", "first", at));
+        }
+        if let Some((at, low)) = self.exit
+            && !pieces.last().and_then(|row| row.last()).is_some_and(|&(_, x1)| low_x(x1) == low)
+        {
+            return Err(blocked("exit", "last", at));
+        }
+        Ok(())
     }
 
     /// Each row as (y, from, to) in cut order: the serpentine between

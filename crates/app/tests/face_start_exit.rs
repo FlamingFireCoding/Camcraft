@@ -130,6 +130,31 @@ fn an_exit_the_rows_cannot_reach_is_refused_by_name_and_a_reachable_one_is_cut()
     }
 }
 
+/// #3326 review: a pick is stated in the setup's frame. Under a work
+/// offset turned 90 degrees about (5, 7) the rows run along the setup's Y:
+/// ten rows from the picked corner, which end on the start corner's own
+/// side. The entry is beside the picked corner, the exit pick is read in
+/// the same frame, and the refusal names the exit.
+#[test]
+fn a_rotated_work_offset_reads_the_picks_in_the_setup_frame() {
+    use camcraft_app::commands::SetWcsOrigin;
+    use camcraft_app::geometry::{quat_from_euler, Point3};
+    use camcraft_app::schema::Location;
+
+    let near = |got: (f64, f64), want: (f64, f64)| (got.0 - want.0).abs() < 1e-6 && (got.1 - want.1).abs() < 1e-6;
+    let (world, mut h) = job();
+    let placement = Location { pos: Point3::new(5.0, 7.0, 0.0), rot: quat_from_euler(0.0, 0.0, 90f64.to_radians()) };
+    h.execute(&world, SetWcsOrigin::new(&world, placement).expect("yaw WCS"));
+    let start = Some((29.0, 19.0));
+    h.execute(&world, CreateOperation::new(&world, "Op1", "T", SrcRef::Stock, face_op(6.0, start, Some((-29.0, 19.0)))).expect("create"));
+    let t = generate(&world, &mut h);
+    assert!(near(entry(&t), (25.0, 25.0)), "the entry is beside the picked corner (30, 20): {:?}", entry(&t));
+    assert!(near(leave(&t), (-25.0, 25.0)), "ten rows end on the exit's side, high Y: {:?}", leave(&t));
+    h.execute(&world, EditOperationParams::new(&world, "Op1", face_op(6.0, start, Some((-29.0, -19.0)))).expect("edit"));
+    let why = GenerateOperation::new(&world, "Op1").map(|_| ()).expect_err("refused").to_string();
+    assert!(why.contains("exit point") && why.contains("10 rows"), "{why}");
+}
+
 #[test]
 fn undo_and_redo_restore_the_previous_path() {
     let (world, mut h) = job();

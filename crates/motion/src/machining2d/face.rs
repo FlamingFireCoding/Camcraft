@@ -9,8 +9,7 @@ use crate::path_picks::PathPicks;
 
 use super::blend::{Turn, plan_reversals};
 use super::face_holes::{self, FaceHoles};
-use super::face_keep;
-use super::face_raster;
+use super::{face_keep, face_raster};
 pub use super::face_keep::FaceKeep;
 use super::levels::cut_levels_under;
 // The enum moved to its own module (#261 part 2); every
@@ -265,6 +264,7 @@ pub fn face_picked(
         let Some(lv) = face_keep::level(keep, z, &rows, &pieces, (entry, ys[0]), &mut tally)? else {
             continue;
         };
+        raster.held(&lv.pieces, z)?; // #3326: the picks, on the cut rows
         let (ex, ey) = lv.start;
         if tally.levels > 1 {
             // New material is engaged from the air, never from under:

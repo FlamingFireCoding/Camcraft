@@ -8,7 +8,7 @@
 
 use camcraft_motion::cl::{text::to_text, MoveKind, Toolpath};
 use camcraft_motion::geo2d::{Loop, Point2, Region};
-use camcraft_motion::machining2d::{face_over, face_picked, FaceHoles, FaceParams, GenError};
+use camcraft_motion::machining2d::{face_over, face_picked, FaceHoles, FaceKeep, FaceParams, GenError};
 use camcraft_motion::path_picks::{PathPick, PathPicks};
 
 const CUT_Z: f64 = -2.0;
@@ -267,4 +267,43 @@ fn a_pick_no_planner_can_read_is_refused() {
     two.exit.push(two.exit[0]);
     let why = refusal(run(&plate(), &p(3.0), &two));
     assert!(why.contains("one exit point"), "{why}");
+}
+
+/// The six-row face of `plate()` with the keep-out `ko` at every level.
+fn kept(ko: &Region, k: &PathPicks) -> Result<Toolpath, GenError> {
+    let at = |_z: f64| Ok(ko.clone());
+    let keep = FaceKeep { names: "Clamp".to_owned(), at: &at };
+    face_picked(&plate(), &p(3.0), 0.0, None, Some(&keep), k)
+}
+
+/// #3326 review: the picks are judged on the rows that are cut. A keep-out
+/// that takes a terminal row is refused with the blocked pick named and
+/// marked; it never moves the entry or the exit to a different corner.
+#[test]
+fn a_keep_out_that_takes_a_terminal_row_refuses_the_blocked_pick_by_name() {
+    let k = picks(Some((-19.0, -9.5)), Some((-19.0, 9.5)));
+    let spot = |e: &GenError| e.location().map(|at| (at.x, at.y, at.z));
+    // The last of six rows (Y 7): without it the cut would end at (23, 5).
+    let last = Region::new(vec![rect((0.0, 7.0), 30.0, 1.0)]).unwrap();
+    let e = kept(&last, &k).expect_err("the exit row is taken");
+    assert!(e.to_string().contains("the exit point is blocked") && e.to_string().contains("last row"), "{e}");
+    assert_eq!(spot(&e), Some((-19.0, 9.5, CUT_Z)), "the exit pick is marked");
+    // The picked first row (Y -7).
+    let first = Region::new(vec![rect((0.0, -7.0), 30.0, 1.0)]).unwrap();
+    let e = kept(&first, &k).expect_err("the start row is taken");
+    assert!(e.to_string().contains("the start point is blocked") && e.to_string().contains("first row"), "{e}");
+    assert_eq!(spot(&e), Some((-19.0, -9.5, CUT_Z)), "the start pick is marked");
+    // An exit pick alone promises its corner: the same law.
+    let why = refusal(kept(&last, &picks(None, Some((-19.0, 9.5)))));
+    assert!(why.contains("the exit point is blocked"), "{why}");
+    // With no pick the keep-out law is unchanged: the rows are cut short.
+    for ko in [&last, &first] {
+        kept(ko, &PathPicks::default()).expect("no pick, nothing to hold");
+    }
+    // A keep-out on a middle row leaves the two picks as they were.
+    let mid = Region::new(vec![rect((0.0, -1.0), 4.0, 0.5)]).unwrap();
+    let t = kept(&mid, &k).expect("the terminal rows are whole");
+    assert_eq!((entry(&t), leave(&t)), ((-23.0, -7.0), (-23.0, 7.0)));
+    let in_keep = |m: &camcraft_motion::cl::Move| m.to.z == CUT_Z && m.to.y == -1.0 && m.to.x.abs() < 4.0;
+    assert!(!t.moves.iter().any(in_keep), "the keep-out stays clear");
 }
