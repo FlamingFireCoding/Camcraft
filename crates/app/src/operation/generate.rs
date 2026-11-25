@@ -47,8 +47,9 @@ pub fn strategy_fallback(path: &Toolpath) -> Option<Warning> {
 /// #3748: the start-side pass whose user selected a Helix, Ramp or Plunge
 /// lead-in where the Arc entry from the air applies - one advisory
 /// warning that names the selected type, the recommended Arc and the
-/// reason. The ladder writes the advice note only where that air room
-/// exists (`machining2d::entry_advice`); the entry runs as selected.
+/// reason. The ladder writes the advice note on each Inside or Outside
+/// ring pass (`machining2d::entry_advice`, #3884: not gated on the air
+/// room); the entry runs as selected.
 #[must_use]
 pub fn entry_not_recommended(path: &Toolpath) -> Option<Warning> {
     use crate::machining2d::{PassStart, advised, entry_advice};
@@ -4075,7 +4076,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             warns.extend(strategy_fallback(&path));
             // #3748: a selected entry that is not the recommended Arc on a
             // start-side pass - one advisory warning, the entry kept.
-            warns.extend(entry_not_recommended(&path));
+            let advice = entry_not_recommended(&path);
+            // #3884: each stand-in entry and a selected Plunge into uncut
+            // stock of a start-side pass - a warning, not a note only.
+            warns.extend(crate::machining2d::entry_warnings(&path, advice.is_some()));
+            warns.extend(advice);
             // The rotary kinds' bands and rapids (M13): `Mode::Rotary`
             // stood the vertical-column laws down; the radial field
             // reads rest material in the frame the work turns in.
