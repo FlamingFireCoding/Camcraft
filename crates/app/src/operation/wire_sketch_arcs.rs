@@ -95,6 +95,13 @@ impl SelectedWireChain {
             return Ok(None);
         }
         single_pass(op).map_err(GenError::Invalid)?;
+        // #3332: the exit pick is read on a polygon profile or an open
+        // run; on drawn lines and arcs it is refused by name, never dropped.
+        if op.picks.first(crate::path_picks::PickRole::Exit).is_some() {
+            return Err(GenError::Invalid(
+                "wire contour: an exit point is stated on a drawn profile with arcs - the exit point is taken on a polygon profile or an open run so far; clear the exit point".into(),
+            ));
+        }
         if !cond.skims.is_empty() || !matches!(op.side, WireSide::Die | WireSide::Punch) {
             return Err(GenError::Invalid(
                 "selected DXF wire cuts require a single vertical pass with slug capture and no tabs".into(),

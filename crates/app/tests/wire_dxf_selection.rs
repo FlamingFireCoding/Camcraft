@@ -20,6 +20,9 @@ use flecs_ecs::prelude::World;
 
 #[path = "wire_dxf_selection/arcs.rs"]
 mod arcs;
+// #3332: the exit pick on a selected chain.
+#[path = "wire_dxf_selection/exit_pick.rs"]
+mod exit_pick;
 
 const FIXTURE: &str = include_str!("edm/wire-iso-fixture.mch");
 const DXF: &str = "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n\

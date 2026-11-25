@@ -174,19 +174,38 @@ use super::*;
 /// nothing, what every v77 machine was, so a v77 file steps up unchanged.
 /// An old reader must refuse a v78 file rather than drop the reservations
 /// and post a cutting tool at a reserved probe pocket.
+/// v79 (#3368) is the tip-form conditional rung (its own const below).
 /// v80 (#3153): a 2D Chamfer may select a positive `minimum_cone_radius`
 /// (the tip offset). The zero default is omitted, so a v78/v79 Chamfer reads
 /// and cuts exactly as before. v79 stays the #3368 tip-form step, which a
 /// v80 reader reads as is. An old reader must refuse v80 rather than
 /// drop a positive radius and post the old tip-on-wall cone.
-pub const PROJECT_VERSION: u32 = 80;
+/// v81 (#2772): the rotary kinds' operations may state their own
+/// rotation axis (`stated_axis`, a direction through the setup's work
+/// offset origin, overriding the machine's stated rotary line). Absent
+/// is what every v80 file stated: follow the machine, else fit the axis
+/// off the model - so a v78, v79 and v80 file steps up unchanged. An
+/// old reader must refuse a v81 file rather than drop the statement
+/// and turn the part about an axis the user never named.
+/// v82 (#2826): the Rotary Flow operation arrives (`rotary_flow`, the
+/// picked guide chains' kind, its heights read as ball-center radii
+/// about the stated axis). No older file names the arm, so a v81 file
+/// steps up unchanged. This step is a compatibility break: every file
+/// this build writes says v82, and a v81 reader refuses the new files
+/// (see the `BREAKING CHANGE` footer of the commit that stepped the
+/// ladder). An old reader must refuse a v82 file rather than drop the
+/// op it cannot read: the post would re-open a document whose flow
+/// band op vanished without a word.
+pub const PROJECT_VERSION: u32 = 82;
 
-/// v79 (#3368), a conditional step: only a file that holds a flat or
-/// ball taper tip says 79. A file without one still says
-/// [`PROJECT_VERSION`], so an older build opens it as before. An older
-/// reader must refuse a v79 file rather than read the tip as sharp: a
-/// sharp tip is a smaller tool than the real one, and a toolpath planned
-/// for it can gouge. A v79 file is a v78 file plus the tip keys.
+/// v79 (#3368), a conditional step of the release it shipped in: only
+/// a file that held a flat or ball taper tip said 79, and an older
+/// reader had to refuse such a file rather than read the tip as sharp
+/// (a sharp tip is a smaller tool than the real one, and a toolpath
+/// planned for it can gouge). The ladder has since stepped past it
+/// (#3153's v80, then #2772's v81): every file this build writes says
+/// [`PROJECT_VERSION`], tip form or not, and a v79 file reads as the
+/// v78 file it is, plus the tip keys this build reads natively.
 ///
 /// The step is isolated here: [`written_project_version`] and
 /// [`tip_form_read_version`]. To remove it, delete the two functions,
@@ -211,7 +230,9 @@ pub fn written_project_version(holds_tip_form: bool) -> u32 {
 }
 
 /// #3368: a v79 tip-form file reads as the v78 file it is (plus the tip
-/// keys, which every v78 tool reads as absent = sharp).
+/// keys, which the ladder reads natively now that it has stepped past
+/// v79 - and which a v78-only reader reads as absent = sharp, so the
+/// older reader refuses the file it cannot read whole).
 #[must_use]
 pub fn tip_form_read_version(version: u32) -> u32 {
     if version == TIP_FORM_PROJECT_VERSION && TIP_FORM_PROJECT_VERSION > PROJECT_VERSION {
@@ -220,7 +241,6 @@ pub fn tip_form_read_version(version: u32) -> u32 {
         version
     }
 }
-
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
     #[error("I/O error: {0}")]

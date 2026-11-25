@@ -14,7 +14,7 @@ use super::kinds::KindInfo;
 use super::types::{OpParams, OpType};
 
 /// What a pick means on a kind, and so how the viewport snaps it. Every
-/// capability except [`Self::NotTaken`] takes a start pick.
+/// capability except [`Self::NotTaken`] takes a start pick and an exit pick.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PickCapability {
     /// A point on a closed ring: the ring is re-sequenced to start there
@@ -33,8 +33,12 @@ pub enum PickCapability {
     /// The corner of the first raster row and the end of the last row.
     /// Snaps to a corner.
     Raster,
-    /// The wire's threading point (`WireContourOp.picks`): a start only.
+    /// The wire's threading point (`WireContourOp.picks`) and its exit
+    /// (#3332): the end of an open run, or where a closed cut leaves.
     Threading,
+    /// A point in the lathe (Z, X) plane (#3331): the first pass starts
+    /// there and the last pass leaves there. Each pick states its Z.
+    Meridian,
     /// The kind does not take a pick; the reason, said by name in the
     /// refusal and on the operation page.
     NotTaken(&'static str),
@@ -43,6 +47,9 @@ pub enum PickCapability {
 /// The reason of a cutting kind whose family slice of #1448 has not shipped.
 pub const PICK_OWED: &str =
     "the planner chooses the entry and the exit of this kind until its slice of #1448 ships";
+
+/// The reason of lathe Threading (#3331): its own law places the start.
+pub const PICK_THREAD_LAW: &str = "the thread start law sets the start and the exit of a thread";
 
 /// The reason of the probe: it has no path to start.
 pub const PICK_NO_PATH: &str = "a probe touches the part and cuts no path";
@@ -53,8 +60,9 @@ impl PickCapability {
     pub fn takes(self, role: PickRole) -> bool {
         match self {
             Self::NotTaken(_) => false,
-            Self::Threading => role == PickRole::Start,
-            Self::Ring | Self::Region | Self::HoleOrder | Self::Ends | Self::Raster => true,
+            Self::Threading | Self::Ring | Self::Region | Self::HoleOrder | Self::Ends | Self::Raster | Self::Meridian => {
+                matches!(role, PickRole::Start | PickRole::Exit)
+            }
         }
     }
 }
@@ -65,16 +73,22 @@ impl KindInfo {
     #[must_use]
     pub fn pick(&self) -> PickCapability {
         match self.ty {
-            OpType::Contour => PickCapability::Ring,
+            // #3330: the 5-axis contour's waterline rings are seated at
+            // the start pick and run on to the exit pick.
+            OpType::Contour | OpType::Contour5D => PickCapability::Ring,
             OpType::WireContour => PickCapability::Threading,
             // #3333: the orbit ring round the burn position, and the two
             // ends of the side move.
             OpType::SinkerBurn => PickCapability::Ring,
             OpType::SinkerSideBurn => PickCapability::Ends,
             OpType::Probe => PickCapability::NotTaken(PICK_NO_PATH),
+            // #3331 slice 1: the pick is a point in the lathe (Z, X) plane.
+            OpType::Facing | OpType::ProfileRough | OpType::ProfileFinish => PickCapability::Meridian,
+            OpType::Threading => PickCapability::NotTaken(PICK_THREAD_LAW),
+            // #3325: the end where the pass starts, and where it stops.
+            OpType::Slot => PickCapability::Ends,
             OpType::Face
             | OpType::Pocket
-            | OpType::Slot
             | OpType::Trace
             | OpType::Adaptive2D
             | OpType::Offset2D
@@ -88,7 +102,6 @@ impl KindInfo {
             | OpType::Finish3D
             | OpType::Deburr
             | OpType::MultiAxisDeburr
-            | OpType::Contour5D
             | OpType::Parallel5D
             | OpType::Swarf
             | OpType::AdvancedSwarf
@@ -98,13 +111,9 @@ impl KindInfo {
             | OpType::MultiAxisRough
             | OpType::Flow5D
             | OpType::MultiAxisContour
-            | OpType::Facing
-            | OpType::ProfileRough
-            | OpType::ProfileFinish
             | OpType::GrooveRough
             | OpType::GrooveFinish
             | OpType::Part
-            | OpType::Threading
             | OpType::Chamfering
             | OpType::TaperTurning
             | OpType::MultiPassTurning
@@ -115,6 +124,9 @@ impl KindInfo {
             | OpType::WaterjetProfile
             | OpType::TrochoidalSlot
             | OpType::SlotUndercut
+            // #2826: the flow band's own start and exit ride its
+            // picked chains' own ends, the planner's choice.
+            | OpType::RotaryFlow
             | OpType::VCarve => PickCapability::NotTaken(PICK_OWED),
         }
     }
@@ -170,6 +182,9 @@ impl OpParams {
             OpParams::SinkerBurn(p) => Some(&p.picks),
             OpParams::SinkerSideBurn(p) => Some(&p.burn.picks),
             OpParams::SlotUndercut(p) => Some(&p.picks),
+            // #2826: the flow band's picks ride the op's own chain
+            // selection, the planner reads them there.
+            OpParams::RotaryFlow { .. } => None,
             OpParams::Probe { .. } => None,
         }
     }
@@ -225,6 +240,9 @@ impl OpParams {
             OpParams::SinkerBurn(p) => Some(&mut p.picks),
             OpParams::SinkerSideBurn(p) => Some(&mut p.burn.picks),
             OpParams::SlotUndercut(p) => Some(&mut p.picks),
+            // #2826: the flow band's picks ride the op's own chain
+            // selection, the planner reads them there.
+            OpParams::RotaryFlow { .. } => None,
             OpParams::Probe { .. } => None,
         }
     }
@@ -257,6 +275,10 @@ impl OpParams {
             if matches!(self, OpParams::Contour { tilt: Some(_), .. }) {
                 return Some(format!("a {what} point is not taken on a tilted (3+2) contour yet - clear it or the tilt"));
             }
+            // #3325: a pick is a model-frame point; the tilted slot's ends are not.
+            if matches!(self, OpParams::Slot { tilt: Some(_), .. }) {
+                return Some(format!("a {what} point is not taken on a tilted (3+2) slot yet - clear it or the tilt"));
+            }
             if !cap.takes(role) {
                 let why = match cap {
                     PickCapability::NotTaken(why) => why,
@@ -264,12 +286,45 @@ impl OpParams {
                 };
                 return Some(format!("{}: a {what} point is not taken - {why}; clear it on this operation", info.label));
             }
+            // #3331: a turning pick is a point of the lathe (Z, X) plane.
+            if cap == PickCapability::Meridian && picks.of(role).iter().any(|p| p.z.is_none()) {
+                return Some(format!(
+                    "{}: the {what} point needs a Z - a turning point is a point in the lathe (Z, X) plane; state its Z or clear it",
+                    info.label
+                ));
+            }
         }
-        // #3333: a pick that the sinker's orbit or side move cannot hold.
         match self {
+            OpParams::WireContour(w) => wire_exit_refusal(w),
+            // #3333: a pick that the sinker's orbit or side move cannot hold.
             OpParams::SinkerBurn(p) => p.orbit_ends().err(),
             OpParams::SinkerSideBurn(p) => p.side_ends().err(),
             _ => None,
         }
     }
+}
+
+/// The wire's exit pick beside what it is not cut with (#3332): the exit
+/// is read on a vertical, single-pass, untabbed cut of one profile or
+/// one open run. Each other cut starts or ends its passes at the
+/// threading point, so the pair is refused by name at the command door
+/// and at generation, never cut as something else. `None` when the op
+/// states no exit point or none of those.
+#[must_use]
+pub(super) fn wire_exit_refusal(w: &super::types::WireContourOp) -> Option<String> {
+    w.picks.first(PickRole::Exit)?;
+    let with = if w.four_axis.is_some() {
+        "a 4-axis cut - its two profiles are paired from the start hole, and the wire returns there".to_owned()
+    } else if w.burnout.is_some() {
+        "a no-core burnout - its rings are cut from the start hole, and the wire returns there".to_owned()
+    } else if w.tabs.is_some() {
+        "tabs - each stretch between tabs and the tab cut-off start from the threading point with the wire threaded".to_owned()
+    } else if !w.skims.is_empty() {
+        format!("{} skim pass(es) - every pass starts and ends at the threading point", w.skims.len())
+    } else if w.taper_deg != 0.0 {
+        format!("a {:.3} degree taper - a leaning cut returns to the threading point", w.taper_deg)
+    } else {
+        return None;
+    };
+    Some(format!("Wire Contour: an exit point is stated with {with}; clear the exit point or that setting"))
 }

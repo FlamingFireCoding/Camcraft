@@ -27,6 +27,9 @@
 
 #[path = "edm/sinker_fixture.rs"]
 mod sinker_fixture;
+// #3332: the exit pick of a Wire Contour, over this suite's documents.
+#[path = "wire_post/exit_pick.rs"]
+mod exit_pick;
 
 use flecs_ecs::prelude::World;
 

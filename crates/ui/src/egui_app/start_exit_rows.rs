@@ -22,7 +22,7 @@ use camcraft_app::units::Unit;
 use crate::start_exit_pick::{StartExitAct, StartExitRole, act_id, armed_id};
 
 use super::fields::num;
-use super::layout::{GROUP_GAP, check_row, consequence, group, hint, prop_row};
+use super::layout::{GROUP_GAP, check_row, consequence, group, hint, prop_row, small_button};
 use super::pick_button::pick_button;
 
 /// The two group titles, as the tab's structural tests find them.
@@ -68,6 +68,27 @@ const EXIT: PointRows = PointRows {
     says: "the lead-out leaves here; where it cannot fit, the operation is refused by name - the exit never moves",
 };
 
+// #3325: the Slot's words. A slot pick names one of the two ends.
+const SLOT_START: PointRows = PointRows {
+    pick_help: "click a face, edge or corner in the viewport to place the Slot start point",
+    help: "a point in model X and Y: the pass starts at the slot end nearest this point",
+    says: "the cutter goes down at that end; a point far from the slot or between its ends is refused by name - the start never moves",
+    ..START
+};
+
+const SLOT_EXIT: PointRows = PointRows {
+    pick_help: "click a face, edge or corner in the viewport to place the Slot exit point",
+    help: "a point in model X and Y: the pass stops at the slot end nearest this point",
+    says: "the row count decides where a pass can stop; an exit that the start point makes impossible is refused by name - the exit never moves",
+    ..EXIT
+};
+
+/// Both groups, for a kind whose pick is one of two ends (the Slot, #3325).
+pub(super) fn end_groups(ui: &mut Ui, u: Unit, picks: &mut PathPicks) {
+    pick_list_group(ui, u, &SLOT_START, &mut picks.start);
+    pick_list_group(ui, u, &SLOT_EXIT, &mut picks.exit);
+}
+
 /// Both groups, for the closed 2D contour's lead tab.
 pub(super) fn start_exit_groups(ui: &mut Ui, u: Unit, picks: &mut PathPicks) {
     pick_list_group(ui, u, &START, &mut picks.start);
@@ -100,6 +121,31 @@ pub(super) fn wire_start_group(ui: &mut Ui, u: Unit, picks: &mut PathPicks) {
             }
             (true, None) => picks.start.push(PathPick::xy(Point2::new(0.0, 0.0))),
             (false, _) => picks.start.clear(),
+        }
+    });
+}
+
+/// A saved wire exit stays visible and editable beside the threading point.
+/// Apply commits the draft through the same undoable command as other wire fields.
+pub(super) fn wire_exit_group(ui: &mut Ui, u: Unit, picks: &mut PathPicks) {
+    group(ui, EXIT_GROUP, None, |ui| {
+        let mut stated = !picks.exit.is_empty();
+        check_row(ui, "Exit point stated", &mut stated);
+        if stated {
+            if picks.exit.is_empty() {
+                picks.exit.push(PathPick::xy(Point2::new(0.0, 0.0)));
+            }
+            if let Some(p) = picks.exit.first_mut() {
+                prop_row(ui, "Exit X", |ui| num(ui, u, &mut p.xy.x));
+                prop_row(ui, "Exit Y", |ui| num(ui, u, &mut p.xy.y));
+            }
+            if small_button(ui, "Clear exit").clicked() {
+                stated = false;
+            }
+            hint(ui, "an open run ends nearest this point; a closed profile completes its lap before leaving at this point");
+        }
+        if !stated {
+            picks.exit.clear();
         }
     });
 }
