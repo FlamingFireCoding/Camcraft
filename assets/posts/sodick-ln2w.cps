@@ -3,38 +3,34 @@
 // AQ600L, AD360L; part number 6300015, January 2012; public at
 // fab.cba.mit.edu/content/tools/sodick_edm/sodick_user_manual_small.pdf) as
 // this repository recorded it (#4045, #1500, and the #1496 / #2649 / #2686
-// decisions): G51 / G52 lean the upper guide left / right of travel by the
-// A angle, G50 cancels and the wire stands upright again during the next
-// X Y move, TP / TN load the Table-to-Program and Table-to-Next heights,
-// T84 / T85 high / low flushing, T90 / T91 cut / thread the wire, M02 ends
-// (no M30); and the statements of the owner of a Sodick AQ600L with the
-// LN2W control (2026-11-25, on #4045 and #1500): the start sequence below,
-// Z0 is the upper head height that the operator sets, the control alarms
-// on G21 (E00170), TP / TN stand as TP100. and TN0. before any motion; and
-// RS-274 / ISO 6983 for the motion words. No other CAM product's post,
+// decisions): T84 / T85 high / low flushing, T90 / T91 cut / thread the
+// wire, M02 ends (no M30); and the statements of the owner of a Sodick
+// AQ600L with the LN2W control (2026-11-25, on #4045 and #1500, with his
+// round-2 correction on PR #4065): the start sequence below, Z0 is the
+// upper head height that the operator sets, the control alarms on G21
+// (E00170); and RS-274 / ISO 6983 for the motion words. No other CAM product's post,
 // post library or output was read. The Mark 21 post (sodick-wire.cps) is a
 // separate file and is not changed: the engine has no include, so the
 // shared helpers are copied here. NOT VERIFIED ON A CONTROL in this form:
 // check the output at the machine before cutting. What is confirmed and
 // what is inferred is in docs/decisions/4045-sodick-ln2w-dialect.md.
 //
-// Written, in the owner's order for each cut: the setup's G54-G59, TP and
-// TN for a tapered cut, G00 X Y to the start point, Z0., T91 (thread; an
-// M00 without automatic threading), T84 / T85 and T94 / T89 when the
-// machine file states edm.flushing / edm.tank, the C condition word,
-// U0. V0. (the taper axes upright), then G01, G02 / G03 with I J; a taper
-// as G51 / G52 A before the first leaning move and G50 before the move
-// that stands the wire upright; each skim pass's flushing word
-// (edm.skim_flushing) and C word before its first move; T90 (cut the wire);
-// M00 / M01; M02.
+// Written, in the owner's order for each cut: the setup's G54-G59,
+// G00 X Y U0. V0. (the rapid to the start point, the taper axes upright
+// on the same line), Z0., T91 (thread; an M00 without automatic
+// threading), T84 / T85 and T94 / T89 when the machine file states
+// edm.flushing / edm.tank, the C condition word, then G01, G02 / G03 with
+// I J; each skim pass's flushing word (edm.skim_flushing) and C word
+// before its first move; T90 (cut the wire); M00 / M01; M02.
 // Never written (each a named refusal or an operator's task): G20 / G21
 // (the unit is the control's setting; this post writes millimetres only),
 // G92 and G29, the control's wire offset (G41 / G42, H - the path is the
 // wire-centre path with the kerf in it), 4-axis (G74 / G75, U V other than
-// the U0. V0. line), a taper on a machine file that states no
-// edm.taper_angle or no edm.table_to_part_bottom, the tank fill / drain,
+// the U0. V0. on the G00), a taper (TP / TN, G51 / G52 A, G50: refused by
+// name until the setup's table height, the control's corner motion and
+// its lean side are stated and confirmed, #4075), the tank fill / drain,
 // pump and wire-drive T codes, M03, M30.
-description = "Sodick wire EDM, LN2W control (AQ400L / AQ600L; start sequence from an owner's statements, taper as G51 / G52 A with TP / TN; not verified on a control)";
+description = "Sodick wire EDM, LN2W control (AQ400L / AQ600L; vertical 2-axis cuts; start sequence from an owner's statements; not verified on a control)";
 vendor = "Camcraft";
 legal = "Original clean-room work; public documentation and a machine owner's statements only";
 certificationLevel = 1;
@@ -75,16 +71,14 @@ var tankWord = "";         // T94 / T89 from edm.tank ("": not stated)
 var flushWord = "";        // T84 / T85 from edm.flushing ("": not stated)
 var skimFlushWord = "";    // T84 / T85 from edm.skim_flushing ("": not stated)
 var taper = 0;             // the section's stated taper, degrees (0: vertical)
-var dialect = "", corner = "";  // "angle": the stream carries angle words; the machine's corner rule
-var plane = null, bottom = null; // the programmed plane (the work's top) and the work's bottom, work frame Z
-var angleNext = null;      // the next move's angle word (WireAngle); null: none stated
-var tapering = 0;          // the active taper word: 1 G51, -1 G52, 0 upright
+var dialect = "";          // "angle": the stream carries angle words
+var angleNext = false;     // the next move states an angle word (WireAngle)
 var controlOffset = false; // a COMP record refuses this section, even before SECTION
 var fourAxis = "";         // the section's 4-axis pairing rule ("": one profile)
 var leaning = false;       // the next move states an upper guide offset (WireU / WireV)
 // A wire number the stream states but that is no finite number (the
 // wire-iso post's #3236 guard): refused, and no cut of the section is written.
-var WIRE_NUMBERS = ["WireTaper", "WirePlane", "WireBottom", "WireAngle", "WireU", "WireV"];
+var WIRE_NUMBERS = ["WireTaper", "WirePlane", "WireAngle", "WireU", "WireV"];
 var notFinite = "";        // the name of such a param ("": none)
 var machineGood = false;
 var approach = false;      // the approachCondition option
@@ -154,10 +148,6 @@ function onComment(s) { note(commentText(s)); }
 function machineName() {
   var m = typeof machine !== "undefined" ? machine : null;
   return (m && (m.model || m.name)) || "no machine";
-}
-function edm() {
-  var m = typeof machine !== "undefined" ? machine : null;
-  return (m && m.edm) || {};
 }
 // The machine check, once per program: a wire EDM with no rotary.
 function machineOk() {
@@ -273,10 +263,7 @@ function onParameter(name, value) {
   else if (name === "WireTaper") taper = Number(value);
   else if (name === "WireFourAxis") fourAxis = clean(value);
   else if (name === "WireTaperDialect") dialect = clean(value);
-  else if (name === "WireCorner") corner = clean(value);
-  else if (name === "WirePlane") plane = Number(value);
-  else if (name === "WireBottom") bottom = Number(value);
-  else if (name === "WireAngle") angleNext = Number(value);
+  else if (name === "WireAngle") angleNext = true;
   else if (name === "WireU" || name === "WireV") leaning = true;
   else if (name === "SpindleSpeed" && has(value) && Number(value) > 0) {
     refuse("rpm" + opName, who() + "states " + Math.round(Number(value)) + " rpm - a wire EDM turns no spindle");
@@ -298,23 +285,6 @@ function onRadiusCompensation() {
 }
 
 // ------------------------------------------------------------- section
-// A tapered section's heights for TP / TN, or null with the refusal said.
-// The stream's X Y are on the work's top plane (WirePlane), so that plane
-// is the program plane: TP is the worktable to the work's top, TN the
-// worktable to the work's bottom (edm.table_to_part_bottom).
-function taperHeights() {
-  var t = edm().table_to_part_bottom;
-  if (!has(t) || Number(t) < 0) {
-    refuse("tp" + opName, who() + "is tapered, and machine " + machineName() + " states no edm.table_to_part_bottom (the height of the work's bottom above the worktable) - the Sodick LN2W wire post writes TP and TN from it and never guesses a height");
-    return null;
-  }
-  if (!has(plane) || !has(bottom) || !(plane - bottom > 0.0005)) {
-    refuse("tpz" + opName, who() + "is tapered, and the path states no work top above its bottom (PARAM WirePlane, WireBottom) - regenerate it");
-    return null;
-  }
-  return [Number(t) + (plane - bottom), Number(t)];
-}
-
 function onSection() {
   inSection = true;
   sectionOk = false;
@@ -324,7 +294,6 @@ function onSection() {
   skim = 0;
   skimPending = false;
   approachPending = false;
-  tapering = 0;
   if (condition === "") {
     refuse("op" + opName, who() + "is not wire EDM work (no EDM condition) - the Sodick LN2W wire post posts Wire Contour operations only");
     return;
@@ -336,18 +305,16 @@ function onSection() {
     refuse("cid" + opName, who() + "condition id " + JSON.stringify(condition) + " is not a Sodick condition word (C and three digits, C000 to C999) - name the machine file's condition that way");
     ok = false;
   }
-  var heights = null;
   if (fourAxis !== "") {
-    refuse("four" + opName, who() + "is a 4-axis cut - the Sodick LN2W wire post writes a constant taper only (G51 / G52 A); no G74 / G75 or U V profile words");
+    refuse("four" + opName, who() + "is a 4-axis cut - the Sodick LN2W wire post writes vertical 2-axis cuts only; no G74 / G75 or U V profile words");
     ok = false;
   } else if (taper !== 0) {
-    if (dialect !== "angle") {
-      refuse("taperuv" + opName, who() + "is tapered, and machine " + machineName() + " states no edm.taper_angle - the LN2W control tapers by angle word (G51 / G52 A), not by U V moves; state edm.taper_angle (positive, corner) in the machine file");
-      ok = false;
-    } else {
-      heights = taperHeights();
-      if (heights === null) ok = false;
-    }
+    // #4075: TP / TN are heights above the worktable, and CamCraft states
+    // no such height for the active setup; the LN2W control's corner
+    // motion and lean side under G51 / G52 are not confirmed. A taper is
+    // never written from a guessed height or an unconfirmed rule.
+    refuse("taper" + opName, who() + "is tapered (" + String(Math.abs(taper)) + " deg) - the Sodick LN2W wire post writes vertical 2-axis cuts only: the setup's work height above the worktable (TP / TN) is not stated, and the control's corner motion and lean side under G51 / G52 are not confirmed (#4075)");
+    ok = false;
   } else if (dialect !== "") {
     refuse("angle0" + opName, who() + "states an angle-word dialect without a taper angle - refused");
     ok = false;
@@ -365,22 +332,14 @@ function onSection() {
   // program carries no table, so the operator checks the row exists.
   note("CONDITION " + condition + " MUST EXIST IN THE CONTROL CONDITION TABLE - CHECK ITS VALUES");
   conditionNotes();
-  if (heights !== null) {
-    note("TAPER " + fu(Math.abs(taper)) + " DEG PER SIDE BY G51 G52 A - XY ON THE WORK TOP - CORNERS " + corner.toUpperCase());
-    note("TP IS THE WORKTABLE TO THE WORK TOP - TN IS THE WORKTABLE TO THE WORK BOTTOM - CHECK BOTH AT THE CONTROL");
-  }
   block([wcsWord]);
-  // The owner's known-good program states TP and TN before any motion.
-  if (heights !== null) {
-    block(["TP" + fu(heights[0])]);
-    block(["TN" + fu(heights[1])]);
-  }
 }
 
 // The first motion of a section, in the order the owner of an AQ600L
-// (LN2W) gave: G00 to the start point, Z0. (the upper head height the
-// operator set), T91 (or the operator at an M00), flushing, tank, the
-// condition, U0. V0. (the taper axes upright), then the first cut.
+// (LN2W) gave (his round-2 correction on PR #4065): G00 to the start
+// point with U0. V0. on the same line (the taper axes upright), Z0. (the
+// upper head height the operator set), T91 (or the operator at an M00),
+// flushing, tank, the condition, then the first cut.
 function openRun() { return side === "left" || side === "right"; }
 function startCut(p) {
   if (threaded) {
@@ -398,7 +357,7 @@ function startCut(p) {
     refuse("start" + opName, who() + "the path states no threading point - regenerate it");
     return false;
   }
-  block(["G00", wo("X", p.StartX, orgX), wo("Y", p.StartY, orgY)]);
+  block(["G00", wo("X", p.StartX, orgX), wo("Y", p.StartY, orgY), "U0.", "V0."]);
   block(["Z0."]);
   if (awt) block(["T91"]);
   else {
@@ -411,25 +370,19 @@ function startCut(p) {
     block(["C000"]);
     approachPending = true;
   } else block([condition]);
-  block(["U0.", "V0."]);
   threaded = true;
   cutZ = has(p.StartZ) ? p.StartZ : null;
   return true;
 }
 
 // A skim pass (#2649): the previous pass ended back at the start point
-// with the wire threaded and upright; the skim's flushing word, then its
+// with the wire threaded; the skim's flushing word, then its
 // own C word, come before its first move. Its offset is in the path.
 function startSkim() {
   skimPending = false;
   approachPending = false;
   if (!/^C[0-9]{3}$/.test(condition)) {
     refuse("skim" + opName, who() + "skim condition id " + JSON.stringify(condition) + " is not a Sodick condition word (C and three digits, C000 to C999) - name the machine file's condition that way");
-    sectionOk = false;
-    return false;
-  }
-  if (tapering !== 0) {
-    refuse("skimlean" + opName, who() + "a skim pass starts with the wire leaning - refused; every pass must end upright at the start point");
     sectionOk = false;
     return false;
   }
@@ -448,9 +401,9 @@ function startSkim() {
   return true;
 }
 
-// A cut: one programmed plane, no pose, no guide-offset lean, from a
-// threaded wire.
-function cutOk(p) {
+// A cut: one programmed plane, no pose, no guide-offset lean, no angle
+// word, from a threaded wire.
+function cutOk(p, ang) {
   var lean = leaning;
   leaning = false;
   if (!inSection || condition === "") {
@@ -459,12 +412,17 @@ function cutOk(p) {
   }
   if (!sectionOk || notFinite !== "") return false;
   if (has(p.A) || has(p.B) || has(p.C)) {
-    refuse("tilt" + opName, who() + "a posed move - the Sodick LN2W wire post leans the wire by G51 / G52 A only");
+    refuse("tilt" + opName, who() + "a posed move - the Sodick LN2W wire post writes vertical 2-axis cuts only");
     sectionOk = false;
     return false;
   }
   if (lean) {
-    refuse("uv" + opName, who() + "a leaning move (upper guide offset) - the Sodick LN2W wire post writes no U V lean; the LN2W control tapers by angle word (edm.taper_angle)");
+    refuse("uv" + opName, who() + "a leaning move (upper guide offset) - the Sodick LN2W wire post writes no U V lean");
+    sectionOk = false;
+    return false;
+  }
+  if (ang) {
+    refuse("ang" + opName, who() + "an angle word (a leaning move) - the Sodick LN2W wire post writes vertical 2-axis cuts only (#4075)");
     sectionOk = false;
     return false;
   }
@@ -479,7 +437,7 @@ function cutOk(p) {
 function onRapid() {
   var lean = leaning;
   leaning = false;
-  angleNext = null;
+  angleNext = false;
   if (threaded) {
     refuse("rapid" + opName, who() + "a rapid with the wire threaded through the work - refused");
     return;
@@ -498,54 +456,11 @@ function onRapid() {
   }
 }
 
-// The taper word of the next move. The control starts the lean during the
-// move after G51 / G52 A and stands the wire upright during the move after
-// G50, so each word is written before the move that the stream's angle
-// word rides. Returns false with the refusal said.
-function taperWord(ang) {
-  if (ang === null) {
-    if (tapering !== 0) {
-      refuse("noangle" + opName, who() + "a move with no angle word while the wire leans - refused, the lean of that move is not stated");
-      sectionOk = false;
-      return false;
-    }
-    return true;
-  }
-  if (taper === 0 || dialect !== "angle") {
-    refuse("ang" + opName, who() + "an angle word in a section that states no angle-word taper - refused");
-    sectionOk = false;
-    return false;
-  }
-  if (ang === 0) {
-    if (tapering !== 0) block(["G50"]);
-    tapering = 0;
-    return true;
-  }
-  var want = ang > 0 ? 1 : -1;
-  if (Math.abs(Math.abs(ang) - Math.abs(taper)) > 0.0005) {
-    refuse("angval" + opName, who() + "an angle word of " + fu(ang) + " degrees in a section that states a " + fu(Math.abs(taper)) + " degree taper - refused");
-    sectionOk = false;
-    return false;
-  }
-  if (tapering === 0) {
-    // G51: the upper guide leans left of travel; G52: right (a positive
-    // stream angle is "top left" when the machine file says so).
-    block([want > 0 ? "G51" : "G52", "A" + fu(Math.abs(ang))]);
-    tapering = want;
-  } else if (tapering !== want) {
-    refuse("angside" + opName, who() + "the wire's lean changes side along the cut - refused, one G51 / G52 word holds one side");
-    sectionOk = false;
-    return false;
-  }
-  return true;
-}
-
 function onLinear() {
   var p = properties;
   var ang = angleNext;
-  angleNext = null;
-  if (!cutOk(p)) return;
-  if (!taperWord(ang)) return;
+  angleNext = false;
+  if (!cutOk(p, ang)) return;
   // No F word: the condition sets the rate.
   block(["G01", wo("X", p.X, orgX), wo("Y", p.Y, orgY)]);
   compOff = true;
@@ -554,7 +469,7 @@ function onLinear() {
 function onCircular() {
   var p = properties;
   var ang = angleNext;
-  angleNext = null;
+  angleNext = false;
   if (p.CircularPlane && p.CircularPlane !== "XY") {
     refuse("plane" + opName, who() + "an arc in the " + p.CircularPlane + " plane - a wire cut is flat");
     return;
@@ -564,12 +479,7 @@ function onCircular() {
     sectionOk = false;
     return;
   }
-  if (ang !== null || tapering !== 0) {
-    refuse("taperarc" + opName, who() + "a tapered arc - the Sodick LN2W wire post writes straight tapered moves only");
-    sectionOk = false;
-    return;
-  }
-  if (!cutOk(p)) return;
+  if (!cutOk(p, ang)) return;
   // #3442: an arc whose written ends coincide is no arc block (arcFate, PRELUDE).
   var fate = arcFate(arcWord, arcIncOf(fu));  // #3474: I J K are increments from the start
   if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
@@ -590,10 +500,8 @@ function onCycle() {
 }
 
 // The section's end: cut the wire (T90, or the operator at an M00), then
-// the operator's stop if the op asks one. A cut that ends with the wire
-// leaning is refused: G50 needs a move to stand the wire upright.
+// the operator's stop if the op asks one.
 function onSectionEnd() {
-  if (tapering !== 0) refuse("endlean" + opName, who() + "the cut ends with the wire leaning - refused; the last move must stand the wire upright");
   if (threaded) {
     if (awt) block(["T90"]);
     else {
@@ -618,11 +526,7 @@ function onSectionEnd() {
   afterOp = "";
   taper = 0;
   dialect = "";
-  corner = "";
-  plane = null;
-  bottom = null;
-  angleNext = null;
-  tapering = 0;
+  angleNext = false;
   controlOffset = false;
   fourAxis = "";
   leaning = false;

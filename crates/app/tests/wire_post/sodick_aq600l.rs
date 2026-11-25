@@ -1,13 +1,13 @@
 //! #4045: the shipped Sodick AQ600L wire EDM machine file and the Sodick
 //! LN2W post on it. Pins the machine file's figures and its default post,
-//! and the EDM test parts (square, 2-axis, taper) posted with the LN2W
-//! dialect as goldens under `tests/golden/nc/sodick-ln2w/`.
+//! the EDM test parts (square, 2-axis) posted with the LN2W dialect as
+//! goldens under `tests/golden/nc/sodick-ln2w/`, and the taper test part
+//! refused by name (#4075).
 //! Provenance: our own tests over our own machine file and our own test
 //! parts (`testdata/models/edm/`, made for this project); the figures and
 //! their sources are in docs/decisions/4045-sodick-ln2w-dialect.md.
 //! Gate map (#4045): covers app::posting (MACHINES, WIRE_POSTS,
-//! post_script), app::posting_wire (WireBottom), app::machine (parse_mch,
-//! library), sodick-ln2w.cps.
+//! post_script), app::machine (parse_mch, library), sodick-ln2w.cps.
 
 use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, History, ImportModel, LoadMachine, SetStock};
 use camcraft_app::geo2d::Point2;
@@ -147,15 +147,19 @@ fn the_aq600l_file_states_its_figures_and_names_the_ln2w_post() {
     let m = parse_mch(text()).expect("the file parses");
     assert_eq!(m.post.as_deref(), Some(LN2W), "the default post is the LN2W dialect");
     let raw: serde_json::Value = serde_json::from_str(text()).expect("json");
-    for (axis, span) in [("X", 600.0), ("Y", 400.0), ("U", 120.0), ("V", 120.0)] {
+    // Review of PR #4065: U/V 80 x 80 mm, Sodick's AQ400L / AQ600L brochure.
+    for (axis, span) in [("X", 600.0), ("Y", 400.0), ("U", 80.0), ("V", 80.0)] {
         let hit = find_axis(&raw["kinematics"]["default"]["parts"], axis).unwrap_or_else(|| panic!("{axis}"));
         let (lo, hi) = (hit["min"].as_f64().expect("min"), hit["max"].as_f64().expect("max"));
         assert!((hi - lo - span).abs() < 1e-9, "{axis}: {lo}..{hi}");
     }
     let edm = m.edm.as_ref().expect("edm");
     assert_eq!(edm.max_taper_deg, Some(20.0));
-    assert_eq!(edm.table_to_part_bottom, Some(0.0), "the taper height key (#2130)");
-    assert!(edm.taper_angle.is_some_and(|t| t.complete(NAME).is_ok()), "the LN2W control tapers by angle word");
+    // A 20 degree lean over the example guide span stays inside the U/V half travel.
+    let span = edm.upper_guide_z.expect("upper") - edm.lower_guide_z.expect("lower");
+    assert!(span * 20.0f64.to_radians().tan() <= 40.0, "guide span {span} mm leans past the 40 mm U/V half travel at 20 deg");
+    // No unconfirmed corner or side rule is stated (#4075).
+    assert!(edm.taper_angle.is_none(), "no edm.taper_angle until the LN2W corner motion and lean side are confirmed");
     assert_eq!(edm.awt, Some(true));
     // What is an example says so, as the ALC400G file does (#3214).
     let about = raw["general"]["description"].as_str().expect("description");
@@ -176,14 +180,16 @@ fn the_library_lists_the_aq600l_and_offers_both_sodick_posts() {
     assert!(e.posts.contains(&LN2W) && e.posts.contains(&MARK21), "{:?}", e.posts);
 }
 
-/// Done means: the square posts in the owner's start order, with no unit
-/// word, and each skim takes T85 and its own C word.
+/// Done means: the square posts in the owner's start order (U0. V0. on the
+/// G00 to the start point, his round-2 correction on PR #4065), with no
+/// unit word, and each skim takes T85 and its own C word.
 #[test]
 fn the_ln2w_square_posts_its_golden_in_the_owners_start_order() {
     let text = post(&square(), LN2W, "square").expect("the square posts");
     golden("edm_test_square.nc", &text);
     let w = words(&text);
-    assert_eq!(&w[..10], ["G90", "G54", "G00 X0. Y0.", "Z0.", "T91", "T84", "T94", "C001", "U0. V0.", "G01 X4.835 Y0."], "{text}");
+    assert_eq!(&w[..9], ["G90", "G54", "G00 X0. Y0. U0. V0.", "Z0.", "T91", "T84", "T94", "C001", "G01 X4.835 Y0."], "{text}");
+    assert_eq!(w.iter().filter(|l| l.contains("U0.")).count(), 1, "U0. V0. rides the one G00 only: {text}");
     assert!(!w.iter().any(|l| l.split(' ').any(|x| matches!(x, "G20" | "G21" | "G40" | "G92"))), "{text}");
     assert!(text.contains("NOT VERIFIED ON A CONTROL"), "{text}");
     let skims: Vec<usize> = w.iter().enumerate().filter(|(_, l)| **l == "T85").map(|(i, _)| i).collect();
@@ -201,68 +207,20 @@ fn the_ln2w_two_axis_block_posts_its_golden() {
     let text = post(&world, LN2W, "2axis").expect("the 2-axis block posts");
     golden("edm_test_2axis.nc", &text);
     let w = words(&text);
-    assert_eq!(&w[2..9], ["G00 X-13. Y-3.", "Z0.", "T91", "T84", "T94", "C001", "U0. V0."], "{text}");
+    assert_eq!(&w[2..8], ["G00 X-13. Y-3. U0. V0.", "Z0.", "T91", "T84", "T94", "C001"], "{text}");
+    assert!(w[8].starts_with("G01 "), "the first cut follows the C word: {text}");
     assert!(w.iter().any(|l| l.starts_with("G03 ")) && w.iter().any(|l| l.starts_with("G02 ")), "{text}");
     assert!(!w.iter().any(|l| l.starts_with("TP") || l.starts_with("TN") || matches!(*l, "G50" | "G51" | "G52")), "{text}");
 }
 
-/// Done means: the taper test part's walls post as TP / TN, G51 A and G50.
-/// The wire travels counter-clockwise round the punch, which is wider at
-/// the bottom: the upper guide leans left of travel, G51.
+/// Review of PR #4065 (findings 2, 3, 4, 6): the taper test part is
+/// refused by name, with no program. TP / TN need the setup's height above
+/// the worktable, and the LN2W corner motion and lean side are not
+/// confirmed (#4075). No taper word is written from a guess.
 #[test]
-fn the_ln2w_taper_part_posts_its_golden_with_tp_tn_g51_a_and_g50() {
-    let text = post(&taper(), LN2W, "taper").expect("the taper part posts");
-    golden("edm_test_taper.nc", &text);
-    assert_eq!(
-        words(&text),
-        [
-            "G90",
-            "G54",
-            "TP20.",
-            "TN0.",
-            "G00 X-35. Y0.",
-            "Z0.",
-            "T91",
-            "T84",
-            "T94",
-            "C001",
-            "U0. V0.",
-            "G51 A8.531",
-            "G01 X-22.167 Y0.",
-            "G01 X-22.167 Y-12.167",
-            "G01 X22.167 Y-12.167",
-            "G01 X22.167 Y12.167",
-            "G01 X-22.167 Y12.167",
-            "G01 X-22.167 Y0.",
-            "G50",
-            "G01 X-35. Y0.",
-            "T90",
-            "M02"
-        ],
-        "{text}"
-    );
-}
-
-/// The heights are never guessed: without `edm.table_to_part_bottom` the
-/// taper is refused by name, and with a fixture height TP and TN move.
-#[test]
-fn an_ln2w_taper_needs_the_table_height_and_follows_it() {
-    let world = taper();
-    let mut h = History::default();
-    let mut remount = |raw: &serde_json::Value| {
-        let m = parse_mch(&raw.to_string()).expect("parses");
-        h.execute(&world, LoadMachine::new(&world, "sodick-aq600l.mch".into(), Some(m)).expect("remount"));
-    };
-    let mut raw: serde_json::Value = serde_json::from_str(text()).expect("json");
-    raw["edm"]["table_to_part_bottom"] = serde_json::json!(35.0);
-    remount(&raw);
-    let text = post(&world, LN2W, "taper-raised").expect("posts");
-    let w = words(&text);
-    assert!(w.contains(&"TP55.") && w.contains(&"TN35."), "{text}");
-    raw["edm"].as_object_mut().expect("edm").remove("table_to_part_bottom");
-    remount(&raw);
-    let err = post(&world, LN2W, "taper-unstated").expect_err("no height, no taper");
-    assert!(err.contains("Cut1") && err.contains("states no edm.table_to_part_bottom"), "{err}");
+fn the_ln2w_taper_part_is_refused_by_name_until_its_heights_and_rules_are_confirmed() {
+    let err = post(&taper(), LN2W, "taper").expect_err("no taper is posted");
+    assert!(err.contains("Cut1") && err.contains("is tapered") && err.contains("#4075"), "{err}");
 }
 
 /// The Mark 21 dialect is not changed by this work: on the same machine
@@ -272,7 +230,7 @@ fn the_mark_21_post_keeps_its_own_words_on_the_aq600l() {
     let text = post(&square(), MARK21, "square-mark21").expect("the square posts on Mark 21");
     let w = words(&text);
     assert_eq!(&w[..7], ["G21", "G90", "G54", "G40 G00 X0. Y0.", "T91", "T84", "T94"], "{text}");
-    assert!(!w.contains(&"Z0.") && !w.contains(&"U0. V0."), "{text}");
+    assert!(!w.contains(&"Z0.") && !w.iter().any(|l| l.contains("U0.")), "{text}");
     let err = post(&taper(), MARK21, "taper-mark21").expect_err("Mark 21 writes a vertical cut only");
     assert!(err.contains("angle-word move") || err.contains("is tapered"), "{err}");
 }

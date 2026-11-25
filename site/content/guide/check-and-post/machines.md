@@ -239,23 +239,22 @@ The ALC400G control has not been confirmed to match the Mark 21 post.
 
 The library also includes **Sodick AQ600L** (`sodick-aq600l.mch`) for
 the LN2W control. Its default post is **Sodick Wire EDM (LN2W)**. The
-file states X/Y travel 600/400 mm, U/V travel 120/120 mm and a taper
+file states X/Y travel 600/400 mm, U/V travel 80/80 mm and a taper
 maximum of 20 degrees: check these figures against the specification
-sheet of your machine. The conditions `C001`, `C002` and `C903`, the
-guide heights and `edm.table_to_part_bottom` are examples. Replace them
-before you cut.
+sheet of your machine. The conditions `C001`, `C002` and `C903` and the
+guide heights are examples. Replace them before you cut.
 
 The **Sodick Wire EDM (LN2W)** post starts each cut in this order:
-`G00 X Y`, `Z0.`, `T91`, `T84`, `T94`, the `C` word, `U0. V0.`, then the
-first `G01`. Set Z0 at the control to the height of the upper head above
-the part. The post writes no `G20` or `G21`, because the LN2W control
-refuses `G21`: it posts millimetre documents only, and the unit setting
-of the control must be millimetres. A constant taper posts as `TP` and
-`TN`, then `G51` or `G52` with `A`, then `G50`. The X Y values of a taper
-are on the top of the work. `TP` is the height of the top of the work
-above the worktable, and `TN` is the height of its bottom
-(`edm.table_to_part_bottom`). The post refuses 4-axis cuts and wire
-offset (G41 / G42). Its output has not been verified on a control.
+`G00 X Y U0. V0.` on one line, `Z0.`, `T91`, `T84`, `T94`, the `C` word,
+then the first `G01`. Set Z0 at the control to the height of the upper
+head above the part. The post writes no `G20` or `G21`, because the
+LN2W control refuses `G21`: it posts millimetre documents only, and the
+unit setting of the control must be millimetres. The post writes
+vertical 2-axis cuts only. It refuses a taper, 4-axis cuts and wire
+offset (G41 / G42). A taper (`TP` / `TN`, `G51` / `G52` `A`) needs the
+height of the work above the worktable for each setup, and a confirmed
+corner motion and lean side of the control (#4075). Its output has not
+been verified on a control.
 
 Wire Contour runs on a machine file that declares `wire_edm`. The
 **Generic ISO Wire EDM** post takes its EDM words from the file's

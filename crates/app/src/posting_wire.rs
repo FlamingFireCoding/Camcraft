@@ -159,7 +159,7 @@ pub(super) fn stream(
             .ok_or_else(|| format!("{name}: a leaning wire cut needs its wire EDM machine mounted"))?;
         let angle = machine.edm.as_ref().and_then(|e| e.taper_angle);
         let lean = if let Some(a) = angle {
-            angle_lean(name, &machine.model, a, four.is_some(), hs.top, hs.bottom, origin[2])?
+            angle_lean(name, &machine.model, a, four.is_some(), hs.top, origin[2])?
         } else {
             Lean::Guides(crate::machine::wire_edm::guide_planes(&machine, origin[2]).map_err(|e| format!("{name}: {e}"))?)
         };
@@ -197,7 +197,7 @@ pub(super) fn stream(
 #[derive(Clone, Copy)]
 enum Lean {
     Guides((f64, f64)),
-    Angle { top: f64, left: bool, corner: &'static str, plane: f64, bottom: Option<f64> },
+    Angle { top: f64, left: bool, corner: &'static str, plane: f64 },
 }
 
 /// One wire section: the dump with the wire words before it opens;
@@ -217,15 +217,13 @@ fn section(
     match taper {
         None => {}
         Some((_, Lean::Guides(guides))) => records = guided(records, guides).map_err(|e| format!("{name}: {e}"))?,
-        Some((deg, Lean::Angle { top, left, corner, plane, bottom })) => {
+        Some((deg, Lean::Angle { top, left, corner, plane })) => {
             records = angled(records, top, deg.abs(), left).map_err(|e| format!("{name}: {e}"))?;
             dialect = vec![
                 cnc::Record::Param { name: "WireTaperDialect".into(), value: json!("angle") },
                 cnc::Record::Param { name: "WireCorner".into(), value: json!(corner) },
                 cnc::Record::Param { name: "WirePlane".into(), value: json!(plane) },
             ];
-            // #4045: the work's bottom, for a post that states both planes (TP / TN).
-            dialect.extend(bottom.map(|z| cnc::Record::Param { name: "WireBottom".into(), value: json!(z) }));
         }
     }
     // The wire words ride before the section opens, like every PARAM.
@@ -250,7 +248,7 @@ fn section(
 /// name. Generation's door (`wire_op::corner_rule`) and the stamp
 /// refuse these first; this is the post's own guard for a path that
 /// reaches it another way.
-fn angle_lean(name: &str, model: &str, a: crate::machine::TaperAngle, four: bool, top: Option<f64>, bottom: Option<f64>, origin_z: f64) -> Result<Lean, String> {
+fn angle_lean(name: &str, model: &str, a: crate::machine::TaperAngle, four: bool, top: Option<f64>, origin_z: f64) -> Result<Lean, String> {
     if four {
         return Err(format!(
             "{name}: a 4-axis cut, and machine {model} tapers by angle word (edm.taper_angle) - one angle cannot state different upper and lower profiles"
@@ -259,7 +257,7 @@ fn angle_lean(name: &str, model: &str, a: crate::machine::TaperAngle, four: bool
     let (positive, corner) = a.complete(model).map_err(|e| format!("{name}: {e}"))?;
     let top = top.ok_or_else(|| format!("{name}: the workpiece's top does not resolve"))?;
     let left = positive == crate::machine::AngleSide::TopLeft;
-    Ok(Lean::Angle { top, left, corner: corner.word(), plane: top - origin_z, bottom: bottom.map(|z| z - origin_z) })
+    Ok(Lean::Angle { top, left, corner: corner.word(), plane: top - origin_z })
 }
 
 /// #538: every pass starts and ends at the threading point (#532), so

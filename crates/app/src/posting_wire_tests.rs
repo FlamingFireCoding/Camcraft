@@ -41,11 +41,11 @@ fn a_lean_that_changes_side_or_never_leans_is_refused_by_name() {
 fn an_angle_lean_refuses_a_four_axis_cut_an_unstated_rule_and_an_unresolved_top() {
     let full = TaperAngle { positive: Some(AngleSide::TopLeft), corner: Some(TaperCorner::Mitre) };
     let err = |r: Result<Lean, String>| r.err().unwrap_or_default();
-    assert!(angle_lean("W1", "M", full, false, Some(12.0), Some(4.0), 2.0).is_ok_and(|l| matches!(l, Lean::Angle { left: true, plane, bottom: Some(b), .. } if plane == 10.0 && b == 2.0)));
-    let four = err(angle_lean("W1", "M", full, true, Some(12.0), Some(0.0), 0.0));
+    assert!(angle_lean("W1", "M", full, false, Some(12.0), 2.0).is_ok_and(|l| matches!(l, Lean::Angle { left: true, plane, .. } if plane == 10.0)));
+    let four = err(angle_lean("W1", "M", full, true, Some(12.0), 0.0));
     assert!(four.starts_with("W1: a 4-axis cut, and machine M tapers by angle word"), "{four}");
-    let unstated = err(angle_lean("W1", "M", TaperAngle { corner: None, ..full }, false, Some(12.0), Some(0.0), 0.0));
+    let unstated = err(angle_lean("W1", "M", TaperAngle { corner: None, ..full }, false, Some(12.0), 0.0));
     assert!(unstated.contains("states no edm.taper_angle.corner"), "{unstated}");
-    let no_top = err(angle_lean("W1", "M", full, false, None, None, 0.0));
+    let no_top = err(angle_lean("W1", "M", full, false, None, 0.0));
     assert!(no_top.contains("the workpiece's top does not resolve"), "{no_top}");
 }

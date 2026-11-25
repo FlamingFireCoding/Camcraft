@@ -54,10 +54,6 @@ pub struct Edm {
     /// tapers by U/V moves (#536).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub taper_angle: Option<super::edm_taper::TaperAngle>,
-    /// Wire: the work's bottom above the worktable, mm, 0 or more (#4045,
-    /// #2130). A post that states table heights (Sodick TP / TN) reads it.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub table_to_part_bottom: Option<f64>,
     /// Wire: the wire diameters the machine takes, mm.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub wire_diameters: Vec<f64>,
@@ -94,14 +90,13 @@ pub struct Edm {
 }
 
 /// The keys only a wire machine states.
-pub const WIRE_KEYS: [&str; 10] = [
+pub const WIRE_KEYS: [&str; 9] = [
     "lower_guide_z",
     "upper_guide_z",
     "max_taper_deg",
     "wire_diameters",
     "awt",
     "taper_angle",
-    "table_to_part_bottom",
     "tank",
     "flushing",
     "skim_flushing",
@@ -144,7 +139,6 @@ impl Edm {
                 _ => true,
             }
             && self.max_taper_deg.is_none_or(|a| a.is_finite() && a > 0.0 && a < 90.0)
-            && self.table_to_part_bottom.is_none_or(|t| t.is_finite() && t >= 0.0)
             && self.wire_diameters.iter().all(|d| d.is_finite() && *d > 0.0)
             && pos(self.max_orbit_radius)
             && self.pickup.as_ref().is_none_or(|p| !p.trim().is_empty())
@@ -161,7 +155,6 @@ impl Edm {
         let wire = self.lower_guide_z.is_some()
             || self.upper_guide_z.is_some()
             || self.max_taper_deg.is_some()
-            || self.table_to_part_bottom.is_some()
             || !self.wire_diameters.is_empty()
             || self.awt.is_some()
             || self.tank.is_some()
@@ -267,7 +260,6 @@ pub(super) fn parse_edm(v: Option<&Value>, f: f64, k: Option<Kind>) -> Result<Op
         lower_guide_z: num(v, "lower_guide_z", f)?,
         upper_guide_z: num(v, "upper_guide_z", f)?,
         max_taper_deg: num(v, "max_taper_deg", 1.0)?,
-        table_to_part_bottom: num(v, "table_to_part_bottom", f)?,
         max_orbit_radius: num(v, "max_orbit_radius", f)?,
         ..Edm::default()
     };
@@ -280,11 +272,6 @@ pub(super) fn parse_edm(v: Option<&Value>, f: f64, k: Option<Kind>) -> Result<Op
         && !(a > 0.0 && a < 90.0)
     {
         return Err(format!("machine file: edm.max_taper_deg must be between 0 and 90 degrees, not {a}"));
-    }
-    if let Some(t) = e.table_to_part_bottom
-        && t < 0.0
-    {
-        return Err(format!("machine file: edm.table_to_part_bottom must be 0 or more, not {t}"));
     }
     if let Some(r) = e.max_orbit_radius
         && r <= 0.0

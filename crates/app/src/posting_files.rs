@@ -69,7 +69,7 @@ pub const BUILTINS: &[(&str, AssetFile)] = &[
     // operation manual (Mark 21 / EX21); not verified on a control.
     ("Sodick Wire EDM (Mark 21)", AssetFile("sodick-wire.cps")),
     // #4045: the Sodick LN2W dialect (AQ400L / AQ600L): the start sequence
-    // of a machine owner, taper as G51 / G52 A; not verified on a control.
+    // of a machine owner, vertical 2-axis cuts (taper: #4075); not verified on a control.
     ("Sodick Wire EDM (LN2W)", AssetFile("sodick-ln2w.cps")),
     (super::agie::POST, AssetFile("agie-native.cps")),
     // #2700: the G-EDM 2-axis wire post for G-RBLv3 (Grbl-family words,

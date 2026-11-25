@@ -1,7 +1,7 @@
 //! #4045: the Sodick LN2W wire post (`sodick-ln2w.cps`) on synthetic
 //! streams. Pins the start sequence that the owner of an AQ600L gave, the
-//! absence of a unit word (the control alarms on G21), the taper words
-//! (TP / TN, G51 / G52 A, G50), the skim flushing and each named refusal.
+//! absence of a unit word (the control alarms on G21), the refusal of each
+//! taper (#4075), the skim flushing and each named refusal.
 //! Provenance: synthetic streams from our CNC intermediate contract; the
 //! expected words are the owner's statements and the LN manual facts that
 //! docs/decisions/4045-sodick-ln2w-dialect.md records.
@@ -48,14 +48,14 @@ fn words(out: &engine::PostOutput) -> Vec<&str> {
     out.program.lines().filter(|l| !l.starts_with('(')).collect()
 }
 
-/// A 3 degree taper: the lead-in leans, one side, the lead-out stands upright.
+/// A taper of `angle` degrees: the lead-in leans, one side, the lead-out
+/// stands upright.
 fn tapered(angle: f64) -> Vec<Record> {
     let mut r = head(&[
-        ("WireTaper", json!(3.0)),
+        ("WireTaper", json!(angle.abs())),
         ("WireTaperDialect", json!("angle")),
         ("WireCorner", json!("mitre")),
         ("WirePlane", json!(12.0)),
-        ("WireBottom", json!(0.0)),
     ]);
     r.extend([
         param("WireAngle", json!(angle)),
@@ -77,7 +77,7 @@ fn the_start_sequence_is_the_owners_and_no_unit_word_is_written() {
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
     assert_eq!(
         words(&out),
-        ["G90", "G54", "G00 X-22. Y10.", "Z0.", "T91", "T84", "T94", "C001", "U0. V0.", "G01 X-25.838 Y10.", "G01 X-22. Y10.", "T90", "M02"],
+        ["G90", "G54", "G00 X-22. Y10. U0. V0.", "Z0.", "T91", "T84", "T94", "C001", "G01 X-25.838 Y10.", "G01 X-22. Y10.", "T90", "M02"],
         "{}",
         out.program
     );
@@ -88,54 +88,51 @@ fn the_start_sequence_is_the_owners_and_no_unit_word_is_written() {
     assert!(SCRIPT.contains("programUnits = \"mm\";"), "an inch document must be refused: no unit word can be written");
 }
 
+/// Review of PR #4065 (findings 3, 4, 6): no taper word is written. A
+/// positive or negative stream angle (a top_left or a top_right machine
+/// signs it either way), a machine that states a table height, and a
+/// 0.0004 degree angle that would round to `A0.` are each refused by name,
+/// with no TP / TN, G51 / G52, A, G50 or cut written (#4075).
 #[test]
-fn a_taper_posts_tp_tn_and_g51_g52_a_with_g50_before_the_upright_move() {
-    let m = machine(json!({"table_to_part_bottom": 5.0}));
-    let out = run(&m, &tapered(3.0));
-    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
-    assert_eq!(
-        words(&out),
-        [
-            "G90", "G54", "TP17.", "TN5.", "G00 X-22. Y10.", "Z0.", "T91", "T84", "T94", "C001", "U0. V0.", "G51 A3.", "G01 X-25. Y10.",
-            "G01 X-25. Y-10.", "G50", "G01 X-22. Y10.", "T90", "M02"
-        ],
-        "{}",
-        out.program
-    );
-    // A negative stream angle leans the upper guide right of travel.
-    let right = run(&m, &tapered(-3.0));
-    assert!(right.warnings.is_empty(), "{:?}", right.warnings);
-    assert!(words(&right).contains(&"G52 A3.") && !words(&right).iter().any(|l| l.contains("G51")), "{}", right.program);
+fn every_taper_is_refused_by_name_and_writes_no_taper_word() {
+    let taper_word = |out: &engine::PostOutput| {
+        words(out).iter().any(|l| l.starts_with("TP") || l.starts_with("TN") || l.starts_with("G5") || l.contains(" A") || l.starts_with("G01") || *l == "T91")
+    };
+    let side = |s: &str| json!({"table_to_part_bottom": 5.0, "taper_angle": {"positive": s, "corner": "mitre"}});
+    for (m, angle) in [(machine(json!({})), 3.0), (machine(side("top_right")), 3.0), (machine(side("top_right")), -3.0), (machine(json!({})), 0.0004)] {
+        let out = run(&m, &tapered(angle));
+        assert!(out.warnings.iter().any(|w| w.contains("Punch1") && w.contains("is tapered") && w.contains("#4075")), "{angle}: {:?}", out.warnings);
+        assert!(!taper_word(&out), "{angle}:\n{}", out.program);
+    }
 }
 
 #[test]
-fn a_taper_without_its_heights_or_its_dialect_is_refused_by_name() {
+fn a_lean_without_a_taper_section_is_refused_by_name() {
     let cut = |out: &engine::PostOutput| words(out).iter().any(|l| l.starts_with("G01") || *l == "T91");
-    let out = run(&machine(json!({})), &tapered(3.0));
-    assert!(out.warnings.iter().any(|w| w.contains("Punch1") && w.contains("edm.table_to_part_bottom")), "{:?}", out.warnings);
-    assert!(!cut(&out), "{}", out.program);
-    // A guide-offset (U V) stream: the machine file states no edm.taper_angle.
+    // A guide-offset (U V) stream.
     let mut uv = head(&[("WireTaper", json!(3.0))]);
     uv.extend([param("WireU", json!(0.6)), param("WireV", json!(0.0)), mv(MoveKind::Feed, -25.0, 10.0), Record::Section { begin: false }]);
-    let out = run(&machine(json!({"table_to_part_bottom": 5.0})), &uv);
-    assert!(out.warnings.iter().any(|w| w.contains("states no edm.taper_angle")), "{:?}", out.warnings);
+    let out = run(&machine(json!({})), &uv);
+    assert!(out.warnings.iter().any(|w| w.contains("is tapered")), "{:?}", out.warnings);
     assert!(!cut(&out), "{}", out.program);
     // A 4-axis cut.
     let mut four = head(&[("WireFourAxis", json!("arc length"))]);
     four.extend([param("WireU", json!(0.6)), param("WireV", json!(0.0)), mv(MoveKind::Feed, -25.0, 10.0), Record::Section { begin: false }]);
-    let out = run(&machine(json!({"table_to_part_bottom": 5.0})), &four);
+    let out = run(&machine(json!({})), &four);
     assert!(out.warnings.iter().any(|w| w.contains("is a 4-axis cut")), "{:?}", out.warnings);
     assert!(!cut(&out), "{}", out.program);
-    // An angle word in a vertical section, and a lean that is never stood upright.
+    // An angle word in a vertical section.
     let mut stray = head(&[]);
     stray.extend([param("WireAngle", json!(3.0)), mv(MoveKind::Feed, -25.0, 10.0), Record::Section { begin: false }]);
     let out = run(&machine(json!({})), &stray);
-    assert!(out.warnings.iter().any(|w| w.contains("states no angle-word taper")), "{:?}", out.warnings);
+    assert!(out.warnings.iter().any(|w| w.contains("an angle word") && w.contains("#4075")), "{:?}", out.warnings);
     assert!(!words(&out).iter().any(|l| l.starts_with("G01")), "{}", out.program);
-    let mut leaning = tapered(3.0);
-    leaning.retain(|r| !matches!(r, Record::Param { name, value } if name == "WireAngle" && value == &json!(0.0)));
-    let out = run(&machine(json!({"table_to_part_bottom": 5.0})), &leaning);
-    assert!(out.warnings.iter().any(|w| w.contains("no angle word while the wire leans")), "{:?}", out.warnings);
+    // A leaning (U V) move in a vertical section.
+    let mut lean = head(&[]);
+    lean.extend([param("WireU", json!(0.6)), param("WireV", json!(0.0)), mv(MoveKind::Feed, -25.0, 10.0), Record::Section { begin: false }]);
+    let out = run(&machine(json!({})), &lean);
+    assert!(out.warnings.iter().any(|w| w.contains("writes no U V lean")), "{:?}", out.warnings);
+    assert!(!words(&out).iter().any(|l| l.starts_with("G01")), "{}", out.program);
 }
 
 #[test]
