@@ -83,6 +83,12 @@ bound it to a smaller area.
 | Passes | Holes | Lift over (or Cut across air, lift over islands; Cut straight through) |
 | Passes | Pass starts at | Auto, not used: the rows run edge to edge, so there is no inside or outside order |
 
+On **Passes**, turn on **Arc turns at row ends** to round the turns
+between facing rows. With **Arc radius = half the row spacing**, the
+turn is a semicircle where it fits. To set a smaller **Arc radius**,
+clear that checkbox. Where there is room, CamCraft joins two quarter
+arcs with a straight move outside the facing area.
+
 **Do not touch** is on **Geometry > Boundary > Boundaries**. Choose
 **Pick protected**, pick model faces or edge chains, then choose **Done**
 and **Apply**. **Clearance** adds space around the full tool assembly
@@ -148,6 +154,11 @@ generated path before posting.
 CamCraft refuses an open run whose air side changes or whose offset cuts
 the kept part. A part-source run with no part material beside it keeps a
 centreline ride and the path notes say so.
+
+On **Passes**, turn on **Arc turns at corners** to round corners that
+turn toward air. Corners that turn toward the part stay sharp, and the
+path notes identify them. **Arc radius = tool radius** is the automatic
+setting. Clear it to enter an **Arc radius**.
 
 An inside **Ramp** entry descends along the lead and ring at the entry
 angle. An unset entry angle means 3 degrees, independently of the link
@@ -448,6 +459,15 @@ typed in or seeded from suitable picked slot geometry;
 Slot cuts one continuous pass at each depth. It follows the centreline
 when the cutting width equals the tool diameter. A wider cut joins the
 rows and finishes with a lap along the walls.
+
+On **Passes**, turn on **Arc turns at row ends** to round the corners
+where the slot rows join. **Arc radius = tool radius** is the automatic
+setting. Clear it to enter an **Arc radius**. A single-row slot has no
+turn to round. On wider slots, read the path notes for material left by
+rounding.
+
+On Face, 2D Contour and Slot, arc turns are off by default. An explicit
+radius must be at least 0.01 mm and at most the tool radius.
 
 The A and B fields sit in their own **Manual** section on the Geometry tab;
 Slot width and the extension rows stay outside it. While the Geometry tab

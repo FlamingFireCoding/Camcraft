@@ -57,6 +57,9 @@ mod test_import;
 mod program_info;
 #[path = "state_tool_library.rs"]
 mod tool_library_io;
+#[path = "state_tool_library_dialog.rs"]
+mod tool_library_dialog;
+pub use tool_library_dialog::{EditorFace, PreviewMode, ToolEditorTab, ToolLibraryView, ToolSource};
 #[path = "state_setup_mount.rs"]
 mod setup_mount;
 #[path = "state_pockets.rs"]
@@ -106,7 +109,7 @@ mod program_entry;
 pub use program_entry::EntryVerb;
 #[path = "state_tool_body.rs"]
 mod tool_body_ui;
-pub use tool_body_ui::{BodyDraft, BodyPickMode, ToolBodyUi, ZOOM_MAX, ZOOM_MIN, clamp_zoom};
+pub use tool_body_ui::{BodyDraft, BodyPickMode, Orbit, ToolBodyUi, ZOOM_MAX, ZOOM_MIN, clamp_zoom};
 #[path = "state_tool_body_lathe.rs"]
 mod tool_body_lathe_ui;
 pub use tool_body_lathe_ui::{LatheBodyDraft, LatheDraft};
@@ -1616,8 +1619,6 @@ pub enum LayoutRequest {
     Toggle(Panel),
     /// Open and focus a panel without toggling it closed.
     Show(Panel),
-    /// Open and focus the independent tool library.
-    ToolLibrary,
     /// Open the Debug info panel (#2262) as a dock tab, or close it.
     ToggleDebugInfo,
     /// Rebuild the default three-pane dock.
@@ -1994,6 +1995,9 @@ pub struct State {
     /// #183: the live MCP session's inbox when the app was started with
     /// `--mcp-port` / `CAMCRAFT_MCP_PORT`; drained with `pending`.
     pub mcp: Option<camcraft_app::mcp::Inbox>,
+    /// #3751: the UI link's inbox (`camcraft-cli --ui`), opened at start
+    /// unless `CAMCRAFT_UI_LINK=off`; drained with `mcp` in `mcp_host::pump`.
+    pub ui_link: Option<camcraft_app::mcp::Inbox>,
     /// #1946: in-app AI chat panel state (conversations, worker handle, toggles).
     pub ai_chat: crate::egui_app::ai_chat::AiChatState,
     /// Sender used by the AI chat worker to dispatch MCP requests in-process.
@@ -2169,6 +2173,8 @@ pub struct State {
     /// tool vanishes (the ghost law, mirrored from
     /// [`State::pane_target`]).
     pub tool_shape_editor: Option<String>,
+    /// #3892: the tool library window - `None` closed (view state).
+    pub tool_library: Option<ToolLibraryView>,
     /// #2397: Properties is showing the blank new-tool form. The Tool
     /// target with the empty name is the destination; this says which of
     /// its two faces shows - the pointer to the library, or the draft.
@@ -2461,6 +2467,7 @@ impl State {
             pending: VecDeque::new(),
             picker_in_click: false,
             mcp: None,
+            ui_link: None,
             ai_chat: crate::egui_app::ai_chat::AiChatState::new(),
             ai_mcp_tx,
             ai_mcp_inbox: Some(ai_mcp_inbox),
@@ -2513,6 +2520,7 @@ impl State {
                 ..ToolUi::default()
             },
             tool_shape_editor: None,
+            tool_library: None,
             new_tool_form: false,
             tool_body_ui: ToolBodyUi::default(),
             tool_profile_ui: ToolProfileUi::default(),

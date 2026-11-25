@@ -7,7 +7,9 @@ use std::sync::Arc;
 use camcraft_geometry::dxf::Primitive;
 use flecs_ecs::prelude::World;
 
-use super::{FeatureSel, OpParams, ResolvedHeights, SrcRef, WireContourOp};
+use camcraft_geometry::wire_round_profile::WireProfile;
+
+use super::{FeatureSel, OpParams, ResolvedHeights, SrcRef, WireContourOp, WireSide};
 use crate::cl::Toolpath;
 use crate::geo2d::{Loop, Point2, Region};
 use crate::geometry::sketch_chains::{ClosedChain, SketchChainRef};
@@ -158,6 +160,19 @@ pub(super) fn resolve_geometry(
     })
 }
 
+fn single_pass(w: &WireContourOp) -> Result<(), String> {
+    if !w.capture
+        || w.tabs.is_some()
+        || w.burnout.is_some()
+        || w.taper_deg != 0.0
+        || w.four_axis.is_some()
+        || !w.skims.is_empty()
+    {
+        return Err("selected DXF wire cuts require a single vertical pass with slug capture and no tabs".into());
+    }
+    Ok(())
+}
+
 fn has_predecessor(world: &World, name: &str, declared: Option<&str>) -> bool {
     setup::operation_order(world)
         .into_iter()
@@ -201,14 +216,34 @@ impl SelectedWireChain {
         Point2::new(q.x, q.y)
     }
 
-    /// Convert only exact, already connected line segments. No joining or sampling.
-    pub(super) fn straight_ring(&self, w: &WireContourOp) -> Result<Loop, String> {
-        if self
-            .chain
+    fn straight(&self) -> bool {
+        self.chain
             .segments
             .iter()
-            .any(|s| !matches!(s.curve, Primitive::Line { .. }))
-        {
+            .all(|s| matches!(s.curve, Primitive::Line { .. }))
+    }
+
+    /// The nominal ring of the generic wire path: the exact straight chain, or
+    /// for a punch the circumscribed preview of a circle, racetrack (#2022) or
+    /// convex tangent loop (#2983).
+    pub(super) fn nominal_ring(&self, w: &WireContourOp) -> Result<Loop, String> {
+        if self.straight() || w.side != WireSide::Punch {
+            return self.straight_ring(w);
+        }
+        single_pass(w)?;
+        self.wire_profile()?.preview()
+    }
+
+    /// The selected circle, racetrack or convex tangent loop, in world XY.
+    pub(crate) fn wire_profile(&self) -> Result<WireProfile, String> {
+        let mut shape = WireProfile::from_chain(&self.chain)?;
+        shape.place(|p| self.world_xy(p));
+        Ok(shape)
+    }
+
+    /// Convert only exact, already connected line segments. No joining or sampling.
+    fn straight_ring(&self, w: &WireContourOp) -> Result<Loop, String> {
+        if !self.straight() {
             return Err("the selected DXF chain contains an arc or circle; the generic wire path requires straight segments".into());
         }
         if self.chain.max_gap != 0.0 {
@@ -216,15 +251,7 @@ impl SelectedWireChain {
                 "the selected DXF wire chain has a joint gap; exact endpoints are required".into(),
             );
         }
-        if !w.capture
-            || w.tabs.is_some()
-            || w.burnout.is_some()
-            || w.taper_deg != 0.0
-            || w.four_axis.is_some()
-            || !w.skims.is_empty()
-        {
-            return Err("selected DXF wire cuts require a single vertical pass with slug capture and no tabs".into());
-        }
+        single_pass(w)?;
         Loop::new(
             self.chain
                 .segments
