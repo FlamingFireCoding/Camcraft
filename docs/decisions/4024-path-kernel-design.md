@@ -4,6 +4,16 @@ Part of #4023 (the path kernel). This is a design record only. No code
 changes with it. Nothing in it is built before the maintainer reviews it:
 not the kernel, and not either design of #3934.
 
+Revision 2 (2026-11-25) takes in the maintainer's answers on PR #4030:
+questions 1, 2, 6, 7, 8 and 9, the side setting and the code layout are
+approved as recommended. Question 3 is answered "no": "Replace the whole
+motion kernel in one go." The scope of that one replacement is 2D milling
+and 3D Pocket, built on a side branch behind one switch. His later words
+(#4023): "At one point all 40+ motion types should move to the new
+kernel". This revision changes decision 5, the scope, the migration
+order, and adds the side-branch plan, the roadmap of all operation types
+and the fit check of the other families.
+
 ### Plain summary
 
 This part has no code names. It says what a machinist sees.
@@ -33,6 +43,10 @@ others. The kernel is one set of six steps that every strategy uses:
 A strategy becomes a set of choices for these six steps. It has no
 planner of its own.
 
+The six steps are a separate building block of the program (its own
+crate). A change in it is tested and reviewed on its own, and the rest of
+the program uses it only through its front door.
+
 **What you will see when it is done.**
 
 - "Pass starts at" Inside, Outside and Auto cut the same passes. Only the
@@ -47,9 +61,20 @@ planner of its own.
   line.
 - When a strategy cannot do what you asked and does something else, the
   status line says so. It never changes silently.
-- During the move to the kernel, each step keeps the posted program the
-  same. A step that changes the program is a separate fix with its own
-  test.
+- The new planner is built apart from the program you use now. Until it
+  is proven, the program keeps the old behaviour, so nothing you cut
+  today changes while the work goes on. Then one change switches all of
+  2D milling and 3D Pocket to the new planner at once.
+
+**All operation types, later.** The first replacement covers 2D milling
+and 3D Pocket only. All other operation types (3D finishing, multi-axis,
+drilling, turning, wire and sinker EDM, sheet cutting, probing) move to
+the same six steps in later phases, one family at a time. The first
+replacement keeps the steps open for them: a pass does not have to lie
+flat, and the tool does not have to point straight down. Some parts of
+those families do not fit the six steps yet (tilting the tool, the
+lathe's plane, the two wire guides, a drill cycle with no path); the
+record names them, and a later phase designs them.
 
 **Decision 1: one pass shape per area, not per start side.** The shape
 of the passes comes from the area and the strategy only. A change from
@@ -59,7 +84,7 @@ Inside to Outside never makes a different pattern.
 - Cost: some strategies today make a different pattern for each start
   side. Those patterns change once, and their tests are recorded again
   in the step that changes them.
-- Recommendation: do it. It is your rule from #3741.
+- Approved by the maintainer (2026-11-25). It is his rule from #3741.
 
 **Decision 2: the Outside start shape (#3934).** On a band of stock round
 a part, the passes follow the stock edge while they are far from the part.
@@ -81,7 +106,8 @@ Inside uses it too, from the part outwards.
   Waterline and Offset rings would turn into Adaptive when you pick
   Outside, which breaks "the start side changes only the start"). Dropped:
   keep the old straight-line pattern.
-- Recommendation: do it this way, in the order and link step (K4).
+- Approved by the maintainer (2026-11-25). Built in the order and link
+  step (K4) on the side branch.
 
 **Decision 3: load control changes the pass shape, nothing else.**
 Trochoidal loops and constant-load spacing are a change of the passes.
@@ -91,7 +117,7 @@ They do not get their own entry or link code.
   place.
 - Cost: the Adaptive strategy and the trochoidal slot move their own
   entry code into the shared step. Their programs stay the same.
-- Recommendation: do it.
+- Approved by the maintainer (2026-11-25).
 
 **Decision 4: material side and start side are two separate settings.**
 "Which side is material" decides where the tool may cut. "Where the pass
@@ -99,42 +125,53 @@ starts" decides only the order.
 - You see: no new field on the Pocket or 2D Offset pages now. Contour
   keeps its "Side" setting.
 - Cost: none for the user now. A later field is possible.
-- Recommendation: keep the pages as they are; the kernel holds the two
-  values apart inside.
+- Approved by the maintainer (2026-11-25): the pages stay as they are;
+  the kernel holds the two values apart inside.
 
-**Decision 5: the P1 fixes do not wait for the whole kernel.** The fixes
-for 2D Pocket, Circular and Bore (#3752, #3755, #3756) go on the shared
-ring code of #3750 as soon as it is merged. The later kernel steps move
-that code to its new place without a change of the program.
-- You see: the P1 fixes arrive sooner.
-- Cost: one extra move of files later, with no change to the program.
-- Recommendation: do it.
+**Decision 5 (the maintainer's): replace the whole planner in one go.**
+His words: "Replace the whole motion kernel in one go." All of 2D milling
+and 3D Pocket move to the new planner together. The work is done on a
+separate line of development (a side branch). One switch picks the old
+or the new planner. The program you use keeps the old planner until the
+new one is proven on the test parts and on the example catalog. Then one
+final change, which the maintainer approves, turns the switch to new,
+and a second change removes the old planners.
+- You see: no change at the machine until the switch-over. Then all the
+  fixes arrive at once: the Pocket, Circular and Bore faults (extra lifts,
+  re-entries into material, 256-segment circles) and the Outside shape.
+- Cost: the known faults of the old planners stay in the program until
+  the switch-over. They are not patched in the old code. If one of them
+  gives unsafe output, the maintainer decides what to do.
+- Dropped: early fixes of Pocket, Circular and Bore on the old code
+  (#3752, #3755, #3756 as separate patches); a step-by-step move of each
+  operation to main.
 
 The open questions with a recommendation each are at the end of this
 record.
 
 ### What was decided (technical)
 
-#### Module
+#### Crate and files
 
-`crates/motion/src/path_kernel/`, in `camcraft-motion`. The kernel works
-only on domain values (regions, curves, tools, stock), so it belongs in
-the motion crate ("`app` holds the document, nothing else"). The name is
-not "kernel" alone, because "kernel" already means the geometry kernel and
-a heavy lane (#4023).
+The kernel is its own crate (the maintainer, 2026-11-25). Recommended
+name `camcraft-pathkernel` in `crates/pathkernel/`; the name, the
+dependencies and the gate entries are in "The new crate" below. The
+first plan, a folder `crates/motion/src/path_kernel/`, is replaced. The
+name is not "kernel" alone, because "kernel" already means the geometry
+kernel and a heavy lane (#4023).
 
 Planned files (each under 400 lines, each with a provenance line):
 
 | File | Stage |
 |---|---|
-| `path_kernel/mod.rs` | `Recipe`, `plan_level`, re-exports |
-| `path_kernel/verdict.rs` | `Refusal`, `Fallback`, `Gap`, `Verdict` |
-| `path_kernel/region.rs` | 1 Region |
-| `path_kernel/guide/{rings,rows,medial,trace}.rs` | 2 Guide curves |
-| `path_kernel/load/{troch,engage}.rs` | 3 Load control |
-| `path_kernel/order.rs` | 4 Order |
-| `path_kernel/link.rs` | 5 Link |
-| `path_kernel/entry/{air,hole,column,material,exit}.rs` | 6 Entry and exit |
+| `src/lib.rs` | `Recipe`, `WorkPlane`, `AxisControl`, `plan_level`, the stage traits |
+| `src/verdict.rs` | `Refusal`, `Fallback`, `Gap`, `Verdict` |
+| `src/region.rs` | 1 Region |
+| `src/guide/{rings,rows,medial,trace,helix}.rs` | 2 Guide curves |
+| `src/load/{law,troch,engage}.rs` | 3 Load control (`law.rs`: the engagement law moved from motion) |
+| `src/order.rs` | 4 Order |
+| `src/link.rs` | 5 Link |
+| `src/entry/{air,hole,column,material,exit}.rs` | 6 Entry and exit |
 
 The level ladder (`levels.rs`, the walker over Z levels) stays outside the
 kernel. It calls `plan_level` once for each level and emits the moves. The
@@ -144,6 +181,8 @@ descent between levels is an entry of stage 6 (`Links::transition`).
 
 ```text
 pub struct Recipe {
+    plane: WorkPlane,         // the frame the stages plan in (phase 1: the setup's XY plane)
+    axis: AxisControl,        // phase 1: only AxisControl::Normal (the tool along the plane normal)
     guide: GuideChoice,       // stage 2
     load: LoadControl,        // stage 3
     order: OrderChoice,       // stage 4
@@ -283,7 +322,7 @@ fn control(s: OrderedSet, r: &KernelRegion, stock: &StockModel, lc: &LoadControl
   stock (the HSM planner, `adaptive::plan`). This is Adaptive.
 - Invariants: each curve stays in `center`; each cut read above
   `load x (1 + PLAN_TOL)` is in `over` with its place; the stock model is
-  the same reader for every mode (`crate::load`).
+  the same reader for every mode (the engagement law in `src/load/law.rs`).
 
 #### Stage 4: Order (K4, #3750, #3757, #3758)
 
@@ -347,32 +386,44 @@ fn exit(last: &Cut, r: &KernelRegion, cleared: &Region) -> Result<Exit, Refusal>
   then the retract. Today no exit type exists; the exit is the retract in
   `Links`. K5 adds the type with today's moves as its only kind.
 
-#### The #3750 surface, and what later steps rename
+#### What #3750 becomes
 
-#3750 (step 1, in work by another worker now) moves the 2D Offset ring
-code into `machining2d/ring_set.rs`, `machining2d/ring_links.rs` (exists)
-and `machining2d/ring_entry.rs`, with identical output, and writes
-`docs/decisions/3743-shared-ring-planner.md`. The kernel accepts that
-surface as it is. The later moves are pure moves (law 7):
+#3750 was written as an identical-output move of the old 2D Offset ring
+code into `ring_set`, `ring_links` and `ring_entry` on `main`. The
+one-go replacement changes that: the old planners stay as they are,
+because the switch must run the old and the new planner side by side
+for the comparison. The held branch `issue/3750-shared-ring-set` has two
+commits:
+
+| Commit | Content | Kernel use |
+|---|---|---|
+| `9c69f004a` | golden `.cl` records of the old output (2D Offset on the dog bone and on `fig8.step`, pocket bands, level rings) with their pins; no code change | **Reused.** The first sub-PR on the side branch (S1). It is the old-output baseline of the comparison. |
+| `7d58b0c1e` | WIP move of the ring planner into `machining2d/ring_set.rs` and `ring_entry.rs`; edits `level_rings.rs`, `pocket.rs`, `pocket_avoid.rs` and others | **Dropped as a move** (it edits the old planners). Its new files `ring_set.rs`, `ring_entry.rs` and `ring_set_tests.rs` are the starting text of the kernel's ring guide and entry (K2, K5), copied into the kernel crate, not moved. |
+
+The names map onto the kernel as follows:
 
 | #3750 item | Kernel item | Step |
 |---|---|---|
-| `ring_set` rings with index k | `path_kernel::guide::rings` | K4 |
-| the order of k and the start point inside `ring_set` | `path_kernel::order` | K4 (split, identical output) |
-| `RingRef::{Part, Boundary}` | same names; `Band` added | K4 |
-| `ring_links` | `path_kernel::link` | K4 |
-| `ring_entry` (+ `air_entry`, `predrilled`) | `path_kernel::entry` | K5 |
+| `ring_set` rings with index k | guide `rings` | K2 |
+| the order of k and the start point inside `ring_set` | stage `order` | K4 |
+| `RingRef::{Part, Boundary}` | same names; `Band` added | K2, K4 |
+| `ring_links` | stage `link` (copied; the old file stays for the old planner) | K4 |
+| `ring_entry` (+ `air_entry`, `predrilled`) | stage `entry` | K5 |
 | `StartSide::around_part` | `KernelRegion` (`part_walls`, `stock_edge`) | K1 |
-| `Links::RINGS` seed (#3750 record) | kept as the ring default | - |
+| `Links::RINGS` seed (#3750 record) | the ring default of the new planner; the old planner keeps its seeds | K4 |
 
-Until the move, a later step calls the #3750 names. A step that moves a
-file does not change behaviour, and a step that changes behaviour does not
-move a file.
+The decision files of #3750 (`3743-shared-ring-planner.md`,
+`3750-shared-ring-set.md`) go to the side branch with S1, edited to say
+that the move is dropped.
 
 ### The laws as checks
 
-The K7 suite (#4027) holds these checks in an existing directory suite of
-`camcraft-motion` (AGENTS.md "New tests join a directory suite"). Each
+The K7 suite (#4027) holds the stage-level checks in the new crate's
+own tests, as one directory suite (`crates/pathkernel/tests/laws/`;
+AGENTS.md "A test lives with the code it tests" and "New tests join a
+directory suite"). The checks that need the posted program of a whole
+operation (counted on the simulator stock) are in the comparison harness
+of `camcraft-app`. Each
 check runs over a fixture table: the dog bone of #3741, the disc of
 #3934, a square pocket with an island, a narrow neck, and an open-side
 band. Each strategy joins the table when it moves to the kernel.
@@ -384,7 +435,7 @@ band. Each strategy joins the table when it moves to the kernel.
 | L3 The start side changes only the order and the start point. | `order` permutes, picks start points and reverses. Nothing else. | For each fixture and each start side pair: compare the curves of the plan as undirected point sets. With load control on: the `guide` output is equal, and the `control` output equals `control(order(..))` (the side reaches the curves only through order). | Curve multisets equal within 1 um; only the permutation, the start point and the direction differ. |
 | L4 A fallback is visible. The status line names it. | Every `Fallback` becomes one note. | Run each strategy on fixtures that force a fallback (a narrow neck, Zigzag with a start side, a blocked arc lead). | Count of `Fallback` records = count of named notes on the operation; no plan whose used kind differs from the asked kind without a note. |
 | L5 An entry into material needs a proof. Else the kernel refuses with a reason. | Every entry has a `Proof`. | Read the posted CL on an independent stock grid (the simulator stock, not the planner's). For each move that goes down to a cut Z: classify its XY as air, a pre-drilled hole, a cleared column, or material. | Count of entries into material with no `IntoMaterial` proof = 0; a plan with no legal entry is `Refused`, with the reason text. |
-| L6 A cut above the engagement limit is prevented or named. | `control` reads each cut and fills `over`. | Read each cut of the CL on the independent stock grid (the contact angle law of `crate::load`). | Each cut above `load x (1 + PLAN_TOL)` has an `over` note within one tool radius of its place; full-width cuts (180 degrees) outside a named slot = 0. |
+| L6 A cut above the engagement limit is prevented or named. | `control` reads each cut and fills `over`. | Read each cut of the CL on the independent stock grid (the contact angle law of `src/load/law.rs`). | Each cut above `load x (1 + PLAN_TOL)` has an `over` note within one tool radius of its place; full-width cuts (180 degrees) outside a named slot = 0. |
 | L7 A move that migrates keeps its output. A defect fix is a separate change. | Equivalence pins of #3743 result 2, section 5. | A move step: golden `.cl` recorded on the head before the step. A P1 fix step: ring radii and verdicts. | Move: identical CL moves, same verifier verdicts, `#[test]` count not lower. Fix: radii within 1 um; only the named counts change, each with a red-first pin. |
 | Link rule (#4023 stage 5) Stay at depth. Lift only with a named reason. | Every lift is in the tally. | Count the Z-up moves between two cuts of one level in the CL. | Lifts = sum of the tally; on fixtures with no split ring, lifts = 0; crossings (the verifier's Crossing law) = 0. |
 
@@ -498,31 +549,352 @@ then it is worked as a K4 step on top of the K4 move.
 | Face | stock top (Inside) | Rows | None | direction | link (hop over a hole) | air lead | `face.rs`, `face_entry.rs` | #3759 |
 | 3D Pocket levels | the level slice (Inside) | as the strategy, per level | as the strategy | start side | link | entry rule | `machining3d/level_side.rs`, `hsm.rs` | #3754 (#3616), #3760 (P7) |
 
-Not in the kernel: Thread mill (its own schedule) shares only the entry
-rule and the lift reason. 3D finishing, multi-axis, turning, sheet and EDM
-are out of scope (#4023).
+| V-Carve | inside the selection | Medial, depth from the width (a curve with a depth per point) | None | direction | link | entry (the V tip starts at zero depth: proof `IntoMaterial`) | V-Carve generator | phase 1 sub-issue, filed after approval |
+| Slot | the slot | Rows (one serpentine pass) or Medial | None | direction | link | entry rule | `slots.rs` | phase 1 sub-issue, filed after approval |
+| Trochoidal slot | the slot | Medial | Trochoidal | direction | link | entry rule (own bore helix today) | `trochoid_slot.rs` | K3, sub-issue filed after approval |
+| Slot Undercut | the undercut band | Trace of the slot wall at the undercut depth | None | direction | link | air entry at an open end of the slot | Slot Undercut generator | phase 1 sub-issue, filed after approval |
+| Thread (thread mill) | the bore wall | Helix (a curve with a depth per point) | None | climb or conventional | link | arc lead from the bore centre (cleared column) | `thread_ride.rs` | phase 1 sub-issue, filed after approval |
 
-### Migration order
+Each "Step" is a sub-PR on the side branch (see "Side-branch plan").
+
+### Scope of the first replacement (phase 1)
+
+The maintainer's scope: "2D milling and 3D Pocket. The other toolpath
+types stay as they are." The kinds come from `OpParams`
+(`crates/app/src/operation/types/params.rs:97`) and the seed table
+`KindInfo::ALL` (`crates/app/src/operation/kinds.rs:1964`): 49 kinds.
+
+**In (16 kinds):** Face, 2D Contour, 2D Pocket (each strategy, rest
+machining included), 2D Adaptive (Spiral and Trochoidal), 2D Offset,
+Engrave, V-Carve, 2D Chamfer, Circular, Slot, Trochoidal slot, Trace,
+Slot Undercut, Thread (the thread mill: the seed table puts it in 2D
+milling), Bore (a milled ring operation, #3756, although the seed table
+puts it under Drilling), 3D Pocket (its levels, with each strategy and the
+Adaptive fallback).
+
+**Out (33 kinds), later phases:** Drill, Probe; 3D Finish, Deburr; 5-Axis
+Contour, 5-Axis Parallel, Swarf, Advanced Swarf, Rotary Contour, Rotary
+Parallel, Rotary Offset, Multi-Axis Rough, 5-Axis Flow, Multi-Axis
+Contour, Multi-Axis Deburr, Rotary Flow; Facing, Profile Rough, Profile
+Finish, Groove Rough, Groove Finish, Parting, Threading, Chamfering, Taper
+Turning, Multi-Pass Turning, Form Turning, Boring (turning); Plasma
+Profile, Waterjet Profile; Wire Contour; Sinker Burn, Sinker Side Burn.
+
+The 3D link copies of #3760 are in phase 1 only for 3D Pocket. Rotary
+Offset and Multi-Axis Rough keep their copies until their phase.
+
+### Migration order (one-go build on the side branch)
+
+All steps below are sub-PRs into the side branch. Nothing reaches `main`
+before the switch-over PR.
 
 ```text
-K0 #4024 (this record)
- |-- #3750 step 1: ring_set / ring_links / ring_entry, identical output (in work, parallel to K0)
- |     |-- #3752 Pocket (P1) --> #3753 rest and Zigzag
- |     |-- #3755 Circular (P1) --> #3756 Bore (P1)
- |     |-- #3757 Contour, #3758 Trace/Engrave/Chamfer
- |-- K1 #4025 region: create path_kernel/, region.rs, MaterialSide; around_part moves in
-       |-- K4 order and link: move ring_set/ring_links in (pure move), split order;
-       |      then #3934 (Band, the air plan joins) as a separate fix
-       |-- K5 entry and exit: move ring_entry/air_entry in; #3759; #3397; Exit type
-             |-- K3 #4026 load control: None/Trochoidal/ConstantEngagement;
-             |      #3933 (resumes), #3932, #3849 (PR #4008 stays its own fix)
-             |-- K6 the strategies: #3754 (Adaptive fallback, 3D levels), #3760 (P7)
-K7 #4027 grows with each step from K1 on.
+K0 #4024 this record (merges to main: docs only)
+S0 create the side branch from that merge commit
+S1 #3750 reused: the golden .cl records of the old output (commit 9c69f004a)
+K1 #4025 the new crate, its xtask entries, the switch (default old), the comparison
+         harness, WorkPlane/AxisControl/Verdict, and stage 1 Region
+K2 #3750 (the ring_set text, copied) + #3788: guides rings, rows, medial, trace, helix
+K4 order and link: ring_links copied, the air plan chain and link law (#3934 Band),
+         the link parts of #3757 and #3758
+K5 entry and exit: ring_entry/air_entry copied, #3746 law, #3759, #3397, the Exit type
+K3 #4026 load control: None, Trochoidal (#3932), ConstantEngagement Rings (#3933)
+         and Stock (the HSM planner behind the load trait), #3849 law
+K6 the recipes, one sub-PR per group, each behind the switch:
+         #3752 Pocket, #3753 rest and Zigzag, #3755 Circular, #3756 Bore,
+         #3757 Contour, #3758 Trace/Engrave/Chamfer, #3759 Face and the Adaptive air entry,
+         #3754 Adaptive fallback and 3D Pocket levels, #3760 (3D Pocket part),
+         and the five kinds that have no issue yet (V-Carve, Slot, Trochoidal slot,
+         Slot Undercut, Thread)
+K7 #4027 the law suite grows with each step from K1 on
+P  the switch-over proof (below)
+SW the switch-over PR: side branch -> main, default new; the maintainer approves
+RM the removal PR on main: delete the old planners and the switch
 ```
 
-Dependencies: K4 and K5 need K1 (the region type). K3 needs K4 (load
-control reads the ordered set). #3934 needs the K4 move. #3933 needs K3.
-The P1 steps #3752, #3755 and #3756 need only #3750 (Decision 5).
+Dependencies: K2, K4 and K5 need K1. K4 needs K2 (it orders the guide
+set). K3 needs K4 (load control reads the ordered set). Each K6 group needs
+the stages that its recipe uses. The proof needs all of K6. PR #4008 (a
+contributor's PR for #3849) is not touched by this plan; K3 carries its
+law into the new planner.
+
+### Side-branch plan
+
+**The branch.** `side/path-kernel`. The prefix `side/` keeps it apart from
+the `issue/` branches, and the name does not use the bare word "kernel"
+as a prefix. The coordinator (the merging session) creates it after this
+record merges, from the merge commit of PR #4030 on `main`, and pushes it.
+It is never deleted, never rebased and never force-pushed. The maintainer
+is asked to protect it on GitHub like `main` (open question 3).
+
+**Sub-PRs.** One issue, one sub-PR.
+- A worker makes its worktree from `origin/side/path-kernel`, on a branch
+  `issue/N-<slug>`, and opens the PR with `--base side/path-kernel`.
+- The PR body starts with `Side branch: side/path-kernel` and ends with
+  `Refs #N`, not `Fixes #N`, because a closing keyword fires only on
+  `main`. The switch-over PR lists `Fixes #N` for each issue that it
+  closes.
+- The AGENTS.md rules stay: draft first, the quick pass, a full review by
+  a collaborator's agent that did not write the change, the review tier of
+  the safety floor (`effort:high` model), merge commits only, never a
+  squash. `--delete-branch` deletes only the sub-PR's own branch.
+- An issue that a sub-PR works keeps `in-review` until the switch-over PR
+  merges. The coordinator adds one comment per merged sub-PR: `merged to
+  side/path-kernel in PR #M; closes at the switch-over`.
+
+**Main into the side branch.**
+- A worker merges `origin/main` into the side branch with `git merge`
+  (never rebase, never force-push), on a branch `sync/path-kernel-<date>`,
+  and opens a PR into the side branch. A sync with an empty
+  `git show --remerge-diff` is class SAME and needs no agent review
+  (`cargo xtask merge-plan --delta`).
+- When: after each merge batch on `main` that touches `crates/motion`,
+  `crates/geometry`, `crates/app/src/operation`, `Cargo.toml` or `xtask/`,
+  and at least once a week.
+- The old planners are not edited on the side branch, so a fix on `main`
+  in an old planner merges without a conflict. A conflict can come only
+  in the files that both sides touch (the switch site, module lists,
+  `Cargo.toml`, `xtask/`). The sync worker resolves it with the
+  `resolve-conflicts` skill. If the two sides changed the same logic, or a
+  safety rule could be lost, it stops and reports the hunk to the
+  coordinator, which asks the maintainer.
+- Each fix that `main` makes in an old planner gets a K7 fixture on the
+  side branch, so the new planner meets the same law.
+
+**Gates and reviews on the side branch.** `post-merge.yml` runs only on
+`main`. On the side branch:
+- Each sub-PR: its pinning tests; the quick gate of its diff against
+  `origin/side/path-kernel` (`cargo xtask gate quick`, with the side branch
+  as the base); from K6 on, the `example_catalog*` suites of
+  `camcraft-app` with the switch at old (they must stay identical to
+  `main`) and at new (the differences are listed, not failed); the light
+  lane (`cargo xtask gate light`). The PR body names each result. A
+  `pr-test.yml` run can replace the local build for a collaborator's
+  sub-PR.
+- The side branch head: one batch gate (`cargo xtask gate batch`) after
+  each sync merge and at least once a week, by a gate-runner. It uses one
+  of the three build slots of the host. The result goes into a comment on
+  #4023. A red batch on the side branch is fixed on the side branch before
+  the next sub-PR merges.
+
+**The one switch.**
+- Where: one function in `camcraft-app`, read by the generate dispatch
+  (`crates/app/src/operation/generate.rs`) for the 16 phase-1 kinds only.
+  It returns `PlannerEngine::Old` or `PlannerEngine::New`. No other code
+  reads the setting.
+- Source: a process setting for the CLI, the MCP server and the gates
+  (the environment value `CAMCRAFT_PLANNER=new`), and a value that tests
+  set directly. A bad value gives the default and a diagnostic. No page
+  field and no project-file field: a saved project does not depend on it.
+- Default: `Old` on the side branch until the switch-over PR, which sets
+  `New`.
+- The two engines run in one process. The comparison harness generates
+  each case twice and compares the two programs.
+- A kind that the new engine does not plan yet is refused by name ("the
+  new path planner does not plan <kind> yet"). It never falls back to
+  the old planner without a note (law 4).
+
+**The switch-over proof.** The switch-over PR is opened only when all of
+these hold on the side branch head:
+1. The K7 law suite is green for each of the 16 kinds.
+2. Each law of #4023 is measured on the test parts: the disc of #3934,
+   the dog bone of #3741 and `testdata/models/fig8.step`, with Inside,
+   Outside and Auto. The readings (lifts with reasons, re-entries,
+   crossings, entries into material, cuts above the load) are in a table
+   in the PR body, old against new.
+3. The example catalog runs with the switch at old and at new. Each
+   program that differs has a one-line reason (the defect that it fixes,
+   or the approved shape change).
+4. The verifier verdicts, the gouge checks and the collision checks are
+   clean for each new program.
+5. The light lane is green, and the heavy steps of `motion` and `app` run
+   once on that head (`cargo xtask gate heavy --base main`); their result
+   is in the PR body.
+6. The batch gate of the side branch is green on that head.
+
+Then one PR from `side/path-kernel` to `main` (a `feat`, it changes
+posted programs) sets the default to `New`. The maintainer approves it
+himself; an agent review is not enough. It merges at a minor cut. After
+it, a second PR on `main` removes the old planners and the switch.
+
+**Defects in the old planners meanwhile.**
+- They are not patched in the old planners, unless the maintainer says so
+  for one defect.
+- A defect that gives unsafe output (a `P1` by the table: a gouge, a
+  collision, a wrong posted program) is an `ASK:` to the maintainer
+  through the coordinator. He decides: a patch on `main`, or wait for the
+  switch-over.
+- Each defect report gets a K7 fixture on the side branch. Its issue stays
+  open and closes with the switch-over PR.
+
+### The new crate
+
+The maintainer, 2026-11-25: "The kernel should be its own crate." This
+replaces the approved folder inside `camcraft-motion`.
+
+**Name.** Recommended: `camcraft-pathkernel`, in `crates/pathkernel/`. It
+says "path kernel", the name of #4023, and xtask maps a directory `d` to
+the package `camcraft-d` (`xtask/src/plan.rs:63-65`). Alternatives:
+`camcraft-path` (short, but "path" also means a file path and the
+toolpath of `camcraft-cl`), `camcraft-motionplan` (clear, but it reads as
+a part of `camcraft-motion`). The bare word "kernel" is not used:
+`camcraft-kernel` is the geometry kernel and a heavy lane.
+
+**What goes into the crate.**
+- The stage types and functions of this record: `Recipe`, `WorkPlane`,
+  `AxisControl`, `Verdict`, `Refusal`, `Fallback`, `Gap`, stage 1 to 6,
+  and the stage traits (below).
+- The generic stage implementations: the ring, row, medial, trace and
+  helix guides; order; link; entry and exit; load control None and
+  Trochoidal, and the ring spacing law (`ConstantEngagement { reach:
+  Rings }`).
+- The engagement law (today `crates/motion/src/load.rs`:
+  `DEFAULT_OPTIMAL_LOAD`, `load_at_rim`). It moves into the crate in K1 as
+  a pure move. `camcraft-motion` re-exports it at the old path, so the old
+  planners compile and run unchanged.
+- The K7 law suite (#4027), in the crate's own tests ("A test lives with
+  the code it tests"). Its checks read the plan output with a small stock
+  grid that the tests own, written apart from the planner's reader.
+
+**What stays in `camcraft-motion`.**
+- The old planners, untouched, until the removal PR.
+- The level ladder (`levels.rs`) and the conversion of a plan into CL
+  moves. They call the crate.
+- The recipe function of each strategy (from its params struct).
+- The HSM planner (`adaptive/`): it implements the load trait for
+  `ConstantEngagement { reach: Stock }`. Its own links and entries are not
+  used by the new engine.
+- The op-facing types `Links`, `Link`, `Entry3D`, `Approach` and
+  `GenError`. Motion converts them into the crate's `LinkPolicy` and
+  `EntryChoice`, and converts a `Refusal` into a `GenError`. They stay,
+  because the project file and the old planners use them.
+- The CL-level law checks of whole operations (lifts and entries counted
+  in the posted program on the simulator stock) are in the comparison
+  harness of `camcraft-app`, because they need the generate path.
+
+**Dependencies.** The edge runs one way:
+
+```text
+camcraft-geometry  <-  camcraft-pathkernel  <-  camcraft-motion  <-  camcraft-app  <-  camcraft-ui
+```
+
+- The crate depends on `camcraft-geometry` only. It does not depend on
+  `cl`, `tools` or `sim`. The tool shape that a stage needs (radius,
+  corner radius, can it plunge, flute length) is fewer than five values,
+  so motion passes it in as a value (`ToolDisc`). The in-process stock is
+  a trait (`StockRead`) that motion implements, so there is no edge to
+  `sim`.
+- `camcraft-motion` depends on the crate. The crate never imports motion,
+  so there is no cycle. This direction is the only one possible: the
+  crate holds the laws, and motion holds the callers.
+- `camcraft-app` gets the crate through motion (`pub use`). The switch and
+  the comparison harness use motion's re-export. No direct app edge.
+
+**Dependency decision** (AGENTS.md "No new dependency between our crates
+without a decision"; for the PR of K1):
+
+| Edge | Imported items | Why the caller cannot pass them in | What rebuilds |
+|---|---|---|---|
+| `camcraft-pathkernel` -> `camcraft-geometry` | `Point2`, `Region` (`crates/geometry/src/geo2d.rs:56`, `:182`), the offset and boolean operations of `Region`, the polyline and loop types, the arc type, the tolerance constants (K1 fixes the exact list) | The stages compute with these types; they are the data of each stage, not one value | A change in geometry rebuilds the crate and all that depended on geometry before; no new rebuild |
+| `camcraft-motion` -> `camcraft-pathkernel` | `Recipe`, `plan_level`, `region`, `GuideChoice`, `LoadControl`, `OrderChoice`, `LinkPolicy`, `EntryChoice`, `Verdict`/`Refusal`/`Fallback`, the stage traits, the engagement law | They are the planner itself (functions and their types), not values that a caller holds | A change in the crate rebuilds `camcraft-motion`, `camcraft-app`, `camcraft-ui` and their tests. It does not rebuild `geometry`, `cl`, `gcode`, `tools`, `post`, `sim`, `kernel` or `gpu` |
+
+**Gates and xtask.** The PR of K1 adds the crate to:
+- the root `Cargo.toml` members (`Cargo.toml:3-4`) and
+  `[workspace.dependencies]` (`:12-19`);
+- `ALL_CRATES` and `BATCH_CRATES` (`xtask/src/plan.rs:19-22`), after
+  `geometry` (the lists are in dependency order);
+- `CLIPPY` (`plan.rs:25`);
+- not `SHARED` (`plan.rs:24`): a change in the crate reaches only motion,
+  app and ui, so it does not need a batch;
+- not `HEAVY_CRATES` (`plan.rs:190`) while it has no `#[ignore]` heavy test.
+  The heavy reach is computed from the `Cargo.toml` files
+  (`xtask/src/heavy.rs:13-47`): a change in the crate reaches the `motion`
+  and `app` heavy lanes with no hand-written edge;
+- the hand-pinned xtask tests that list crates or reach sets
+  (`xtask/src/heavy_plan_tests.rs:43-51`, `:91-97`,
+  `xtask/src/select_tests.rs:24-26`, `xtask/src/tests.rs:191-198`);
+- the `-p` list of AGENTS.md "Check only the touched crates".
+
+`xtask/` and `AGENTS.md` are process files, so that PR has the line
+`Process change: yes`. No test today checks the xtask lists against the
+workspace members, and `xtask/src/quick.rs:77` reads `ALL_CRATES`, so a
+crate that is not listed can be missed by the quick gate. The same PR adds
+that test.
+
+**Later families attach from outside.** The crate defines the stages as
+traits (`GuidePlanner`, `LoadPlanner`, `LinkProof`, `EntryPlanner`,
+`StockRead`) and implements the generic ones. The crate or module of a
+later family (3D finishing, multi-axis, holes, turning, wire and sinker,
+sheet cutting, probing) depends on the crate and supplies its own stage
+implementations in a `Recipe`. The crate depends on none of them.
+
+### Roadmap of all operation types
+
+The maintainer (#4023): "At one point all 40+ motion types should move to
+the new kernel". There are 49 kinds. Each is in one phase. Phase 1 is the
+first replacement. The later phases are ordered by what they need from
+the stages (the dependency) and by the risk to posted programs. This
+record does not design the later phases, and no issue is filed for them
+before the maintainer approves this revision.
+
+| Phase | Kinds | Count | Needs from the stages | Risk |
+|---|---|---|---|---|
+| 1 | Face, 2D Contour, 2D Pocket, 2D Adaptive, 2D Offset, Engrave, V-Carve, 2D Chamfer, Circular, Slot, Trochoidal slot, Trace, Slot Undercut, Thread, Bore, 3D Pocket | 16 | the six stages, the work plane (11 of them have the 3+2 `tilt` today), curves with a depth per point | high: most programs |
+| 2 | Plasma Profile, Waterjet Profile, Drill, Probe | 4 | 2D profiles with a kerf (as Contour); a pierce entry; a cycle as the entry and exit; points as the guide | low: few moves, simple links |
+| 3 | 3D Finish, Deburr | 2 | a guide on a surface; a link proof against a surface | medium |
+| 4 | Wire Contour, Sinker Burn, Sinker Side Burn | 3 | a guide pair (top and bottom wire guide); an orbit guide of an electrode | medium: special machines |
+| 5 | 5-Axis Contour, 5-Axis Parallel, Swarf, Advanced Swarf, Rotary Contour, Rotary Parallel, Rotary Offset, Multi-Axis Rough, 5-Axis Flow, Multi-Axis Contour, Multi-Axis Deburr, Rotary Flow | 12 | tool axis control; holder collision for each orientation; a rotary (wrapped) work plane | high: collisions |
+| 6 | Facing, Profile Rough, Profile Finish, Groove Rough, Groove Finish, Parting, Threading, Chamfering, Taper Turning, Multi-Pass Turning, Form Turning, Boring (turning) | 12 | the Z-X plane; an insert, not a disc; turning cycles | high: a different machine and tool model |
+
+Total: 16 + 4 + 2 + 3 + 12 + 12 = 49.
+
+### Fit check of the other families
+
+| Family | Region | Guide | Load | Order | Link | Entry and exit | Does not fit |
+|---|---|---|---|---|---|---|---|
+| 3D finishing (3D Finish, Deburr) | faces and a containment boundary | curves on the surface (drop-cutter projection of rows or rings, or edges for Deburr) | none; scallop height is a stepover law, a guide change | fits | stay on the surface, proved against the surface | ramp or arc onto the surface | a guide that lies on a surface, not in a plane; the gouge proof needs the surface, not a planar cutter-centre area |
+| Multi-axis and rotary (12 kinds) | surfaces, curves, or a cylinder (rotary) | 3D curves on the part, or wrapped curves | none, or as 3D Pocket (Multi-Axis Rough) | fits | fits, with a lift along the tool axis | fits, along the tool axis | tool axis control (lead, tilt, swarf side contact, a stated axis); the holder collision for each orientation; a work plane that wraps round a rotary axis |
+| Holes (Drill; Bore and Thread are phase 1) | the hole points | points | peck depth law | the hole sort fits | retract to the R plane between holes, with a named reason | a canned cycle (G81-G89, peck) | a cycle has no path; the plan is a list of cycles |
+| Turning (12 kinds) | the profile of revolution in the Z-X plane, minus the stock | rows along Z or X (rough), profile offsets (finish), a groove form | constant depth of cut | fits | fits, in the Z-X plane | approach and retract with clearance; threading cycles | the lathe's Z-X plane; the tool is an insert with a nose radius and angles, not a disc; a groove plunge is the cut itself |
+| Wire EDM (Wire Contour) | the profile, the start hole | the profile with the wire offset; skim passes as rings with count n | none | fits (cut-off last) | none: the wire cuts through | threading in the start hole, then a lead-in | the two wire guides (top and bottom) for taper and four-axis cuts: a pair of guides, not one |
+| Sinker EDM (Sinker Burn, Side Burn) | the electrode footprint | an orbit round the electrode axis | the burn stages (spark gap, undersize) | fits | none | down along the burn axis | the path is an orbit of an electrode shape, not a cutter-centre area of a disc |
+| Sheet cutting (Plasma, Waterjet) | the sheet and the profiles | the profile with the kerf | none | inner profiles before outer profiles | a rapid with the torch off, with a named reason | a pierce point, then a lead-in | the kerf and the torch height; no depth levels |
+| Probing (Probe) | the probe points | points with approach vectors | none | fits | protected moves | a probing cycle | no material is cut; most stages are empty |
+
+**What does not fit, plainly:** tilting the tool (tool axis control); a
+pass that lies on a curved surface; the lathe's Z-X plane with a non-round
+insert; the wire's two guides; a drill or probe cycle with no path; the
+orbit of a sinker electrode.
+
+### What phase 1 keeps open
+
+Phase 1 must not close these off. It does not design them.
+
+1. **A work plane in each recipe.** The stages plan in the frame of
+   `Recipe.plane`. Phase 1 needs it already: 11 of its kinds have the 3+2
+   `tilt` today. A later rotary phase adds a wrapped plane as a new kind
+   of `WorkPlane`.
+2. **Curves with a depth per point.** A guide curve has a coordinate along
+   the plane normal for each point. Phase 1 needs it already (V-Carve,
+   Thread). A surface guide of phase 3 then fits the same curve type.
+3. **A tool-axis slot.** `Recipe.axis: AxisControl` with only `Normal` in
+   phase 1, and an optional axis vector on each cut (none = the plane
+   normal). The enum is `#[non_exhaustive]`. A lift is defined as a move
+   along the tool axis away from the material, not as a +Z move.
+4. **A region that is not only a planar area.** The output of stage 1 is a
+   `#[non_exhaustive]` enum with one variant (`Planar`) in phase 1.
+5. **An entry and exit that can be a cycle.** The plan output is a list of
+   steps (`Cut`, `Link`, `Entry`, `Exit`), `#[non_exhaustive]`, so that a
+   later phase adds `Cycle` (a canned cycle with no path). A guide of
+   points is a `GuideChoice` variant that phase 1 does not use.
+6. **Stage traits.** A family supplies its own guide, load, link proof,
+   entry and stock reader. The crate depends on none of them.
+7. **The stock as a trait.** Load control and the link proof read the
+   stock through `StockRead`, so a 3D stock model can come later with no
+   edge from the crate to `sim`.
+8. **Laws in tool terms, not plane terms.** The K7 checks state a lift,
+   an entry and an engagement along the tool axis and in the work plane,
+   so that the same checks hold for the later phases.
 
 ### Why
 
@@ -535,10 +907,13 @@ The P1 steps #3752, #3755 and #3756 need only #3750 (Decision 5).
 - #3743 result 2 found eleven ring planners, ten linkers and ten entry
   choosers. The defects of #3741, #3755, #3756 and #3934 come from those
   copies. One contract with checks closes the class, not one case.
+- PR #4030, 2026-11-25: "Replace the whole motion kernel in one go." and
+  "The kernel should be its own crate."
 
 ### Dropped (other choices)
 
-- The kernel under `machining2d/`: the 3D Pocket levels use it too.
+- The kernel as a folder in `camcraft-motion` (approved first, replaced
+  by the maintainer's "own crate").
 - Load control as its own stage with its own entries (trochoidal as a
   strategy): #4023 says it changes a guide curve; a second entry rule is
   the defect class.
@@ -546,36 +921,66 @@ The P1 steps #3752, #3755 and #3756 need only #3750 (Decision 5).
   cut order, so the load stage would have to guess it.
 - A new material side field on the Pocket and 2D Offset pages now: no
   user asked for it; the kernel keeps the values apart inside.
-- Wait with the P1 steps for K1-K4: P1 defects would wait for a refactor.
+- Early P1 patches of Pocket, Circular and Bore on the old code, and a
+  step-by-step move of each operation to `main` (the maintainer's "no").
+- The #3750 identical-output move on `main`: it edits the old planners,
+  which must stay as they are for the comparison.
+- A switch for each operation kind: one switch for all 16 kinds is what
+  "in one go" asks, and one place is easy to review.
+- A switch in the project file or on a page: a saved project must not
+  depend on a development setting.
+- A crate edge from the path kernel to `cl`, `tools` or `sim`: fewer than
+  five items each, so the caller passes them in or implements a trait.
+- Moving `Links`, `Entry3D` and `Approach` into the crate: the project file
+  and the old planners use them; a conversion in motion is smaller.
 
 ### Cost to change later
 
-The stage types are internal to `camcraft-motion`. The project file does
-not change in K0-K5, except where a later step adds a user field. A
-different stage split changes the K7 checks and the recipes, not the
-operations' pages.
+The stage types are internal to the new crate and to `camcraft-motion`.
+The project file does not change. A different stage split changes the K7
+checks and the recipes, not the operations' pages. A later phase adds
+variants to the `#[non_exhaustive]` enums and implements the stage traits;
+phase 1 code does not change for it.
+
+### Decided by the maintainer (2026-11-25, PR #4030)
+
+1. The Outside start shape of #3934 (decision 2): approved.
+2. Inside and Outside cut the same passes; only the order, the start
+   point and the direction change: approved.
+3. Trochoidal is load control. Offset rings and Adaptive stay two
+   choices: approved.
+4. A strategy with load control plans a cut above the limit again; each
+   cut that stays above the limit has a status line message: approved.
+5. No new material side field on Pocket and 2D Offset: approved.
+6. The exit is part of the entry stage: approved. The folder layout was
+   approved, then replaced: "The kernel should be its own crate."
+7. Early P1 fixes: no. "Replace the whole motion kernel in one go." Scope:
+   2D milling and 3D Pocket, on a side branch with one switch.
+8. "At one point all 40+ motion types should move to the new kernel."
 
 ### Open questions for the maintainer
 
-1. **#3934 Outside start shape.** Confirm: one band ring shape (stock edge
-   fronts that blend into the part shape) for Inside and Outside, with the
-   Adaptive join law moved into the shared link step. Recommended: yes.
-2. **Inside on a band changes too.** Its outer passes then follow the
-   stock edge (a consequence of "the start side changes only the start").
-   Recommended: accept it.
-3. **P1 fixes before the kernel.** Let #3752, #3755 and #3756 go on the
-   #3750 code at once, and move the files later. Recommended: yes.
-4. **Module place.** `crates/motion/src/path_kernel/`. Recommended: yes.
-5. **Material side field.** No new page field on Pocket and 2D Offset now;
-   Contour keeps "Side". Recommended: no new field.
-6. **Trochoidal is load control, not a strategy.** Adaptive Trochoidal and
-   the trochoidal slot become a centre line plus trochoidal load control,
-   with the shared entry and links. Recommended: yes.
-7. **Offset rings and Adaptive stay two names.** Offset rings = rings
-   spaced by the load law (#3933); Adaptive = each cut read on the stock.
-   Recommended: keep both.
-8. **Above the load limit: name or prevent.** A strategy without load
-   control names the cut (status line); a strategy with load control
-   re-plans it, and names what it cannot re-plan. Recommended: yes.
-9. **Exit.** Exit is part of stage 6 (lead-out and retract), not a stage of
-   its own. Recommended: yes.
+1. **Crate name.** `camcraft-pathkernel` (recommended), `camcraft-path` or
+   `camcraft-motionplan`. Recommended: `camcraft-pathkernel`.
+2. **A process rule for the side branch.** Sub-PRs start from
+   `side/path-kernel`, not from `main`, and end with `Refs #N`. AGENTS.md
+   says "Start from the latest main". Recommended: one small process PR
+   adds a "Side branch" rule before the branch is made.
+3. **Protect the side branch.** No force-push and no deletion on
+   `side/path-kernel`, as on `main`. Recommended: yes.
+4. **Heavy steps before the switch-over.** AGENTS.md runs the full heavy
+   lanes only at a cut. The proof runs the `motion` and `app` heavy steps
+   once on the side branch head. Recommended: yes, one time, before the
+   switch-over PR.
+5. **Who accepts each program difference.** The switch-over PR lists each
+   catalog program that changes, with its reason. Recommended: you read
+   that list and approve the PR yourself.
+6. **Bore and Thread in phase 1.** The seed table puts Bore under
+   Drilling; both are milled with rings or a helix. Recommended: yes, in
+   phase 1.
+7. **Issues for five phase-1 kinds.** V-Carve, Slot, Trochoidal slot, Slot
+   Undercut and Thread have no issue. Recommended: file one issue each
+   after you approve this revision.
+8. **The order of the later phases.** Sheet and holes, then 3D finishing,
+   then wire and sinker, then multi-axis, then turning. Recommended: yes;
+   each phase gets its own design record before code.
