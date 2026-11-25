@@ -56,13 +56,13 @@ each kind allows.
 
 | Kind | Removes material by | Example machines | In CamCraft |
 |---|---|---|---|
-| Mill (3-axis) | a spinning cutter, the part fixed | Tormach 770MX and 1100MX, Haas VF-2, LinuxCNC mills | Yes |
+| Mill (3-axis) | a spinning cutter, the part fixed | Tormach 770MX and 1100MX, Haas VF-2, Makera Carvera, LinuxCNC mills | Yes |
 | Mill with a 4th or 5th axis | a cutter plus a rotary table or tilting head | Tormach with a microARC 4 | Yes: 3+1, 4-axis and 5-axis (see [Multi-axis](@/guide/multi-axis/_index.md)) |
-| Router | a fast spindle over a large flat table | Sienci AltMill, Makera Carvera, Tormach 24R | Yes |
+| Router | a fast spindle over a large flat table | Sienci AltMill, Tormach 24R | Yes |
 | Lathe | a fixed tool, the part spinning | Tormach 8L, 15L, 15LX | Yes: turning (see [Turning](@/guide/operations/operations-turning.md)) |
 | Plasma | an electric arc through sheet metal | Tormach 1300PL | Yes (see [Plasma](@/guide/operations/operations-plasma.md)) |
 | Waterjet | a high-pressure water and abrasive jet | Waterjet machine files you write | The Waterjet Profile operation and the `waterjet-iso.cps` post. No waterjet machine file ships. See [Waterjet](@/guide/operations/operations-waterjet.md). |
-| Wire EDM | sparks from a thin wire, the part in water | Sodick ALC400G, Agie Classic Cut 2S | Yes: Wire Contour. Posts are listed under [Machine and post pairs](#machine-and-post-pairs). See [EDM](@/guide/operations/operations-edm.md). |
+| Wire EDM | sparks from a thin wire, the part in water | Sodick ALC400G, Agie Classic Cut 2S | Yes: Wire Contour. The wire posts are listed under [Posting](@/guide/check-and-post/posting.md#post-processors). See [EDM](@/guide/operations/operations-edm.md). |
 | Sinker EDM | sparks from a shaped electrode | Any sinker with ISO-style words | A generic `sinker-edm.mch` template and the `sinker-iso.cps` post. You fill in its EDM codes. |
 
 ## 3D printing is a different path
@@ -136,11 +136,11 @@ Both files describe the machine side, but for different readers. The
 - Spindle speed range and power, and feed limits.
 - Tool changer size.
 - For wire EDM: its EDM codes and wire data.
-- Which post it uses by default.
+- Which post CamCraft offers for it, when the file states one.
 
-CamCraft uses it to plan and to simulate. It refuses a path that the
-machine cannot reach, and it shows the moving machine in the simulation.
-An example is `assets/machines/tormach-770mx-microarc4.mch`. See
+CamCraft uses it to plan and to check. It refuses a path that the
+machine cannot reach. **Show work envelope** draws the machine travel as an
+outline in the view. An example is `assets/machines/tormach-770mx-microarc4.mch`. See
 [Machine types](@/guide/check-and-post/machines.md).
 
 **Post (`.cps`): "How does this control want it written?"**
@@ -204,8 +204,9 @@ starting point: check its travel, tools and clearance against your machine.
 | Mill with a Heidenhain control | Heidenhain TNC (DIN/ISO) | None dedicated | `heidenhain.cps` | Ships |
 | Fehlmann Picomax 55 | iTNC 530 (Klartext) | `fehlmann-picomax55.mch` | `heidenhain-klartext.cps` | Ships |
 | LinuxCNC mill | LinuxCNC | `linuxcnc-3axis.mch` | `linuxcnc.cps` | Ships |
-| Mach3 or Mach4 mill | Mach3 or Mach4 | Mach3-era `tormach-pcnc*.mch` templates; none dedicated for Mach4 | `mach3.cps`, `mach4.cps` | Ships |
-| Sodick ALC400G wire EDM | Mark 21 | `sodick-alc400g.mch` | `sodick-wire.cps` | Ships, **not verified on a control** |
+| Mach3 mill | Mach3 | Mach3-era templates: `tormach-pcnc770.mch`, `tormach-pcnc770-s3.mch`, `tormach-pcnc1100-s1.mch`, `tormach-pcnc1100-s2.mch`, `tormach-pcnc1100-s3.mch` | `mach3.cps` | Ships. Select the post manually and check the installed control. |
+| Mach4 mill | Mach4 | None dedicated | `mach4.cps` | Ships |
+| Sodick ALC400G wire EDM | **Not confirmed.** The post is written for Mark 21 / EX21. | `sodick-alc400g.mch` | `sodick-wire.cps` | Ships. Select the post manually. The ALC400G control has not been confirmed to match the Mark 21 post. |
 | Sodick LN2W wire EDM | LN2W | None | None | **Not shipped** ([#4045](https://github.com/NeoTech/Camcraft/issues/4045)) |
 
 ## Which post do I pick?
