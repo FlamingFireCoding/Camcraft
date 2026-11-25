@@ -85,7 +85,7 @@ pub(super) fn mat_top(lvl: &LevelCtx, a: &Ask) -> f64 {
 
 /// The axial feed onto `(xy, z_tip)`: a rapid to the plunge height over
 /// the material first (held under the retract plane), then the feed.
-fn feed_down(b: &mut PathBuilder, lvl: &LevelCtx, a: &Ask, xy: Point2, z_tip: f64, feed: f64) {
+pub(super) fn feed_down(b: &mut PathBuilder, lvl: &LevelCtx, a: &Ask, xy: Point2, z_tip: f64, feed: f64) {
     let h = lvl.p.links.approach.plunge_height;
     let top = mat_top(lvl, a);
     let hz = (top + h).min(lvl.hop_z.max(top));

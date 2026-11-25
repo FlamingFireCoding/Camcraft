@@ -37,6 +37,40 @@ mod catalog_3d_rough_finish {
             "lowest rapid in 3D Pocket1 was Z {lowest_rapid_z}, expected >= 12.0 (feed height above Z10)"
         );
     }
+    /// #3852: in the posted 3D Pocket, no plunge feeds from the hop plane
+    /// (none is longer than the 2 mm plunge height plus the 2 mm stepdown),
+    /// and no linear move posts with zero length (the same X, Y and Z as
+    /// the position before it).
+    #[test]
+    fn pocket_posts_no_hop_plane_plunge_and_no_zero_length_move() {
+        let dir = repo("examples/catalog/3d/rough-finish");
+        let nc = std::fs::read_to_string(dir.join("rough-finish.nc")).expect("read nc");
+        let op_lines = section(&nc, "3D Pocket1");
+        assert!(!op_lines.is_empty(), "3D Pocket1 section present");
+        let mut at: Option<(f64, f64, f64)> = None;
+        let (mut zero, mut long) = (Vec::new(), Vec::new());
+        for line in &op_lines {
+            let g = line.split_whitespace().next().unwrap_or("");
+            if !matches!(g, "G00" | "G01" | "G02" | "G03") {
+                continue;
+            }
+            let (Some(x), Some(y), Some(z)) = (word(line, 'X'), word(line, 'Y'), word(line, 'Z')) else {
+                continue;
+            };
+            if g == "G01" && let Some((px, py, pz)) = at {
+                if (px, py, pz) == (x, y, z) {
+                    zero.push(*line);
+                }
+                if (px, py) == (x, y) && pz - z > 2.0 + 2.0 + 1e-6 {
+                    long.push(*line);
+                }
+            }
+            at = Some((x, y, z));
+        }
+        assert!(zero.is_empty(), "{} zero-length moves posted: {:?}", zero.len(), zero);
+        assert!(long.is_empty(), "plunges that feed from the hop plane: {long:?}");
+    }
+
     /// #3670: the 3D Pocket's entry is a helix. A pass that restarts in a
     /// level after a hop over the dome must not feed straight down into
     /// uncut stock: it takes the entry type, or it goes down only where
