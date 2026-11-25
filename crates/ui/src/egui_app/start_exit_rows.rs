@@ -68,6 +68,27 @@ const EXIT: PointRows = PointRows {
     says: "the lead-out leaves here; where it cannot fit, the operation is refused by name - the exit never moves",
 };
 
+// #3325: the Slot's words. A slot pick names one of the two ends.
+const SLOT_START: PointRows = PointRows {
+    pick_help: "click a face, edge or corner in the viewport to place the Slot start point",
+    help: "a point in model X and Y: the pass starts at the slot end nearest this point",
+    says: "the cutter goes down at that end; a point far from the slot or between its ends is refused by name - the start never moves",
+    ..START
+};
+
+const SLOT_EXIT: PointRows = PointRows {
+    pick_help: "click a face, edge or corner in the viewport to place the Slot exit point",
+    help: "a point in model X and Y: the pass stops at the slot end nearest this point",
+    says: "the row count decides where a pass can stop; an exit that the start point makes impossible is refused by name - the exit never moves",
+    ..EXIT
+};
+
+/// Both groups, for a kind whose pick is one of two ends (the Slot, #3325).
+pub(super) fn end_groups(ui: &mut Ui, u: Unit, picks: &mut PathPicks) {
+    pick_list_group(ui, u, &SLOT_START, &mut picks.start);
+    pick_list_group(ui, u, &SLOT_EXIT, &mut picks.exit);
+}
+
 /// Both groups, for the closed 2D contour's lead tab.
 pub(super) fn start_exit_groups(ui: &mut Ui, u: Unit, picks: &mut PathPicks) {
     pick_list_group(ui, u, &START, &mut picks.start);
