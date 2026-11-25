@@ -70,6 +70,7 @@ mod air_entry;
 mod descent;
 mod descent_dive;
 mod descent_xy;
+mod entry_warn;
 mod equal_steps;
 mod face;
 mod face_entry;
@@ -183,6 +184,8 @@ pub use corner_relief::{
 };
 pub use corner_relief_spur::pocket_relief_plan;
 pub use level_rings::level_ring_plan;
+pub use crate::approach::OUTSIDE_AIR_REFUSAL;
+pub use entry_warn::{ENTRY_STAND_IN_NOTE, PLUNGE_INTO_STOCK_NOTE, entry_stand_ins, entry_warnings, is_entry_stand_in};
 pub use pass_start::{
     PASS_START_NOTE, PASS_START_REST_NOTE, PASS_START_ZIGZAG_NOTE, PassStart, StartSide, advised, entry_advice, pass_start_fallbacks,
 };

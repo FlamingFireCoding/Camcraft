@@ -316,6 +316,10 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             // #3748: a selected entry that is not the recommended Arc on
             // a start-side pass - advisory, its own line.
             Warning::EntryNotRecommended { .. } => (227, false),
+            // #3884: the stand-in entries and a selected Plunge into
+            // uncut stock of a start-side pass - advisory, own lines.
+            Warning::EntryStandIn { .. } => (228, false),
+            Warning::PlungeIntoStock { .. } => (229, false),
             // A lathe holder's rub (#369) splits part from stock too.
             Warning::HolderHit { part, .. } => (212 + *part as u8, false),
         }
@@ -345,8 +349,10 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             | Warning::DrillUndersize { at, .. }
             | Warning::StrategyFallback { at, .. }
             | Warning::FluteShort { at, .. }
-            | Warning::PlungeTooDeep { at, .. } => *at,
-            | Warning::EntryNotRecommended { at, .. } => *at,
+            | Warning::PlungeTooDeep { at, .. }
+            | Warning::EntryNotRecommended { at, .. }
+            | Warning::EntryStandIn { at, .. }
+            | Warning::PlungeIntoStock { at } => *at,
         }
     }
     let mut lines: Vec<(String, Option<usize>)> = Vec::new();
