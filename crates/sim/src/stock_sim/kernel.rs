@@ -34,6 +34,26 @@ pub fn cells_across(extent: f64, cell: f64) -> usize {
     if k >= 1.0 && (r - k).abs() <= 1e-9 * k { k as usize } else { r.ceil() as usize }
 }
 
+/// The edge at `v` on a lattice locked to the origin, in cells: the floor
+/// of `v / cell` for a lower edge (`upper` false), the ceiling for an
+/// upper one, except that an edge a whole number of cells from the origin
+/// up to rounding is that number. The law of [`cells_across`] for such a
+/// lattice: an edge read a few ulps past a cell boundary adds no sliver
+/// cell on either side, so the lattice over a box keeps the box's
+/// columns.
+#[must_use]
+pub(crate) fn edge_cells(v: f64, cell: f64, upper: bool) -> f64 {
+    let r = v / cell;
+    let k = r.round();
+    if (r - k).abs() <= 1e-9 * k.abs().max(1.0) {
+        k
+    } else if upper {
+        r.ceil()
+    } else {
+        r.floor()
+    }
+}
+
 #[cfg(test)]
 #[path = "cell_count_tests.rs"]
 mod cell_count_tests;

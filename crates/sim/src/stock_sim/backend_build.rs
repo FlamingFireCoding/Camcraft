@@ -103,8 +103,9 @@ impl Stock {
                         "stock mesh is empty or flat in XY: nothing to simulate against".into(),
                     ));
                 }
-                let nx = (((bx1 - bx0) / cell).ceil() as usize + 2).max(1);
-                let ny = (((by1 - by0) / cell).ceil() as usize + 2).max(1);
+                // The column arm's count (`Dexel::from_facets`, #4012).
+                let nx = cells_across(bx1 - bx0, cell) + 2;
+                let ny = cells_across(by1 - by0, cell) + 2;
                 if nx > MAX_CELLS_PER_AXIS || ny > MAX_CELLS_PER_AXIS {
                     return Err(StockError::Invalid(format!(
                         "grid would be {nx}x{ny} cells; at most {MAX_CELLS_PER_AXIS} per axis"

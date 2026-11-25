@@ -86,3 +86,46 @@ fn both_cylinder_gates_count_the_same_columns() {
     assert_eq!(column, field);
     assert!(column.as_ref().is_err_and(|e| e.contains("4097x4097")), "{column:?}");
 }
+
+#[test]
+fn the_field_verdict_lattice_over_a_box_has_the_column_arms_columns() {
+    let (x0, x1) = (-long(2), -0.0);
+    let column = Stock::block(Backend::Column, x0, 0.0, x1, 1.0, 5.0, 0.254).expect("column");
+    let field = Stock::block(Backend::Field { band: 4 }, x0, 0.0, x1, 1.0, 5.0, 0.254).expect("field");
+    let (Stock::Column(d), Stock::Field(f)) = (&column, &field) else { panic!("one stock per arm") };
+    let lat = super::super::march::lattice_of(f).expect("lattice");
+    assert_eq!((lat.nx, lat.ny), (d.nx, d.ny), "field lattice from cell {} to {}", lat.i0, lat.i0 + lat.nx as i32);
+}
+
+#[test]
+fn the_side_on_carry_slices_a_height_a_few_ulps_over_whole_cells_into_whole_slabs() {
+    use super::super::carry::Body;
+    use super::super::carry_side::SideTurn;
+    use super::super::dexel::Dexel;
+    // A quarter turn about X by -90 degrees: X stays, the old Z is the new Y.
+    let turn = SideTurn::from_matrix([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, -1.0, 0.0]], [0.0; 3]).expect("turn");
+    let mut block = Dexel::block(0.0, 0.0, 1.0, 1.0, long(2), 0.254).expect("block");
+    // A cut body carries no exact history, so the turn slices its heights
+    // (the exact carry, which a fresh block takes, counts by the box).
+    block.lower(0, long(2));
+    assert!(block.history.is_none(), "the slab path, not the exact read");
+    let turned = Body::on_floor(block, 0.0).carry_side(&turn).expect("carried");
+    assert_eq!(turned.dex.ny, 50, "a 12.7 mm height two ulps long is 50 slabs of 0.254");
+}
+
+#[test]
+fn both_mesh_stock_gates_count_the_same_columns() {
+    use crate::geometry::{cube, Point3};
+    // A mesh 12.7 mm two ulps long: 50 columns and the one of margin each side.
+    let plate = cube(Point3::new(-long(2), 0.0, 0.0), Point3::new(0.0, 1.0, 5.0)).facets.to_vec();
+    let Stock::Column(d) = Stock::from_facets(Backend::Column, &plate, 0.254).expect("column") else { panic!("column arm") };
+    assert_eq!(d.nx, 52);
+    // The gate: a strip 4094 cells a few ulps long, with its margin 4096 cells, inside the ceiling on both arms.
+    let x1 = 4094.0 * 0.254;
+    let x0 = -(x1 * (1.0 + 4.0 * f64::EPSILON) - x1);
+    assert!((x1 - x0) / 0.254 > 4094.0);
+    let strip = cube(Point3::new(x0, 0.0, 0.0), Point3::new(x1, 0.254, 0.254)).facets.to_vec();
+    let column = Stock::from_facets(Backend::Column, &strip, 0.254).map(|_| ()).map_err(|e| e.to_string());
+    let field = Stock::from_facets(Backend::Field { band: 4 }, &strip, 0.254).map(|_| ()).map_err(|e| e.to_string());
+    assert!(column.is_ok() && field.is_ok(), "column {column:?}, field {field:?}");
+}
