@@ -18,7 +18,7 @@ fn editor(name: &str) -> Harness<'static, State> {
     let mut harness = Harness::builder()
         .with_size(Vec2::new(1600.0, 1200.0))
         .build_ui_state(
-            |ui, state: &mut State| super::super::tool_library_dialog::tool_library_window(&ui.ctx().clone(), state),
+            |ui, state: &mut State| super::super::tool_library_dialog::tool_library_window(ui.ctx(), state),
             state,
         );
     harness.run_steps(2);

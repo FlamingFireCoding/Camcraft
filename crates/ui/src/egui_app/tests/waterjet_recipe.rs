@@ -40,7 +40,7 @@ fn editor_in(unit: Unit) -> Harness<'static, ShellUi> {
 }
 
 /// The window's Apply button.
-fn apply(h: &Harness<'static, ShellUi>) -> egui_kittest::Node<'_> {
+fn apply<'h>(h: &'h Harness<'static, ShellUi>) -> egui_kittest::Node<'h> {
     library_window(h).get_by_role_and_label(egui::accesskit::Role::Button, "Apply")
 }
 
