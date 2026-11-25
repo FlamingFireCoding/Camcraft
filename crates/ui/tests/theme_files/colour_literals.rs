@@ -10,55 +10,22 @@
 //! - a file whose literals moved to tokens fails until its row is
 //!   lowered or removed, so the list only shrinks.
 //!
-//! A literal is a named constant (`Color32::WHITE`) or a constructor
-//! whose arguments are all numbers written in place
-//! (`Color32::from_rgb(245, 240, 250)`). A constructor over variables
-//! (`from_rgb(r, g, b)`) converts a colour chosen elsewhere and does not
-//! count. Colour data kept as plain numbers (a `[u8; 3]` const, a table
-//! of tuples) is not seen; the #1120 family PRs move those by name.
+//! What counts as a literal is `colour_scan`'s rule. Colour data kept as
+//! plain numbers (a `[u8; 3]` const, a table of tuples) is not seen; the
+//! #1120 family PRs move those by name.
 //!
 //! The permanent rows are the token tables themselves, the contrast
 //! maths and a colour that only measures text. Each other row is a site
 //! family that a later #1120 PR moves to tokens.
 //! Provenance: our own test over our own source tree.
 //!
-//! Gate map (#1120): covers ui::egui_app::theme, ui::egui_app.
+//! A module of the `theme_files` suite (#3187: no new test binary). Its
+//! gate map names `ui::egui_app`, so each UI change runs the guard.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// A colour written as a value at the call site. `Color32::TRANSPARENT`
-/// is not in the list: it carries no hue for a theme to change.
-const PATTERNS: &[&str] = &[
-    "Color32::from_rgb(",
-    "Color32::from_rgba_unmultiplied(",
-    "Color32::from_rgba_premultiplied(",
-    "Color32::from_gray(",
-    "Color32::from_black_alpha(",
-    "Color32::from_white_alpha(",
-    "Color32::from_hex(",
-    "Rgba::from_rgb(",
-    "Color32::WHITE",
-    "Color32::BLACK",
-    "Color32::GRAY",
-    "Color32::LIGHT_GRAY",
-    "Color32::DARK_GRAY",
-    "Color32::RED",
-    "Color32::LIGHT_RED",
-    "Color32::DARK_RED",
-    "Color32::GREEN",
-    "Color32::LIGHT_GREEN",
-    "Color32::DARK_GREEN",
-    "Color32::BLUE",
-    "Color32::LIGHT_BLUE",
-    "Color32::DARK_BLUE",
-    "Color32::YELLOW",
-    "Color32::LIGHT_YELLOW",
-    "Color32::ORANGE",
-    "Color32::GOLD",
-    "Color32::BROWN",
-    "Color32::KHAKI",
-];
+use super::colour_scan::count;
 
 /// `(path under crates/ui/src, literal count, why)`. Keep it sorted by
 /// path. A `keep:` row is not a colour choice for a theme; a `move`
@@ -111,77 +78,6 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
             out.push(p);
         }
     }
-}
-
-/// A number written in place: `255`, `0x2B`, `1.0`, `0.5_f32`.
-fn is_number(arg: &str) -> bool {
-    let a = arg.trim();
-    a.starts_with(|c: char| c.is_ascii_digit())
-        && a.chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
-}
-
-/// The arguments of the call whose `(` ends at `open`, split at the
-/// commas of its own depth; `None` when the call does not close.
-fn call_args(text: &str, open: usize) -> Option<Vec<&str>> {
-    let mut depth = 0usize;
-    let mut start = open;
-    let mut args = Vec::new();
-    for (k, c) in text[open..].char_indices() {
-        let at = open + k;
-        match c {
-            '(' | '[' | '{' => depth += 1,
-            ')' | ']' | '}' => {
-                depth = depth.checked_sub(1)?;
-                if depth == 0 {
-                    args.push(&text[start..at]);
-                    return Some(args);
-                }
-            }
-            ',' if depth == 1 => {
-                args.push(&text[start..at]);
-                start = at + 1;
-            }
-            _ => {}
-        }
-        if at == open {
-            start = open + 1;
-        }
-    }
-    None
-}
-
-/// The colour literals of one file. A constructor counts only when each
-/// argument is a number written in place: `from_rgb(r, g, b)` converts a
-/// colour chosen elsewhere and is not a literal. A named constant
-/// (`Color32::WHITE`) always counts. A line comment does not count.
-fn count(text: &str) -> usize {
-    let code: String = text
-        .lines()
-        .filter(|l| !l.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    PATTERNS
-        .iter()
-        .map(|pat| {
-            code.match_indices(pat)
-                .filter(|(i, _)| {
-                    let end = i + pat.len();
-                    if pat.ends_with('(') {
-                        call_args(&code, end - 1).is_some_and(|args| {
-                            // A trailing comma leaves one empty argument.
-                            let args: Vec<&&str> =
-                                args.iter().filter(|a| !a.trim().is_empty()).collect();
-                            !args.is_empty() && args.iter().all(|a| is_number(a))
-                        })
-                    } else {
-                        // `Color32::RED` must not count `Color32::REDDISH`-like names.
-                        !code[end..].starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
-                    }
-                })
-                .count()
-        })
-        .sum()
 }
 
 fn counts() -> BTreeMap<String, usize> {
@@ -259,22 +155,4 @@ fn the_rows_are_sorted_and_each_says_why() {
         assert!(*n > 0, "{p}: a row with 0 literals is removed, not kept");
         assert!(!why.trim().is_empty(), "{p}: each row says why");
     }
-}
-
-#[test]
-fn the_counter_sees_each_form_and_skips_comments() {
-    let text = "let a = Color32::from_rgb(1, 2, 3);\n\
-                // Color32::from_rgb(9, 9, 9) in a comment\n\
-                let b = [Color32::WHITE, Color32::TRANSPARENT, Color32::from_gray(4)];\n\
-                let c = Color32::RED; let d = Color32::REDDISH;\n\
-                let e = Color32::from_rgb(\n    0x10,\n    0x20,\n    0x30,\n);\n\
-                let f = Color32::from_rgba_unmultiplied(r, g, b, ALPHA);\n\
-                let g = Color32::from_rgb(rgb.0, rgb.1, rgb.2);\n\
-                let h = Color32::from_black_alpha(170);\n";
-    assert_eq!(
-        count(text),
-        6,
-        "from_rgb, WHITE, from_gray, RED, the split from_rgb and from_black_alpha; \
-         not the comment, TRANSPARENT, REDDISH or a conversion of variables"
-    );
 }
