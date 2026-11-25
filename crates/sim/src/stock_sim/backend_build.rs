@@ -54,7 +54,9 @@ impl Stock {
                         if !cell.is_finite() || cell <= 0.0 {
                             return Err(StockError::Invalid("stock box and cell must be finite, box non-empty, cell positive".into()));
                         }
-                        let n = (*diameter / cell).ceil() as usize;
+                        // The same count as the column arm's block
+                        // over the circumscribed square (#4012).
+                        let n = cells_across(*diameter, cell);
                         if n == 0 || n > MAX_CELLS_PER_AXIS {
                             return Err(StockError::Invalid(format!(
                                 "grid would be {n}x{n} cells; at most {MAX_CELLS_PER_AXIS} per axis"

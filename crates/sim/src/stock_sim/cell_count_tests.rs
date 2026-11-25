@@ -51,3 +51,38 @@ fn the_exact_carry_read_counts_the_blocks_columns() {
     let body = h.read(false).expect("read");
     assert_eq!((body.dex.nx, body.dex.ny), (50, 4));
 }
+
+#[test]
+fn the_field_box_gate_counts_the_same_columns() {
+    // The column case above, on the field arm's own gate.
+    let x1 = 4096.0 * 0.254;
+    let x0 = -(x1 * (1.0 + 4.0 * f64::EPSILON) - x1);
+    assert!((x1 - x0) / 0.254 > 4096.0);
+    assert!(Stock::block(Backend::Field { band: 4 }, x0, 0.0, x1, 0.254, 1.0, 0.254).is_ok());
+}
+
+#[test]
+fn both_cylinder_gates_count_the_same_columns() {
+    use crate::stock::StockShape;
+    let cell = 0.254;
+    let gate = |diameter: f64| {
+        let shape = StockShape::Cylinder { diameter, height: 1.0 };
+        let column = Stock::from_shape(Backend::Column, &shape, cell);
+        let field = Stock::from_shape(Backend::Field { band: 4 }, &shape, cell);
+        (column.map(|_| ()).map_err(|e| e.to_string()), field.map(|_| ()).map_err(|e| e.to_string()))
+    };
+    // 4096 cells two ulps long: inside the grid ceiling on both arms. The
+    // column arm builds it; the field arm passes the same gate and then
+    // refuses by name on its own extra truth, the per-facet cell budget
+    // (a cap facet of a round this wide spans millions of cells), which
+    // it says for any round this size, whole cells or not.
+    let (column, field) = gate(f64::from_bits((4096.0_f64 * cell).to_bits() + 2));
+    assert!(column.is_ok(), "column arm: {column:?}");
+    let said = field.expect_err("the field arm's facet budget");
+    assert!(!said.contains("grid would be"), "the field arm's grid gate refused a whole number of cells: {said}");
+    assert!(said.contains("needs tessellating"), "{said}");
+    // A real part of a cell more: refused on both arms, in the same words.
+    let (column, field) = gate(4096.0 * cell + 0.01);
+    assert_eq!(column, field);
+    assert!(column.as_ref().is_err_and(|e| e.contains("4097x4097")), "{column:?}");
+}
