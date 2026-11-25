@@ -37,6 +37,18 @@ pub const RIBBON_INK: &str = "ribbon_ink";
 pub const HANDLE_SHADE: &str = "handle_shade";
 pub const HANDLE_TEXT: &str = "handle_text";
 pub const PICK_RIM: &str = "pick_rim";
+pub const CUBE_EDGE: &str = "cube_edge";
+pub const CUBE_LABEL: &str = "cube_label";
+pub const CUBE_GLYPH_ON: &str = "cube_glyph_on";
+pub const CUBE_GLYPH_OFF: &str = "cube_glyph_off";
+pub const VIEWPORT_HINT: &str = "viewport_hint";
+pub const MARKER_STEM: &str = "marker_stem";
+pub const MARKER_RING: &str = "marker_ring";
+pub const MARKER_DOT: &str = "marker_dot";
+pub const AXIS_X: &str = "axis_x";
+pub const AXIS_Y: &str = "axis_y";
+pub const AXIS_Z: &str = "axis_z";
+pub const VIEWPORT_HOVER: &str = "viewport_hover";
 pub const RIBBON_TAB_H: &str = "ribbon_tab_h";
 pub const RIBBON_CELL_TOP_GAP: &str = "ribbon_cell_top_gap";
 pub const RIBBON_CAPTION_GAP: &str = "ribbon_caption_gap";
@@ -75,6 +87,8 @@ pub const COLOR_NAMES: &[&str] = &[
     INK, INK_ALT, WELL, TEXT, TEXT_DIM, TEXT_FAINT, BORDER, ACCENT,
     ACCENT_HOVER, FIELD_BG, FIELD_HOVER, FIELD_ACTIVE, SELECTION_BG,
     SELECTION_STROKE, VIEWPORT, RIBBON_INK, HANDLE_SHADE, HANDLE_TEXT, PICK_RIM,
+    CUBE_EDGE, CUBE_LABEL, CUBE_GLYPH_ON, CUBE_GLYPH_OFF, VIEWPORT_HINT, MARKER_STEM,
+    MARKER_RING, MARKER_DOT, AXIS_X, AXIS_Y, AXIS_Z, VIEWPORT_HOVER,
 ];
 
 /// The geometry vocabulary (every override is clamped through the

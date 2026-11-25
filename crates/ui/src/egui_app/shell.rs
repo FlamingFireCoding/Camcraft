@@ -742,10 +742,10 @@ fn viewport_panel(
         // The machined mesh's hovered facet (#25): the hover ink's yellow,
         // a veil over the class colour and its outline.
         if let Some(tri) = crate::machined::hover_facet_uv(state, aspect) {
-            let ink = egui::Color32::from_rgb(255, 217, 102);
+            let ink = super::theme::current().viewport_hover;
             ui.painter().add(egui::Shape::convex_polygon(
                 tri.iter().map(|uv| to_px(*uv)).collect(),
-                egui::Color32::from_rgba_unmultiplied(255, 217, 102, 90),
+                egui::Color32::from_rgba_unmultiplied(ink.r(), ink.g(), ink.b(), 90),
                 egui::Stroke::new(1.5, ink),
             ));
         }

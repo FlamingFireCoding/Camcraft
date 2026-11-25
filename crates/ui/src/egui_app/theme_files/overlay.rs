@@ -36,6 +36,8 @@ pub(super) fn apply_overlay(
         tree_eye_reserve, tree_pad_x, tree_pad_y, tree_suffix_gap,
         tree_header_boost, highlight_stroke_px,
         menu_width, recent_width, menu_gap, menu_pad_x,
+        // The viewport furniture reads `ground` below, not `base`.
+        cube_edge: _, cube_label: _, cube_glyph_on: _, cube_glyph_off: _, viewport_hint: _, marker_stem: _, marker_ring: _, marker_dot: _, axis_x: _, axis_y: _, axis_z: _, viewport_hover: _,
     } = base;
     let c = |name: &str, keep: Color32| colors.get(name).copied().unwrap_or(keep);
     let f = |name: &str, keep: f32, win: (f32, f32)| {
@@ -47,6 +49,17 @@ pub(super) fn apply_overlay(
             .unwrap_or(keep)
     };
     let font_label = f(names::FONT_LABEL, font_label, clamp::FONT);
+    // #1120: the cube, marker and axis inks belong to the viewport
+    // ground, not to the base. A file that turns its ground light (or
+    // dark) gets the built-in set of that ground for each key it leaves
+    // out - the furniture followed the ground before it was a token.
+    let viewport = c(names::VIEWPORT, viewport);
+    let light = crate::egui_app::ground_ink::light_ground;
+    let ground = match (light(viewport), light(base.viewport)) {
+        (now, was) if now == was => base,
+        (true, _) => Tokens::LIGHT,
+        (false, _) => Tokens::DARK,
+    };
     let font_label_min = f(names::FONT_LABEL_MIN, font_label_min, clamp::FONT).min(font_label);
     Tokens {
         ink: c(names::INK, ink),
@@ -63,11 +76,23 @@ pub(super) fn apply_overlay(
         field_active: c(names::FIELD_ACTIVE, field_active),
         selection_bg: c(names::SELECTION_BG, selection_bg),
         selection_stroke: c(names::SELECTION_STROKE, selection_stroke),
-        viewport: c(names::VIEWPORT, viewport),
+        viewport,
         ribbon_ink: c(names::RIBBON_INK, ribbon_ink),
         handle_shade: c(names::HANDLE_SHADE, handle_shade),
         handle_text: c(names::HANDLE_TEXT, handle_text),
         pick_rim: c(names::PICK_RIM, pick_rim),
+        cube_edge: c(names::CUBE_EDGE, ground.cube_edge),
+        cube_label: c(names::CUBE_LABEL, ground.cube_label),
+        cube_glyph_on: c(names::CUBE_GLYPH_ON, ground.cube_glyph_on),
+        cube_glyph_off: c(names::CUBE_GLYPH_OFF, ground.cube_glyph_off),
+        viewport_hint: c(names::VIEWPORT_HINT, ground.viewport_hint),
+        marker_stem: c(names::MARKER_STEM, ground.marker_stem),
+        marker_ring: c(names::MARKER_RING, ground.marker_ring),
+        marker_dot: c(names::MARKER_DOT, ground.marker_dot),
+        axis_x: c(names::AXIS_X, ground.axis_x),
+        axis_y: c(names::AXIS_Y, ground.axis_y),
+        axis_z: c(names::AXIS_Z, ground.axis_z),
+        viewport_hover: c(names::VIEWPORT_HOVER, ground.viewport_hover),
         radius_widget: rad(names::RADIUS_WIDGET, radius_widget, clamp::RADIUS as f32),
         radius_window: rad(names::RADIUS_WINDOW, radius_window, f32::from(clamp::RADIUS_WINDOW)),
         radius_menu: rad(names::RADIUS_MENU, radius_menu, f32::from(clamp::RADIUS_WINDOW)),
