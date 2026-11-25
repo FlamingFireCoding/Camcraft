@@ -3,7 +3,7 @@
 //! the move changes no pixel, and a theme file can set each ink by name.
 //! Provenance: our own tests over our own token table and theme format.
 //!
-//! Gate map (#1120): covers ui::egui_app::theme, ui::egui_app::theme_files.
+//! A module of the `theme_files` suite (#3187: no new test binary).
 
 use camcraft_ui::egui_app::theme::Tokens;
 use camcraft_ui::egui_app::theme_files as tf;
