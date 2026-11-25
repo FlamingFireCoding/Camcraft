@@ -272,9 +272,9 @@ pub(super) fn wall_arc_hop(b: &mut PathBuilder, p: &ContourParams, hop_z: f64) {
     b.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, p.clearance_z), None);
 }
 
-/// Tab window to tab window: up over the tab, across, down. Below a ring's
-/// first level (`uncut` is `Some`) the dive pecks where it would go more
-/// than one stepdown below the floor under the disc (#3678).
+/// Tab window to tab window: up over the tab, across, down (pecked where
+/// the dive would go deep under the disc, #3678: `uncut` is
+/// `contour_peck::uncut_floor`).
 pub(super) fn tab_window_dive(b: &mut PathBuilder, p: &ContourParams, e2: Point2, hop_z: f64, lead_top: f64, uncut: Option<f64>) {
     let cur = b.at();
     b.push(MoveKind::Feed, Point3::new(cur.x, cur.y, hop_z), Some(p.feed));

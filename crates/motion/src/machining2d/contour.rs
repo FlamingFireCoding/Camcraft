@@ -302,8 +302,7 @@ pub(super) fn emit_band(
                 // when the descent one level up was the same arm.
                 let arm = ring_in.as_ref().map_or(arm, |r| r.arm);
                 let opened = rzi >= 2 || (rzi == 1 && arm == p.entry);
-                let traverse = ring_in.as_ref().map(|r| r.plane);
-                let step = Step { arm, e2, z, prev_z, first: first_entry, opened, inside, tabbed, lead_top, traverse, uncut: uncut_floor(p, rz, rzi) };
+                let step = Step { arm, e2, z, prev_z, first: first_entry, opened, inside, tabbed, lead_top, uncut: uncut_floor(p, rz, rzi), traverse: ring_in.as_ref().map(|r| r.plane) };
                 if let Some(d) = engage_level(b, &eng, &step, &lead, &walk, said) {
                     if dives.0.to_bits() != z.to_bits() {
                         dives = (z, Vec::new());
@@ -311,7 +310,6 @@ pub(super) fn emit_band(
                     dives.1.push(vec![d, e2]);
                 }
             } else {
-                // Tab window to tab window: up over the tab, across, down (pecked, #3678).
                 tab_window_dive(b, p, e2, hop_z, lead_top, uncut_floor(p, rz, rzi));
             }
             first_entry = false;

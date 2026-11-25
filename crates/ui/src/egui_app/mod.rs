@@ -136,6 +136,8 @@ mod thread_page;
 mod tool_thread_mill_row;
 // #1444: the undercut cutters' seeding and dovetail flank angle row.
 mod tool_undercut_row;
+// #3368: a chamfer mill's tip form and tip diameter rows.
+mod tool_taper_tip_row;
 // #898: the tool editor's catalog rows (part number, vendor, ...).
 mod tool_catalog_rows;
 mod tool_settings;
