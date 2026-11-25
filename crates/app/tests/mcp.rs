@@ -10,6 +10,10 @@
 //! app::operation (detect_holes, #312), app::mcp::pockets (detect_pockets, #35).
 
 mod common;
+#[path = "mcp/background_generate.rs"]
+mod background_generate;
+#[path = "mcp/background_streams.rs"]
+mod background_streams;
 #[path = "mcp/approach_distance.rs"]
 mod mcp_approach_distance;
 #[path = "mcp/finish3d_direction.rs"]
@@ -315,6 +319,27 @@ fn job_tool_names(c: &mut Client) -> Vec<String> {
     job["tools"].as_array().map(|t| t.iter().filter_map(|t| t["name"].as_str().map(str::to_owned)).collect()).unwrap_or_default()
 }
 
+/// #3036: `add_tool` picks the small ball tools and the metric tap-drill and
+/// clearance drills by their catalog names.
+#[test]
+fn add_tool_picks_the_metric_hole_drills_and_small_ball_tools_by_name() {
+    let names = [
+        "BN-0300", "BB-0600-R1", "DR-0250", "DR-0330", "DR-0340", "DR-0420", "DR-0450", "DR-0500", "DR-0550", "DR-0660",
+        "DR-0680", "DR-0850", "DR-0900", "DR-1020", "DR-1100", "DR-1350",
+    ];
+    let mut c = Client::new();
+    let listed = c.ok("list_tool_catalog", json!({}));
+    for name in names {
+        assert!(listed.to_string().contains(&format!("\"{name}\"")), "list_tool_catalog shows {name}");
+        c.ok("add_tool", json!({ "catalog": name }));
+    }
+    let mut got = job_tool_names(&mut c);
+    got.sort();
+    let mut want = names.map(str::to_owned).to_vec();
+    want.sort();
+    assert_eq!(got, want, "each tool arrives under its catalog name");
+}
+
 #[test]
 fn tool_library_export_import_roundtrip_into_a_fresh_document() {
     let dir = tmp_dir("toollib-roundtrip");
@@ -527,6 +552,40 @@ fn detect_holes_fills_a_drill_from_its_model_and_undo_empties_it() {
     assert!(e.contains("not a drilling operation"), "{e}");
 }
 
+/// #3544: a Drill operation added without a source reads the stock. Detect
+/// holes then names the stock, not "the source model", and names each model
+/// to pick. A model source with no holes keeps its old refusal.
+#[test]
+fn detect_holes_on_a_stock_source_names_the_stock_and_the_models_to_pick() {
+    let dir = tmp_dir("holes-stock-source");
+    let (disc, block) = (dir.join("disc.stl"), dir.join("block.stl"));
+    write_bored_disc_stl(&disc);
+    write_box_stl(&block);
+    let mut c = Client::new();
+    c.request("initialize", json!({ "protocolVersion": "2025-06-18" }));
+    c.ok("set_stock", json!({ "box": { "dx": 30.0, "dy": 30.0, "dz": 10.0 } }));
+    c.ok("add_tool", json!({ "catalog": "DR-0400" }));
+    c.ok("add_operation", json!({ "kind": "drill", "tool": "DR-0400", "name": "D1" }));
+    let e = c.refused("detect_holes", json!({ "name": "D1" }));
+    assert!(e.contains("no drilled holes found in the stock - Z or radial."), "{e}");
+    assert!(e.contains("'D1' reads the stock, not a model: import a model and pick it as the source"), "{e}");
+
+    c.ok("import_model", json!({ "path": disc.display().to_string() }));
+    c.ok("import_model", json!({ "path": block.display().to_string() }));
+    let e = c.refused("detect_holes", json!({ "name": "D1" }));
+    assert!(!e.contains("source model"), "the stock is not the source model: {e}");
+    assert!(
+        e.contains(r#"'D1' reads the stock, not a model: pick a model as the source (source: "block" or source: "disc")"#)
+            || e.contains(r#"'D1' reads the stock, not a model: pick a model as the source (source: "disc" or source: "block")"#),
+        "{e}"
+    );
+
+    c.ok("add_operation", json!({ "kind": "drill", "tool": "DR-0400", "source": "block", "name": "D2" }));
+    let e = c.refused("detect_holes", json!({ "name": "D2" }));
+    assert!(e.ends_with("no drilled holes found in the source model - Z or radial"), "a model source keeps its refusal: {e}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn a_nested_patch_typo_is_refused_by_its_path() {
     let mut c = Client::new();
@@ -556,7 +615,7 @@ fn a_null_id_is_an_invalid_request() {
 
 fn serve_bytes(input: &[u8]) -> Vec<Value> {
     let mut out = Vec::new();
-    mcp::serve(input, &mut out).expect("serve");
+    mcp::serve(std::io::Cursor::new(input.to_vec()), &mut out).expect("serve");
     let text = String::from_utf8(out).expect("utf8");
     text.lines().map(|l| serde_json::from_str(l).expect("one JSON object per line")).collect()
 }

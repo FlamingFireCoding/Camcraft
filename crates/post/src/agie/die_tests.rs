@@ -6,7 +6,7 @@ use super::*;
 /// The 38-sided slot of `examples/agie/die-plate.obj`: straight walls at
 /// X±12.5 from Y-6 to Y6, joined by faceted semicircles of radius 12.5 with
 /// 10° facets. Counter-clockwise.
-fn slot() -> Vec<[f64; 2]> {
+pub(super) fn slot() -> Vec<[f64; 2]> {
     let arc = |cy: f64, from: i32| {
         (0..=18).map(move |k| {
             let a = f64::from(from + 10 * k).to_radians();
@@ -20,7 +20,7 @@ fn die() -> AgieJob {
     AgieJob {
         side: AgieSide::Die,
         contour: slot(),
-        start: [-5.5, 0.],
+        start: Some([-5.5, 0.]),
         stock_min: [-35., -35., -20.],
         stock_max: [35., 35., 0.],
     }
@@ -56,7 +56,7 @@ fn a_die_enters_the_nearest_wall_from_inside_and_keeps_counter_clockwise_iso() {
 fn a_die_hole_too_close_to_one_wall_enters_the_opposite_wall() {
     // 1.5 mm from the left wall: the hole fits, but the lead is short.
     let job = AgieJob {
-        start: [-11., 0.],
+        start: Some([-11., 0.]),
         ..die()
     };
     assert_eq!(points(&job).unwrap()[0], [12.5, 0.]);
@@ -65,13 +65,16 @@ fn a_die_hole_too_close_to_one_wall_enters_the_opposite_wall() {
 #[test]
 fn a_die_hole_must_lie_completely_inside_the_opening() {
     for start in [[-20., 0.], [-11.6, 0.], [0., 18.]] {
-        let job = AgieJob { start, ..die() };
+        let job = AgieJob {
+            start: Some(start),
+            ..die()
+        };
         let why = points(&job).unwrap_err();
         assert!(why.contains("inside the die opening"), "{start:?}: {why}");
     }
     // Inside, but no straight wall has 3 mm of room on both sides of the foot.
     let job = AgieJob {
-        start: [0., 17.],
+        start: Some([0., 17.]),
         ..die()
     };
     assert!(points(&job).unwrap_err().contains("inward lead"));
@@ -86,7 +89,7 @@ fn the_same_ring_with_an_inside_hole_is_refused_as_a_punch() {
     assert!(points(&job).is_err());
     // As a punch, the slot passes with an exterior hole.
     let job = AgieJob {
-        start: [-20., 0.],
+        start: Some([-20., 0.]),
         ..job
     };
     assert_eq!(points(&job).unwrap()[0], [-12.5, 0.]);
@@ -98,7 +101,7 @@ fn the_reach_check_flips_every_opening_corner_to_an_inside_corner() {
     // has four inside corners of the plate. The rough pass cannot reach them.
     let mut job = punch();
     job.side = AgieSide::Die;
-    job.start = [0., 0.];
+    job.start = Some([0., 0.]);
     assert!(points(&job).unwrap_err().contains("0.002 mm"));
     // A hexagon has 60° turns. Its 0.245 mm rough miter leaves 0.038 mm.
     let hexagon = (0..6)
@@ -109,7 +112,7 @@ fn the_reach_check_flips_every_opening_corner_to_an_inside_corner() {
         .collect();
     let job = AgieJob {
         contour: hexagon,
-        start: [0., 0.],
+        start: Some([0., 0.]),
         ..die()
     };
     assert!(points(&job).unwrap_err().contains("0.002 mm"));
@@ -150,7 +153,7 @@ fn a_die_requires_the_qualified_20_mm_plate() {
         // The same heights are qualified for a punch.
         let job = AgieJob {
             side: AgieSide::Punch,
-            start: [-20., 0.],
+            start: Some([-20., 0.]),
             ..job
         };
         assert!(points(&job).is_ok(), "{height}");

@@ -161,6 +161,9 @@ pub fn thread_mill(d: f64, pitch: f64, pitch_min: f64, cutting_len: f64) -> Tool
         catalog: crate::catalog_fields::ToolCatalog::default(),
         cutting: Vec::new(),
         outline: Vec::new(),
+        tip_form: Default::default(),
+        tip_diameter: 0.0,
+        form: None,
     }
 }
 

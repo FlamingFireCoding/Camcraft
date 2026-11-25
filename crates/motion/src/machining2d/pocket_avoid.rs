@@ -5,7 +5,7 @@
 use camcraft_sim::verify::{AVOID_PAD, AvoidSpec};
 
 use crate::cl::{MoveKind, PathBuilder, Toolpath};
-use crate::geo2d::Region;
+use crate::geo2d::{Point2, Region};
 use crate::geometry::Point3;
 
 use super::GenError;
@@ -166,6 +166,8 @@ pub(super) fn pocket_avoid_over(
     let mut prev_center: Option<Region> = None;
     let mut blocked_levels: Vec<f64> = Vec::new();
     let mut notes: Vec<String> = Vec::new();
+    // #3249: a relief that gets no spur is noted once, not once per level.
+    let mut noted_relief_misses: Vec<Point2> = Vec::new();
     let mut tally = FilletTally::default();
     let mut proof = ProofTally::default();
 
@@ -296,7 +298,18 @@ pub(super) fn pocket_avoid_over(
             );
         }
         if !reliefs.is_empty() {
-            inject_relief_spurs(&mut passes, &mut runs, &level_center, reliefs);
+            let mut misses = Vec::new();
+            inject_relief_spurs(&mut passes, &mut runs, &level_center, reliefs, &mut misses);
+            for m in misses {
+                if noted_relief_misses.contains(&m) {
+                    continue;
+                }
+                noted_relief_misses.push(m);
+                b.note(format!(
+                    "corner relief at ({:.3}, {:.3}) is not cut: no pass vertex reaches the relief spur",
+                    m.x, m.y
+                ));
+            }
         }
         walk_one_level(
             &mut b,

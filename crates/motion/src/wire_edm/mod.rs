@@ -26,6 +26,10 @@
 //! missing or misplaced start hole, an inside corner or a neck the wire
 //! cannot cut - each is refused by name, never trimmed or rounded.
 //!
+//! A drawn line-and-arc profile (#3937, `arc_cut`) is cut on its own
+//! lines and arcs: the parallel is the analytic offset (`arc_offset`),
+//! the moves are true arcs, and the laws read the drawing itself.
+//!
 //! An OPEN run (#1109) - a cut-off line, a slot or a relief entered
 //! from the stock's edge - is cut by `open`: the kerf on the stated
 //! left or right of the run's travel, threaded outside the stock (no
@@ -39,6 +43,12 @@
 //! burnout of a pocket (#540) is `burnout`; the 4-axis cut between two
 //! profiles (#537) is `ruled`.
 
+mod arc_chain;
+mod arc_cut;
+mod arc_dist;
+mod arc_laws;
+mod arc_offset;
+mod arc_span;
 mod burnout;
 mod laws;
 mod pairing;
@@ -52,6 +62,9 @@ mod skims;
 mod tabs;
 mod taper;
 
+pub use arc_chain::{ArcChain, JOINT_TOL};
+pub use arc_cut::wire_contour_arcs;
+pub use arc_span::Span as ArcSpan;
 pub use skims::{check_passes, wire_passes, WirePass};
 
 pub use ruled::{wire_contour_ruled, WirePairing, WireProfile, WireRuled, WireSync, WireWidening, SYNC_TOL};
@@ -359,6 +372,8 @@ fn pass_notes(p: &WireParams, start: Point2, lead: f64, reverse: bool) -> Vec<St
     ]
 }
 
+#[cfg(test)]
+mod arc_tests;
 #[cfg(test)]
 mod facet_tests;
 #[cfg(test)]
