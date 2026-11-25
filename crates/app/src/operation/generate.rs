@@ -2001,7 +2001,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 kind, tool.center_cutting, tool.kind == crate::tools::ToolKind::BallNose, stock_facets.as_deref(), m_gen, frame.as_ref(), &fp, run,
             )?;
             // Issue #33: on the spindle's C the path states its angle.
-            let path = super::rotary_gate::stamp_spindle_c(path, spindle_c, (machine_rotaries.as_ref(), is_contour), *tolerance, kind)?;
+            let path = super::rotary_gate::stamp_spindle_c(
+                path,
+                spindle_c,
+                (machine_rotaries.as_ref(), if is_contour { super::rotary_gate::Unwind::Axial } else { super::rotary_gate::Unwind::NoProof }),
+                *tolerance,
+                kind,
+            )?;
             // #3096: the first rapid from the turret's index position onto the station.
             if let Some(ax) = spindle_c.filter(|_| super::rotary_traverse::answers(machine_kind, lathe_tool, &params, true)) {
                 let work = super::rotary_traverse::Work { part: &material.facets, part_solid, kept: &keep_parts, neighbours: &neighbour_parts, stock: stock_facets.as_deref(), stock_aabb, turning: &workholding.0, fixed: &workholding.1, excess: material.excess };
@@ -2115,7 +2121,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // Issue #33: on the spindle's C the path states its angle,
             // split to the verify budget so the machine's C-linear
             // motion is the chord the laws judge.
-            let path = super::rotary_gate::stamp_spindle_c(path, spindle_c, (machine_rotaries.as_ref(), false), *tolerance, "Rotary Offset")?;
+            let path = super::rotary_gate::stamp_spindle_c(path, spindle_c, (machine_rotaries.as_ref(), super::rotary_gate::Unwind::NoProof), *tolerance, "Rotary Offset")?;
             // #3096: the first rapid from the turret's index position onto the station.
             if let Some(ax) = spindle_c.filter(|_| super::rotary_traverse::answers(machine_kind, lathe_tool, &params, true)) {
                 let work = super::rotary_traverse::Work { part: &material.facets, part_solid, kept: &keep_parts, neighbours: &neighbour_parts, stock: stock_facets.as_deref(), stock_aabb, turning: &workholding.0, fixed: &workholding.1, excess: material.excess };
@@ -2473,11 +2479,12 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 "Rotary Flow", tool.center_cutting, stock_facets.as_deref(), m_gen, frame.as_ref(), &path, d * 0.5,
             )?;
             // Issue #33: on the spindle's C the path states its angle.
-            // The unwind law is not proven on this kind's band links
-            // end to end, so it posts only what fits the travel as
-            // stamped and refuses by name where it would rewind - the
-            // parallel's own answer (`unwinds: false`).
-            let path = super::rotary_gate::stamp_spindle_c(path, spindle_c, (machine_rotaries.as_ref(), false), *tolerance, "Rotary Flow")?;
+            // #2828: the unwind law is proven on this kind's band links
+            // end to end - they rest ON the retract cylinder, never
+            // over an axial plane - so the band unwinds by whole turns
+            // at its radial retract links, the rewinds riding as orbit
+            // rapids the verifier and the post both judge.
+            let path = super::rotary_gate::stamp_spindle_c(path, spindle_c, (machine_rotaries.as_ref(), super::rotary_gate::Unwind::Radial), *tolerance, "Rotary Flow")?;
             // #3096: the first rapid from the turret's index position onto the station.
             if let Some(ax) = spindle_c.filter(|_| super::rotary_traverse::answers(machine_kind, lathe_tool, &params, true)) {
                 let work = super::rotary_traverse::Work { part: &material.facets, part_solid, kept: &keep_parts, neighbours: &neighbour_parts, stock: stock_facets.as_deref(), stock_aabb, turning: &workholding.0, fixed: &workholding.1, excess: material.excess };
