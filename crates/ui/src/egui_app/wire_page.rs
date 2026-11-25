@@ -199,6 +199,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
         *side = SIDE_OF.get(si).copied().unwrap_or(WireSide::Die);
         prop_row(ui, "Run-out clearance", |ui| num(ui, u, clearance));
         super::start_exit_rows::wire_start_group(ui, u, picks);
+        super::start_exit_rows::wire_exit_group(ui, u, picks);
         hint(ui, "pick the one closed profile to cut; the wire is threaded at the start hole - inside the profile for a die, outside it for a punch");
         hint(ui, "or pick one open run reaching the stock's edge at both ends (a cut-off, a slot): left / right puts the kerf beside its travel, threaded outside the stock the run-out clearance off its edge");
         // #3207: sharp inside corners keep the wire's own radius.

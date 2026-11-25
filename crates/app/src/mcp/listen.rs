@@ -313,11 +313,11 @@ fn serve_client(
             let rest = buf.split_off(nl.saturating_add(1));
             let line = std::mem::replace(&mut buf, rest);
             if let Some(want) = gate.take() {
-                if !link::hello_matches(&line, want) {
+                let Some(proof) = link::hello_matches(&line, want) else {
                     let _ = writeln!(writer, "{}", link::HELLO_REFUSED).and_then(|()| writer.flush());
                     return Ok(End::Refused);
-                }
-                writeln!(writer, "{}", link::HELLO_OK)?;
+                };
+                writeln!(writer, "{}", link::hello_ok(&proof))?;
                 writer.flush()?;
                 active = Instant::now();
                 continue;

@@ -22,7 +22,7 @@ use camcraft_app::units::Unit;
 use crate::start_exit_pick::{StartExitAct, StartExitRole, act_id, armed_id};
 
 use super::fields::num;
-use super::layout::{GROUP_GAP, check_row, consequence, group, hint, prop_row};
+use super::layout::{GROUP_GAP, check_row, consequence, group, hint, prop_row, small_button};
 use super::pick_button::pick_button;
 
 /// The two group titles, as the tab's structural tests find them.
@@ -100,6 +100,31 @@ pub(super) fn wire_start_group(ui: &mut Ui, u: Unit, picks: &mut PathPicks) {
             }
             (true, None) => picks.start.push(PathPick::xy(Point2::new(0.0, 0.0))),
             (false, _) => picks.start.clear(),
+        }
+    });
+}
+
+/// A saved wire exit stays visible and editable beside the threading point.
+/// Apply commits the draft through the same undoable command as other wire fields.
+pub(super) fn wire_exit_group(ui: &mut Ui, u: Unit, picks: &mut PathPicks) {
+    group(ui, EXIT_GROUP, None, |ui| {
+        let mut stated = !picks.exit.is_empty();
+        check_row(ui, "Exit point stated", &mut stated);
+        if stated {
+            if picks.exit.is_empty() {
+                picks.exit.push(PathPick::xy(Point2::new(0.0, 0.0)));
+            }
+            if let Some(p) = picks.exit.first_mut() {
+                prop_row(ui, "Exit X", |ui| num(ui, u, &mut p.xy.x));
+                prop_row(ui, "Exit Y", |ui| num(ui, u, &mut p.xy.y));
+            }
+            if small_button(ui, "Clear exit").clicked() {
+                stated = false;
+            }
+            hint(ui, "an open run ends nearest this point; a closed profile completes its lap before leaving at this point");
+        }
+        if !stated {
+            picks.exit.clear();
         }
     });
 }

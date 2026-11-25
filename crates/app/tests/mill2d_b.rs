@@ -119,6 +119,7 @@ fn chamfer(width: f64) -> OpParams {
     OpParams::Chamfer2D {
         width,
         angle_deg: 45.0,
+        minimum_cone_radius: 0.0,
         clearance_z: Height::fixed(25.0),
         retract_z: None,
         top_z: Height::fixed(20.0),
@@ -322,6 +323,7 @@ fn taper(diameter: f64, tip_angle: f64, flute_len: f64) -> Tool {
         turning: None,
         tip_form: Default::default(),
         tip_diameter: 0.0,
+        form: None,
     }
 }
 

@@ -28,6 +28,15 @@ const PUNCH: &str = "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nS
     0\nLWPOLYLINE\n8\noutline\n90\n7\n70\n1\n10\n-10\n20\n-10\n10\n7\n20\n-10\n42\n0.41421356237309503\n\
     10\n10\n20\n-7\n10\n10\n20\n0\n10\n0\n20\n0\n10\n0\n20\n10\n10\n-10\n20\n10\n0\nENDSEC\n0\nEOF\n";
 
+/// A four-centre oval of tangent bulged arcs (#3959), as a DXF SPLINE or
+/// ELLIPSE is read: no arc centre stands on the lattice.
+const OVAL: &str = "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n\
+    0\nLWPOLYLINE\n8\noutline\n90\n4\n70\n1\n\
+    10\n8.528028654224\n20\n-3.490278871102\n42\n0.281861053657224\n\
+    10\n8.528028654224\n20\n3.490278871102\n42\n0.560231504260063\n\
+    10\n-8.528028654224\n20\n3.490278871102\n42\n0.281861053657224\n\
+    10\n-8.528028654224\n20\n-3.490278871102\n42\n0.560231504260063\n0\nENDSEC\n0\nEOF\n";
+
 /// A start pick at a world point (#3339 moved `start` into `picks`).
 fn start_at(p: [f64; 2]) -> camcraft_app::path_picks::PathPicks {
     camcraft_app::path_picks::PathPicks {
@@ -73,13 +82,19 @@ fn generated(world: &World) -> camcraft_app::cl::Toolpath {
     model::toolpath_of(world, &e).expect("cache").path.clone()
 }
 
-/// Post through `post` and hold the program to `golden`.
-fn golden(world: &World, post: &str, golden: &str) -> String {
-    let file = std::env::temp_dir().join(format!("camcraft-dxf-arcs-{}-{}.nc", std::process::id(), golden.replace('/', "-")));
+/// The program `post` writes for `world`.
+fn posted(world: &World, post: &str, tag: &str) -> String {
+    let file = std::env::temp_dir().join(format!("camcraft-dxf-arcs-{}-{}.nc", std::process::id(), tag.replace('/', "-")));
     let nc = posting::post_script(world, &file, posting::builtin_post_text(post).expect("post"))
         .unwrap_or_else(|e| panic!("{post} posts: {e}"))
         .program;
     let _ = std::fs::remove_file(file);
+    nc
+}
+
+/// Post through `post` and hold the program to `golden`.
+fn golden(world: &World, post: &str, golden: &str) -> String {
+    let nc = posted(world, post, golden);
     let path = format!("tests/golden/nc/{golden}");
     if std::env::var_os("WRITE_GOLDEN").is_some() {
         std::fs::write(&path, &nc).expect("write golden");
@@ -177,4 +192,31 @@ fn arcs_stay_refused_for_taper_and_a_hatch_still_blocks_the_cut() {
     let world = doc(&insert, FIXTURE, "C110", WireSide::Die, (0.0, 0.0), false);
     let why = refusal(&world);
     assert!(why.contains("skipped 1 INSERT entity"), "{why}");
+}
+
+/// The X and Y words of `line`, with the modal values of `at` where a word
+/// is not written.
+fn xy_of(line: &str, at: (f64, f64)) -> (f64, f64) {
+    let word = |c: char| line.split_whitespace().find_map(|w| w.strip_prefix(c).and_then(|v| v.parse::<f64>().ok()));
+    (word('X').unwrap_or(at.0), word('Y').unwrap_or(at.1))
+}
+
+#[test]
+fn tangent_arcs_post_arc_to_arc_with_no_block_that_stands_still() {
+    let world = doc(OVAL, FIXTURE, "C110", WireSide::Die, (0.0, 0.0), false);
+    let path = generated(&world);
+    assert_eq!(path.arc_count(), 5, "four arcs, the seam's arc in two parts: {:?}", path.moves);
+    let nc = posted(&world, ISO, "oval");
+    let blocks: Vec<&str> = nc.lines().filter(|l| ["G0 ", "G1 ", "G2 ", "G3 "].iter().any(|g| l.starts_with(g))).collect();
+    let first = blocks.iter().position(|l| l.starts_with("G3")).expect("an arc block");
+    let last = blocks.iter().rposition(|l| l.starts_with("G3")).expect("an arc block");
+    assert_eq!(last - first + 1, 5, "no block between two arcs: {nc}");
+    assert!(blocks[first..=last].iter().all(|l| l.starts_with("G3")), "{nc}");
+    // Every motion block moves the wire.
+    let mut at = xy_of(blocks[0], (f64::NAN, f64::NAN));
+    for l in &blocks[1..] {
+        let to = xy_of(l, at);
+        assert!((to.0 - at.0).hypot(to.1 - at.1) > 1e-6, "a block with no motion: {l}\n{nc}");
+        at = to;
+    }
 }

@@ -150,11 +150,12 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
         // chains, the two authored numbers state the cone's line, and
         // the floor is DERIVED from them - so there is no bottom_z or
         // stepdown to edit (Passes is out by has_section) and the pane
-        // reads the corner Z back so the derived number is visible,
+        // reads the virtual cone-tip Z back so the derived number is visible,
         // never merely implied.
         OpParams::Chamfer2D {
             width,
             angle_deg,
+            minimum_cone_radius,
             clearance_z,
             retract_z,
             top_z,
@@ -169,6 +170,8 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 prop_row(ui, "Chamfer width", |ui| num(ui, u, width));
                 prop_row(ui, "Chamfer angle", |ui| num_unit(ui, angle_deg, "°"));
                 hint(ui, "the face's slope off the top plane; the depth follows as width x tan(angle) - authored here, never second-guessed by a depth field");
+                prop_row(ui, "Tip offset", |ui| num(ui, u, minimum_cone_radius));
+                hint(ui, "moves the tool away from the selected edge and lowers it to keep the requested chamfer width; the cone uses the band from this radius to this radius plus the chamfer width; 0 makes the virtual tip follow the edge");
                 let mut s_idx = match side {
                     Side::Auto => 0,
                     Side::Inside => 1,
@@ -196,7 +199,13 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                     "chamfer.clearance",
                 );
                 height_editor(ui, "Top Z", world, op_ctx.as_deref(), top_z, "chamfer.top");
-                corner_note(ui, world, op_ctx.as_deref(), top_z, *width * angle_deg.to_radians().tan());
+                corner_note(
+                    ui,
+                    world,
+                    op_ctx.as_deref(),
+                    top_z,
+                    (*minimum_cone_radius + *width) * angle_deg.to_radians().tan(),
+                );
                 group(ui, LEVELS, None, |ui| {
                     retract_hop(ui, world, op_ctx.as_deref(), retract_z, top_z, clearance_z, "chamfer.retract");
                 });

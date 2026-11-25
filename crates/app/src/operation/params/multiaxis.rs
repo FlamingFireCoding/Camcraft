@@ -83,7 +83,8 @@ impl OpParams {
                 climb,
                 lead_deg,
                 lag_deg,
-                max_tilt_deg, picks: _
+                max_tilt_deg,
+                ..
             }
             | OpParams::RotaryParallel {
                 tolerance,
@@ -174,6 +175,19 @@ impl OpParams {
                 {
                     h.write_u8(u8::from(*shank_avoid));
                 }
+                // #2772: the op's own stated rotation axis rides the
+                // digest - written only when one is stated, so no
+                // stamp of an op that follows the machine or the fit
+                // moves (the machine's line enters through
+                // `stamp.rs`'s own clause).
+                if let OpParams::RotaryContour { stated_axis: Some(v), .. }
+                | OpParams::RotaryParallel { stated_axis: Some(v), .. } = self
+                {
+                    h.write(b"rotary-op-stated-axis");
+                    for c in v {
+                        w(h, *c);
+                    }
+                }
             }
             // The wrap ladder (M5.1 stage E2, tag 14): the Pocket3D
             // door's bytes without the fields the kernel overrides or
@@ -198,7 +212,9 @@ impl OpParams {
                 optimal_load,
                 lead_deg,
                 lag_deg,
-                max_tilt_deg, picks: _
+                max_tilt_deg,
+                stated_axis,
+                picks: _,
             } => {
                 w(h, *stepover);
                 w(h, *stock_to_leave);
@@ -221,6 +237,16 @@ impl OpParams {
                     Entry3D::Helix => 2,
                     Entry3D::Arc => 3,
                 });
+                // #2772: the op's own stated rotation axis rides the
+                // digest - written only when one is stated, so no
+                // stamp of an op that follows the machine or the fit
+                // moves.
+                if let Some(v) = stated_axis {
+                    h.write(b"rotary-op-stated-axis");
+                    for c in v {
+                        w(h, *c);
+                    }
+                }
                 for v in [*tolerance, *lead_deg, *lag_deg, *max_tilt_deg] {
                     w(h, v);
                 }

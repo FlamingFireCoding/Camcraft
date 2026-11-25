@@ -133,8 +133,8 @@ pub fn region_z(
         | OpParams::Pocket { top_z, .. }
         // The roughing twins name the pocket's high station (M2.4 A),
         // and so do the circular ladder and the engrave ride; the
-        // chamfer's top plane is where its cone's apex stands - the
-        // ride's only height (M2.4 B).
+        // chamfer's top plane is the authored edge plane - the ride's
+        // only height; the virtual tip follows from its cone band.
         | OpParams::Adaptive2D { top_z, .. }
         | OpParams::Offset2D { top_z, .. }
         | OpParams::VCarve { top_z, .. }
@@ -306,9 +306,8 @@ pub fn resolve_params_with(
             opt("Retract Z", *retract_z)?,
         ),
         // The 2-D chamfer resolves TWO heights: the clearance and the
-        // plane the cone's apex stands at. Its floor is derived - the
-        // wall's own width · tan(angle) below the apex - so `bottom`
-        // stays None, Face's skipped-field the other way (M2.4 B).
+        // authored edge plane. Its break depth and virtual tip are
+        // derived, so `bottom` stays None (M2.4 B).
         OpParams::Chamfer2D { clearance_z, retract_z, top_z, .. } => (
             req("Clearance Z", *clearance_z)?,
             Some(req("Top of Part Z", *top_z)?),

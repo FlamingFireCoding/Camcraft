@@ -484,8 +484,8 @@ pub fn top_of(p: &OpParams) -> Option<Height> {
         | OpParams::Offset2D { top_z, .. }
         | OpParams::VCarve { top_z, .. }
         // The engrave and circular tops are the pocket family's; the
-        // chamfer's top plane is where the cone's apex stands - the
-        // ride's only height (M2.4 B).
+        // chamfer's top plane is the authored edge plane - the ride's
+        // only height (M2.4 B).
         | OpParams::Engrave { top_z, .. }
         | OpParams::Chamfer2D { top_z, .. }
         | OpParams::Circular { top_z, .. }
@@ -614,8 +614,8 @@ pub fn bottom_of(p: &OpParams) -> Option<Height> {
         OpParams::Drill { bottom_z, .. }
         | OpParams::Bore { bottom_z, .. }
         | OpParams::Thread { bottom_z, .. } => *bottom_z,
-        // The chamfer's floor is derived - width · tan(angle) below
-        // the top plane the cone's apex stands at (M2.4 B).
+        // The chamfer's break floor and virtual tip are derived from
+        // width, angle and its selected cone band (M2.4 B).
         OpParams::Chamfer2D { .. } => None,
         OpParams::Face { .. } => None,
         OpParams::Probe { .. } => None,
@@ -885,6 +885,7 @@ fn seed_chamfer2d(c: &Carried) -> OpParams {
     OpParams::Chamfer2D {
         width: 0.8,
         angle_deg: 45.0,
+        minimum_cone_radius: 0.0,
         clearance_z: c.clearance,
         retract_z: None,
         top_z: c.top,
@@ -1617,6 +1618,7 @@ fn seed_rotary_contour(c: &Carried) -> OpParams {
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 90.0,
+        stated_axis: None,
         picks: crate::path_picks::PathPicks::default(),
     }
 }
@@ -1635,6 +1637,7 @@ fn seed_rotary_parallel(c: &Carried) -> OpParams {
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 90.0,
+        stated_axis: None,
         picks: crate::path_picks::PathPicks::default(),
     }
 }
@@ -1697,6 +1700,7 @@ fn seed_rotary_offset(c: &Carried) -> OpParams {
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 90.0,
+        stated_axis: None,
         picks: crate::path_picks::PathPicks::default(),
     }
 }

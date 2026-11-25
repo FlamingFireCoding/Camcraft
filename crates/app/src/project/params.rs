@@ -455,6 +455,10 @@ pub enum ParamsDto {
     Chamfer2D {
         width: f64,
         angle_deg: f64,
+        /// #3153: an absent key is the ideal-tip cone band, which is
+        /// exactly what every older chamfer project used.
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        minimum_cone_radius: f64,
         clearance_z: HeightDto,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         retract_z: Option<HeightDto>,
@@ -938,6 +942,12 @@ pub enum ParamsDto {
         lead_deg: f64,
         lag_deg: f64,
         max_tilt_deg: f64,
+        /// #2772 parts 1-2 (v81): the op's own stated rotation axis,
+        /// a direction through the setup's work offset origin that
+        /// overrides the machine's stated rotary line. Absent is what
+        /// every v77 file stated: follow the machine, else fit.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stated_axis: Option<[f64; 3]>,
         #[serde(default, skip_serializing_if = "PathPicksDto::is_empty")]
         picks: PathPicksDto,
     },
@@ -959,6 +969,10 @@ pub enum ParamsDto {
         lead_deg: f64,
         lag_deg: f64,
         max_tilt_deg: f64,
+        /// #2772 parts 1-2 (v81): the op's own stated rotation axis -
+        /// see `RotaryContour`'s `stated_axis`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stated_axis: Option<[f64; 3]>,
         #[serde(default, skip_serializing_if = "PathPicksDto::is_empty")]
         picks: PathPicksDto,
     },
@@ -1005,6 +1019,10 @@ pub enum ParamsDto {
         lead_deg: f64,
         lag_deg: f64,
         max_tilt_deg: f64,
+        /// #2772 parts 1-2 (v81): the op's own stated rotation axis -
+        /// see `RotaryContour`'s `stated_axis`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stated_axis: Option<[f64; 3]>,
         #[serde(default, skip_serializing_if = "PathPicksDto::is_empty")]
         picks: PathPicksDto,
     },
