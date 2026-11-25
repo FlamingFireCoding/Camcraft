@@ -26,7 +26,8 @@ use crate::geo2d::{Point2, Region};
 use crate::geometry::Point3;
 
 use super::adaptive_troch::{AdaptiveTrochParams, confined};
-use super::adaptive_troch_clean::{CleanChain, cleanup_engagement_note, emit_cleanup, plan_cleanup_checked};
+use super::adaptive_troch_check::{cleanup_engagement_note, plan_cleanup_checked};
+use super::adaptive_troch_clean::{CleanChain, emit_cleanup};
 use super::adaptive_troch_lanes::{plan_all_lanes, rest_share};
 use super::face::GenError;
 use super::pocket::{PocketParams, PocketStrategy};

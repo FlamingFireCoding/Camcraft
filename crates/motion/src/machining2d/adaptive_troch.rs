@@ -32,7 +32,8 @@ use crate::geo2d::{Point2, Region};
 use crate::geometry::Point3;
 
 use super::adaptive::{Spine, medial_spine, widest_point};
-use super::adaptive_troch_clean::{cleanup_engagement_note, emit_cleanup, plan_cleanup_checked};
+use super::adaptive_troch_check::{cleanup_engagement_note, plan_cleanup_checked};
+use super::adaptive_troch_clean::emit_cleanup;
 use super::adaptive_troch_lanes::{clearance, narrow_err, plan_all_lanes, rest_share, straightened, trochoid_params};
 use super::face::GenError;
 use super::pocket::{PocketParams, PocketStrategy};
@@ -250,6 +251,22 @@ pub(super) fn trochoidal_inside(
 
     let path = bld.finish();
     check_path(&path, &center)?;
+    // A custom limit is held by the WHOLE path - lanes, links, clean-up,
+    // every level - or the path is refused (#3849 keeps this refusal; the
+    // clean-up check above only steps the peel down first).
+    if t.max_engagement != DEFAULT_MAX_ENGAGEMENT {
+        let spec = crate::quality::QualitySpec::new(p.tool_diameter);
+        let mut stock = crate::quality::stock_for(region, p.top_z, p.bottom_z, p.tool_diameter, &spec)
+            .map_err(|e| GenError::Invalid(format!("{WHO}: measuring stock: {e}")))?;
+        let quality =
+            crate::quality::measure(&path, &mut stock, &spec).map_err(|e| GenError::Invalid(format!("{WHO}: measuring stock: {e}")))?;
+        if quality.max_deg > t.max_engagement {
+            return Err(GenError::Invalid(format!(
+                "{WHO}: cleanup and lanes exceed the {:.1} deg engagement limit (measured {:.1} deg)",
+                t.max_engagement, quality.max_deg
+            )));
+        }
+    }
     Ok(path)
 }
 

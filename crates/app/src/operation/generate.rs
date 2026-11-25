@@ -67,11 +67,11 @@ pub fn entry_not_recommended(path: &Toolpath) -> Option<Warning> {
 /// #3849: a trochoidal clean-up pass whose radial engagement remained
 /// above `limit_deg` after peel step-down - one advisory warning on the
 /// operation and status line so an overloaded clean-up cut never passes
-/// silently.
+/// silently. `at` is the clean-up feed through the measured peak, not
+/// the path's first cut.
 #[must_use]
 pub fn cleanup_engagement_warning(path: &Toolpath) -> Option<Warning> {
-    let (measured_deg, limit_deg) = crate::machining2d::cleanup_engagement_exceeded(&path.notes)?;
-    let at = path.moves.iter().position(|m| m.kind != crate::cl::MoveKind::Rapid).unwrap_or(0);
+    let (at, measured_deg, limit_deg) = crate::machining2d::cleanup_engagement_move(path)?;
     Some(Warning::EngagementExceeded { at, measured_deg, limit_deg })
 }
 

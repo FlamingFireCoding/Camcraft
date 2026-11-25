@@ -221,7 +221,7 @@ fn plan_cleanup_checked_reports_exceeded_when_even_stepdown_cannot_hold_limit() 
     let reach = rect(-6.0, -6.0, 6.0, 6.0);
     let used = rect(-1.98, -1.98, 1.98, 1.98);
     let t = AdaptiveTrochParams { max_engagement: 30.0, ..AdaptiveTrochParams::default() };
-    let plan = super::super::adaptive_troch_clean::plan_cleanup_checked(
+    let plan = super::super::adaptive_troch_check::plan_cleanup_checked(
         &reach,
         &center,
         &reach,
