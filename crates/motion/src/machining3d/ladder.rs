@@ -228,9 +228,9 @@ pub(super) fn ladder(
             first_pass,
             prev_z,
             prev_cut: prev_state.as_ref().map(|(q, _)| *q),
-            // #1950: a tool that is not centre-cutting keeps its own
-            // entry law (the plunge law cannot read the air as air).
+            // #1950: non-centre-cutting tool keeps own entry law.
             air: lp.air_entry && p.links.approach.center_cutting,
+            restart: false,
         };
         let mut lvl = LevelCtx {
             cen: &center,
@@ -360,10 +360,8 @@ pub(super) fn ladder(
                 None => feed_leg(&mut b, &lvl, next_entry, 0.0),
                 Some(hz) => {
                     b.push(MoveKind::Rapid, Point3::new(prev.x, prev.y, hz), None);
-                    // M11.3, #3670: a pass start its neighbours have not
-                    // cleared is entered like a level - by the op's entry,
-                    // or (not centre-cutting) helix, ramp along the pass,
-                    // else refused by name (`plunge_law`).
+                    // M11.3, #3670: Uncleared pass start entered like a level
+                    // (helix, ramp along the pass, or refused by plunge law).
                     let again = Ask {
                         arm: Entry3D::Plunge,
                         transition: false,
@@ -373,6 +371,7 @@ pub(super) fn ladder(
                         prev_z: prev_state.as_ref().map_or(hz, |(q, _)| *q),
                         prev_cut: prev_state.as_ref().map(|(q, _)| *q),
                         air: false,
+                        restart: true,
                     };
                     lvl.tz = hz;
                     let re = reentry::reenter(&mut b, &lvl, &again, p.entry);
