@@ -16,6 +16,8 @@ coolantModes = true;
 failOnWarning = true;
 workOffsetIndex = true;
 workOffsetMax = 6;
+// #4085: this post writes the stop and the operator checks for this change.
+manualToolChange = ["manual-retract-top"];
 
 var blockNumber = 0;
 var programName = "";
