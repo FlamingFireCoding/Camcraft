@@ -52,6 +52,8 @@ mod arc_span;
 mod burnout;
 mod exit;
 mod laws;
+mod model_arcs;
+mod model_tangent;
 mod pairing;
 mod preimage;
 mod open;
@@ -66,6 +68,7 @@ mod taper;
 pub use arc_chain::{ArcChain, JOINT_TOL};
 pub use arc_cut::wire_contour_arcs;
 pub use arc_span::Span as ArcSpan;
+pub use model_arcs::{model_arcs, wire_contour_facets, wire_contour_model_arcs, ModelArcs, FIT_TOL as MODEL_ARC_FIT_TOL, MODEL_ARCS_NOTE};
 pub use skims::{check_passes, wire_passes, WirePass};
 
 pub use ruled::{wire_contour_ruled, WirePairing, WireProfile, WireRuled, WireSync, WireWidening, SYNC_TOL};
@@ -378,6 +381,8 @@ fn pass_notes(p: &WireParams, start: Point2, lead: f64, reverse: bool) -> Vec<St
 mod arc_tests;
 #[cfg(test)]
 mod facet_tests;
+#[cfg(test)]
+mod model_arcs_tests;
 #[cfg(test)]
 mod open_tests;
 #[cfg(test)]
