@@ -204,6 +204,8 @@ pub(super) fn kind_rows(ui: &mut Ui, state: &mut State) {
         prop_row_hint(ui, "Cone angle (deg)", "the included angle of the taper - 90 cuts a 45-degree face", |ui| {
             num_plain_row(ui, &mut state.tool_ui.tip_angle)
         });
+        // #3368: the tip form, and a flat tip's diameter.
+        super::tool_taper_tip_row::tip_rows(ui, state);
     }
 }
 

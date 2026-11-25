@@ -287,6 +287,55 @@ fn a_body_electrodes_outline_roundtrips_through_the_library() {
     assert!(why.contains("tool 'E-L' is refused") && why.contains("the outline's X and Y extents"), "{why}");
 }
 
+/// #3368: a flat or ball taper tip rides the library file, and such a file
+/// says `TIP_FORM_VERSION`, so an older build refuses it instead of reading
+/// the tip as sharp. A library of sharp tools keeps its older number.
+#[test]
+fn a_tip_form_round_trips_and_steps_the_version() {
+    use camcraft_app::tool_library::{CUTTER_VERSION, HOLDER_REF_VERSION, TIP_FORM_VERSION};
+    use camcraft_app::tools::TaperTip;
+    let sharp = cat("CM-0600-90");
+    let (w, _h) = world_with(&[("CM", sharp.clone())]);
+    let text = export_tool_library(&w).expect("export");
+    let doc: Value = serde_json::from_str(&text).expect("json");
+    assert!(doc["version"].as_u64().is_some_and(|v| v < TIP_FORM_VERSION), "no tip form, no step: {doc}");
+    assert!(!text.contains("tip_form"), "{text}");
+    let flat = Tool { tip_form: TaperTip::Flat, tip_diameter: 1.0, ..sharp.clone() };
+    let ball = Tool { tip_form: TaperTip::Ball, corner_r: 0.5, ..sharp };
+    let (w, _h) = world_with(&[("FLAT", flat.clone()), ("BALL", ball.clone())]);
+    let text = export_tool_library(&w).expect("export");
+    let doc: Value = serde_json::from_str(&text).expect("json");
+    assert_eq!(doc["version"], json!(TIP_FORM_VERSION), "a tip form steps the version");
+    let back = parse_tool_library(&text).expect("this build reads its own file");
+    let got = |n: &str| back.iter().find(|t| t.name == n).map(|t| (t.tool.tip_form, t.tool.tip_diameter, t.tool.corner_r));
+    assert_eq!(got("FLAT"), Some((TaperTip::Flat, 1.0, flat.corner_r)));
+    assert_eq!(got("BALL"), Some((TaperTip::Ball, 0.0, 0.5)));
+    // The step is no number an older reader knows: past holder refs and
+    // past the drawn cutter (version 5, PR #3906).
+    const { assert!(TIP_FORM_VERSION > HOLDER_REF_VERSION && TIP_FORM_VERSION > CUTTER_VERSION) };
+    let newer = text.replacen(&format!("\"version\": {TIP_FORM_VERSION}"), &format!("\"version\": {}", TIP_FORM_VERSION + 1), 1);
+    assert!(parse_tool_library(&newer).is_err_and(|e| e.contains("not supported")), "a newer number is refused");
+}
+
+/// #3904 + #3368: a drawn cutter on a flat-tip taper writes both keys, and
+/// the file says the higher number (`TIP_FORM_VERSION`).
+#[test]
+fn a_drawn_cutter_and_a_tip_form_together_say_the_tip_form_version() {
+    use camcraft_app::tool_library::TIP_FORM_VERSION;
+    use camcraft_app::tools::TaperTip;
+    let (w, _h) = necked_world();
+    let flat = Tool { tip_form: TaperTip::Flat, tip_diameter: 1.0, ..cat("CM-0600-90") };
+    let mut h = History::default();
+    h.execute(&w, AddTool::new(&w, "FLAT", flat.clone()).expect("add tool"));
+    let text = export_tool_library(&w).expect("export");
+    let v: Value = serde_json::from_str(&text).expect("json");
+    assert_eq!(v["version"], json!(TIP_FORM_VERSION), "{text}");
+    let lib = parse_tool_library(&text).expect("this build reads its own file");
+    let by = |n: &str| lib.iter().find(|t| t.name == n).expect("tool");
+    assert_eq!(by(NECKED).cutter, cutter_named(&w, NECKED), "the cutter survives");
+    assert_eq!(by("FLAT").tool.tip_form, TaperTip::Flat, "the tip form survives");
+}
+
 const NECKED: &str = "EM-1000-4FL";
 
 /// EM-1000-4FL (Ø10 x 22 flutes, Ø10 shank) with a Ø8 neck from 22 to 30.
@@ -364,6 +413,7 @@ fn a_library_without_a_cutter_keeps_version_4_or_lower() {
     assert!(v["version"].as_u64().is_some_and(|n| n <= 4), "{text}");
     assert!(v["tools"][0]["definition"].get("cutter").is_none(), "{text}");
     // A file newer than this build refuses by version; nothing is dropped.
-    let err = parse_tool_library(r#"{"format":"camcraft-tools","version":6,"tools":[]}"#).expect_err("version 6");
-    assert!(err.contains("version 6") && err.contains("1 to 5"), "{err}");
+    // (#3368 took version 6 for the taper tip form, so 7 is the newer one.)
+    let err = parse_tool_library(r#"{"format":"camcraft-tools","version":7,"tools":[]}"#).expect_err("version 7");
+    assert!(err.contains("version 7") && err.contains("1 to 6"), "{err}");
 }
