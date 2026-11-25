@@ -14,7 +14,7 @@ use super::kinds::KindInfo;
 use super::types::{OpParams, OpType};
 
 /// What a pick means on a kind, and so how the viewport snaps it. Every
-/// capability except [`Self::NotTaken`] takes a start pick.
+/// capability except [`Self::NotTaken`] takes a start pick and an exit pick.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PickCapability {
     /// A point on a closed ring: the ring is re-sequenced to start there
@@ -52,7 +52,9 @@ impl PickCapability {
     pub fn takes(self, role: PickRole) -> bool {
         match self {
             Self::NotTaken(_) => false,
-            Self::Threading | Self::Ring | Self::Region | Self::HoleOrder | Self::Ends | Self::Raster => true,
+            Self::Threading | Self::Ring | Self::Region | Self::HoleOrder | Self::Ends | Self::Raster => {
+                matches!(role, PickRole::Start | PickRole::Exit)
+            }
         }
     }
 }
