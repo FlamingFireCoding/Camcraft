@@ -139,9 +139,9 @@ const PLASMA_POSTS: &[(&str, &str)] = &[("Tormach PathPilot Plasma", "tormach-pl
 const WIRE_POSTS: &[(&str, &str)] = &[
     ("Generic ISO Wire EDM", "wire-iso"),
     ("Sodick Wire EDM (Mark 21)", "sodick-wire"),
+    ("Sodick Wire EDM (LN2W)", "sodick-ln2w"),
     ("Native wire EDM job files", "agie-native"),
     ("G-EDM Wire EDM", "g-edm"),
-    ("Sodick Wire EDM (LN2W)", "sodick-ln2w"),
 ];
 
 /// The SINKER EDM dialects (#542): their golden is the sinker burn's
