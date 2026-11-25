@@ -1,7 +1,8 @@
 //! A selected DXF chain with arcs (#3937): a die circle and a line-and-arc
 //! punch cut as true arcs, verified by the wire laws and posted as G2 / G3
 //! with I J through the generic ISO, Sodick and G-EDM wire posts, each to
-//! its golden. TEXT and DIMENSION entities no longer block the cut.
+//! its golden. TEXT and DIMENSION entities no longer block the cut. A closed SPLINE is read
+//! as tangent arcs (#1865) and cut the same way.
 //!
 //! Regenerate the goldens after an intentional change, then read the diff:
 //! `WRITE_GOLDEN=1 cargo test -p camcraft-app --test wire_dxf_selection arcs`
@@ -27,6 +28,14 @@ const PUNCH: &str = "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nS
     0\nLWPOLYLINE\n8\noutline\n90\n7\n70\n1\n10\n-10\n20\n-10\n10\n7\n20\n-10\n42\n0.41421356237309503\n\
     10\n10\n20\n-7\n10\n10\n20\n0\n10\n0\n20\n0\n10\n0\n20\n10\n10\n-10\n20\n10\n0\nENDSEC\n0\nEOF\n";
 
+/// A start pick at a world point (#3339 moved `start` into `picks`).
+fn start_at(p: [f64; 2]) -> camcraft_app::path_picks::PathPicks {
+    camcraft_app::path_picks::PathPicks {
+        start: vec![camcraft_app::path_picks::PathPick::xy(camcraft_app::geo2d::Point2::new(p[0], p[1]))],
+        exit: Vec::new(),
+    }
+}
+
 /// The drawing point (`x`, `y`) in world XY.
 fn to_world(world: &World, x: f64, y: f64) -> [f64; 2] {
     let (e, _) = sketch::find(world, "drawing").expect("drawing");
@@ -46,7 +55,7 @@ fn doc(dxf: &str, machine: &str, condition: &str, side: WireSide, hole: (f64, f6
     let op = WireContourOp {
         condition: condition.into(),
         side,
-        start: Some(to_world(&world, hole.0, hole.1)),
+        picks: start_at(to_world(&world, hole.0, hole.1)),
         sharp_corners: sharp,
         ..wire_op()
     };
@@ -129,10 +138,31 @@ fn line_and_arc_punch_pivots_its_corners_and_posts_its_goldens() {
     assert_eq!(arc_blocks(&nc).len(), 5, "{nc}");
 }
 
+/// A closed clamped cubic SPLINE (#1865): it starts and ends at (10, 0) with the same +Y
+/// tangent, so the loop is smooth. The reader lays it as tangent arcs within 1 um.
+const SPLINE: &str = "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n\
+    0\nSPLINE\n8\noutline\n70\n8\n71\n3\n72\n10\n73\n6\n74\n0\n\
+    40\n0\n40\n0\n40\n0\n40\n0\n40\n1\n40\n2\n40\n3\n40\n3\n40\n3\n40\n3\n\
+    10\n10\n20\n0\n10\n10\n20\n10\n10\n-10\n20\n10\n10\n-10\n20\n-10\n10\n10\n20\n-10\n10\n10\n20\n0\n\
+    0\nENDSEC\n0\nEOF\n";
+
+#[test]
+fn closed_spline_die_cuts_as_tangent_arcs_and_posts_its_golden() {
+    let world = doc(SPLINE, FIXTURE, "C110", WireSide::Die, (0.0, 0.0), false);
+    let (_, drawing) = sketch::find(&world, "drawing").expect("drawing");
+    assert_eq!(drawing.data.chains().closed.len(), 1, "one closed chain");
+    let path = generated(&world);
+    // The spline's arcs, offset by the kerf: far fewer moves than a chord path.
+    assert!(path.arc_count() >= 8, "{:?}", path.moves);
+    assert!(path.moves.len() < 200, "{} moves", path.moves.len());
+    let nc = golden(&world, ISO, "wire-iso/wire_dxf_spline_die.nc");
+    assert_eq!(arc_blocks(&nc).len(), path.arc_count(), "{nc}");
+}
+
 #[test]
 fn arcs_stay_refused_for_taper_and_a_hatch_still_blocks_the_cut() {
     let world = doc(DIE, FIXTURE, "C110", WireSide::Die, (0.0, 0.0), false);
-    let tapered = WireContourOp { start: Some(to_world(&world, 0.0, 0.0)), taper_deg: 1.0, ..wire_op() };
+    let tapered = WireContourOp { picks: start_at(to_world(&world, 0.0, 0.0)), taper_deg: 1.0, ..wire_op() };
     let mut h = History::default();
     h.execute(&world, EditOperationParams::new(&world, "Cut", OpParams::WireContour(tapered)).expect("taper"));
     let why = refusal(&world);
@@ -141,4 +171,10 @@ fn arcs_stay_refused_for_taper_and_a_hatch_still_blocks_the_cut() {
     let world = doc(&hatch, FIXTURE, "C110", WireSide::Die, (0.0, 0.0), false);
     let why = refusal(&world);
     assert!(why.contains("skipped 1 HATCH entity"), "{why}");
+    // #1865: a block reference no longer stops the import, but its clearance from the wire
+    // cannot be checked, so the cut is refused by name.
+    let insert = DIE.replace("0\nENDSEC\n0\nEOF", "0\nINSERT\n8\nnotes\n2\nBOLT\n10\n30\n20\n0\n0\nENDSEC\n0\nEOF");
+    let world = doc(&insert, FIXTURE, "C110", WireSide::Die, (0.0, 0.0), false);
+    let why = refusal(&world);
+    assert!(why.contains("skipped 1 INSERT entity"), "{why}");
 }
