@@ -1,7 +1,9 @@
 ## #1120 - Colour literals: a guard with exact counts first, then one PR for each family
 
 **What was decided.** The first #1120 PR adds only the guard,
-`crates/ui/tests/colour_literals.rs`. It walks `crates/ui/src`, counts the
+`crates/ui/tests/theme_files/colour_literals.rs`, with its scanner in
+`colour_scan.rs` beside it. Both are modules of the existing `theme_files`
+test binary (#3187: no new binary), whose gate map names `ui::egui_app`. It walks `crates/ui/src`, counts the
 colour literals in each file that is not a test file, and compares each
 count with a row of `ALLOWED`. A literal is a named constant
 (`Color32::WHITE`) or a constructor whose arguments are all numbers written
@@ -42,11 +44,17 @@ from the first merge, and each family PR is small and reviewable.
   `from_rgba_unmultiplied(r, g, b, ALPHA)`). Moving those would change
   nothing a theme can reach.
 - A regex or a parse of the Rust source. A substring search with a small
-  argument scanner, with line comments skipped, is enough for the forms
-  that occur, and the guard stays in `std`.
+  argument scanner is enough for the forms that occur, and the guard stays
+  in `std`. The scanner first removes comments (`//` to the line end and
+  nested `/* */`) and keeps the text of string and char literals: the
+  #3990 review showed that skipping only whole comment lines lets a
+  comment after code hide a literal or add one.
+- A new top-level test binary for the guard. Each `camcraft-ui` test
+  binary costs a link and disk space; the guard is a theme test, so it
+  joins `theme_files`.
 - Moving the colour-vision maths and the contrast maths. They compute
   colours; they do not choose them.
 
-**Cost to change later.** Small. The guard is one test file. A new literal
+**Cost to change later.** Small. The guard is two test modules. A new literal
 form is one line in `PATTERNS`, and the counts are printed by the failing
 test, ready to paste.
