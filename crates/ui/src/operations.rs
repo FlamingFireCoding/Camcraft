@@ -441,6 +441,7 @@ mod height_row_tests {
             feed: 1200.0,
             plunge_feed: 300.0,
             climb: true,
+            picks: Default::default(),
         };
         assert_eq!(unresolved_note(&world, None, None, &ok), None, "all fixed - no alarm");
         let broken = OpParams::Face { holes: Default::default(), tilt: None, blend_turns: false, blend_radius: None,
@@ -452,6 +453,7 @@ mod height_row_tests {
             feed: 1200.0,
             plunge_feed: 300.0,
             climb: true,
+            picks: Default::default(),
         };
         let note = unresolved_note(&world, None, None, &broken).expect("the stock is gone");
         assert!(note.contains("Cut Z"), "{note}");
@@ -540,6 +542,7 @@ mod height_row_tests {
             blend_turns: false, blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             chain_overrides: Vec::new(),
+            picks: Default::default(),
         }
     }
 

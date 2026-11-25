@@ -7,10 +7,10 @@
 //! Provenance: our own tests over our own link; no HSMWorks material.
 
 use camcraft_app::mcp::link::{self, Entry};
-use camcraft_app::mcp::{link_call, Inbox, LinkError, Select};
+use camcraft_app::mcp::{link_call, link_connect, Inbox, LinkError, Select};
 
 use serde_json::{json, Value};
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -232,24 +232,55 @@ fn false_server_on_stale_entry_is_refused_with_no_tool_calls_sent() {
 }
 
 #[test]
+fn an_unauthenticated_client_holding_the_link_times_out_and_releases_it() {
+    let dir = fresh_dir("hello-timeout");
+    // Short hello deadline (150 ms) so the test is quick.
+    let inbox = Inbox::link_with_timeouts(&dir, Box::new(|| {}), Duration::from_secs(60), Duration::from_millis(150))
+        .expect("open the link");
+    let entry = inbox.link_entry().expect("a link entry").clone();
+
+    // Client 1 connects to the socket and sends no hello (#3873).
+    let addr = entry.address.clone();
+    let transport = entry.transport.clone();
+    let client1 = std::thread::spawn(move || {
+        let mut stream: Box<dyn Read + Send> = match transport.as_str() {
+            "tcp" => Box::new(std::net::TcpStream::connect(&addr).expect("tcp connect")),
+            #[cfg(unix)]
+            "unix" => Box::new(std::os::unix::net::UnixStream::connect(&addr).expect("unix connect")),
+            other => panic!("unknown transport: {other}"),
+        };
+        let mut buf = Vec::new();
+        let _ = stream.read_to_end(&mut buf);
+    });
+
+    std::thread::sleep(Duration::from_millis(30));
+
+    // Client 2 connects with the token and gets the session after client 1 is dropped.
+    let good_dir = dir.clone();
+    let client2 = std::thread::spawn(move || link_call(&good_dir, &Select::Only, "get_job", &json!({})));
+
+    let (result, lines) = serve_until(&inbox, client2);
+    let result = result.expect("client 2 gets the session after client 1 times out");
+    assert_eq!(result["structuredContent"]["echo"], json!("get_job"));
+    assert_eq!(lines.len(), 1);
+
+    client1.join().expect("client 1 thread finishes");
+    drop(inbox);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn a_second_ui_call_during_a_slow_call_reports_busy_and_exits_4() {
     let dir = fresh_dir("busy");
     let inbox = Inbox::link(&dir, Box::new(|| {})).expect("open the link");
-    let entry = inbox.link_entry().expect("a link entry").clone();
 
-    // Client 1 connects directly to the socket to occupy the session
-    let addr = entry.address.clone();
-    let transport = entry.transport.clone();
+    // Client 1 connects and authenticates to occupy the session
+    let dir1 = dir.clone();
     let (connected_tx, connected_rx) = std::sync::mpsc::channel();
     let (finish_tx, finish_rx) = std::sync::mpsc::channel();
 
     let client1 = std::thread::spawn(move || {
-        let stream = match transport.as_str() {
-            "tcp" => Box::new(std::net::TcpStream::connect(&addr).expect("tcp")) as Box<dyn std::io::Read + Send>,
-            #[cfg(unix)]
-            "unix" => Box::new(std::os::unix::net::UnixStream::connect(&addr).expect("unix")) as Box<dyn std::io::Read + Send>,
-            other => panic!("unknown: {other}"),
-        };
+        let stream = link_connect(&dir1, &Select::Only).expect("client 1 connects");
         let _ = connected_tx.send(());
         let _ = finish_rx.recv();
         drop(stream);
