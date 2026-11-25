@@ -80,6 +80,7 @@ fn burn() -> OpParams {
         layer: None,
         wear_lost: None,
         wear_over: None,
+        picks: Default::default(),
     })
 }
 

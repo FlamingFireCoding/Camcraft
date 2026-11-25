@@ -60,6 +60,9 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
     let Some((key, Value::Object(mut fields))) = tagged.into_iter().next() else {
         return Err("the operation's parameters could not be read".into());
     };
+    let mut patch_owned = patch.clone();
+    project::migrate_legacy_patch(&key, &mut patch_owned);
+    let patch = &patch_owned;
     if patch.contains_key("pass_start") {
         let reason = match base {
             OpParams::Face { .. } => Some("Face has no pass order: its rows run edge to edge across the face, so there is no inside or outside to start from"),
@@ -109,6 +112,15 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
         } else if k == "pass_start" && *v == json!("auto") && !back.contains_key(k) && pass_start_kept(&key, &fields_of(base)) {
             // #3316: `auto` is never written, so it never comes back.
             back.insert(k.clone(), v.clone());
+        } else if k == "picks" && base.kind() != operation::OpType::Probe && let Some(req) = v.as_object() {
+            // #3339: empty `picks` / empty role lists are skipped on save.
+            let mut bp = back.get("picks").and_then(Value::as_object).cloned().unwrap_or_default();
+            for role in ["start", "exit"] {
+                if req.get(role) == Some(&json!([])) && !bp.contains_key(role) {
+                    bp.insert(role.into(), json!([]));
+                }
+            }
+            back.insert("picks".into(), Value::Object(bp));
         }
     }
     if let Some(path) = lost(patch, &back, "") {

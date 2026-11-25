@@ -59,7 +59,9 @@ mod program_info;
 mod tool_library_io;
 #[path = "state_tool_library_dialog.rs"]
 mod tool_library_dialog;
-pub use tool_library_dialog::{EditorFace, PreviewMode, ToolEditorTab, ToolLibraryView, ToolSource};
+pub use tool_library_dialog::{
+    EditorFace, HoldersView, LibraryPage, PreviewMode, ToolCategory, ToolEditorTab, ToolLibraryView, ToolSource,
+};
 #[path = "state_setup_mount.rs"]
 mod setup_mount;
 #[path = "state_pockets.rs"]
@@ -1053,6 +1055,7 @@ impl Default for OpUi {
                 climb: true,
                 // Opt-in, like `seed_face` (M11.1 A).
                 blend_turns: false, blend_radius: None,
+                picks: Default::default(),
             },
         }
     }
