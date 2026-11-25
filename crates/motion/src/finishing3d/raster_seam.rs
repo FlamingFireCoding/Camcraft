@@ -120,7 +120,7 @@ fn corners(ps: &[&Pass], order: (bool, bool), r: f64) -> Option<(Point3, Point3)
 /// Orders the passes for the seam's picks and gives the ordered ends.
 /// An empty seam leaves `passes` as they are. `None` when no pass has a
 /// sample.
-pub(super) fn order(seam: &RasterSeam, passes: &mut Vec<Pass>, r: f64, tool_d: f64) -> Result<Option<RasterEnds>, GenError> {
+pub(super) fn order(seam: &RasterSeam, passes: &mut [Pass], r: f64, tool_d: f64) -> Result<Option<RasterEnds>, GenError> {
     let live: Vec<&Pass> = passes.iter().filter(|p| p.iter().any(|pc| !pc.is_empty())).collect();
     let mut cands: Vec<((bool, bool), Point3, Point3)> = Vec::with_capacity(4);
     for o in ORDERS {
