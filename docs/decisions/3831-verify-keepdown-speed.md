@@ -1,80 +1,68 @@
-## #3831 - One model section for each prismatic Z slab of a ramped path
+## #3831 - Share prismatic sections and preserve collision samples
 
-**What was decided.** The verifier sections the model one time for each
-prismatic Z slab, not one time for each plane that a ramp move ends at.
-A prismatic slab is the Z range between two neighbouring vertex levels in
-which each facet that a plane crosses is vertical (two of its vertices have
-bit-equal XY). Three changes go together:
+**What was decided.** The verifier shares a model section for geometric
+queries inside each prismatic Z slab. The reach law (c) keeps the boundary
+samples from every cut plane. It does not replace those samples with
+points at fixed spacing.
 
-1. `Rest::island_slice` gives the planes of a prismatic slab one shared
-   section (`verify/slab.rs`). A plane that the path cuts flat at keeps
-   its own section. A plane outside a prismatic slab keeps its own section.
-2. The reach law (c) samples a shared slab section along its walls each
-   0.25 mm (`slab::wall_samples`), in addition to the corners and the edge
-   midpoints.
-3. The gouge law (b) asks the cheap distance test before the wall probe
-   (`edge_is_wall`). The two tests are pure, so the order changes no result.
+A prismatic slab is the Z range between two neighbouring vertex levels.
+Each crossing facet must be vertical: two vertices have bit-equal XY.
+A plane that the path cuts flat at keeps its own section. A plane outside
+a prismatic slab also keeps its own section.
 
-**Why.** A keep-down ramp ends each move at a Z of its own. The measured
-cost (release build, 38,432 facets, 16 holes, one ring, 2,422 moves) was
-282 s. It had three parts:
+The gouge law (b) asks the cheap distance test before the wall probe
+`edge_is_wall`. These tests are pure. Their order does not change a result.
 
-- 2,406 model sections, each a walk over all facets (43 s).
-- A wall probe for each region edge of each move, each a walk over the
-  section (40 s). This part grows with the rings times the moves.
-- 61.5 million reach samples (about 1 GB), because each plane added its
-  own samples of the same walls (198 s).
+**Why.** A keep-down ramp ends each move at a different Z. Repeated model
+sections and wall probes made verification expensive. A shared section
+reduces repeated geometric queries. However, equal geometric regions do
+not imply equal collision samples.
 
-After the change the same case takes 1.2 s, with the same 2,422 moves and
-the same 326 warnings. Four rings take 5.1 s.
+Each plane cuts the diagonal between two wall facets at a different point.
+The old reach law pools the vertices and edge midpoints from all planes.
+It nudges each point toward that section's loop vertex mean. Thus both the
+sample position and its nudge can change with the plane.
 
-**Why the section is exact.** No vertex is strictly inside a slab, so each
-plane of the slab crosses the same facets. If all those facets are
-vertical, the solid between the two levels is a prism. Each plane of a
-prism is the same point set. The test for "vertical" uses no arithmetic,
-so rounding cannot call a sloped facet vertical. A plane nearer than
-4e-6 mm to the top level of its slab is not placed, because the slicer
-probes up to 3e-6 mm above the plane. A shared section that fails to slice
-is not kept: each plane then asks for its own section, as before.
+The first version replaced these samples with wall points each 0.25 mm.
+The review of PR #3977 found a loss of collision coverage. On a 20 mm boss,
+a shank near a wall passed with no warning. The plane-exact reading found
+500 `ShankHit` warnings. The shank met stock above the finished part, so
+the solid law did not replace this stock check. Small bands and near-tangent
+contacts also lost findings. The sample limit could widen the spacing.
 
-**Why the wall samples.** This part is a decision, not a proof. Before the
-change, each plane put a vertex where the plane met the diagonal of the two
-facets of a wall. That vertex moves from one end of the wall to the other
-as the plane rises. Law (c) reads no sample's plane, so a ramp with 500
-planes read each wall at about 500 points. One section alone has only the
-corners, the diagonal point and the midpoints. On the test fixture
-(a ramp 1 mm into a boss wall) that gave 61 `ShankHit` findings where the
-old reading gave 80. Samples each 0.25 mm along the walls give the same 80
-findings, in the same order, on each fixture that I compared (500 and
-2,000 moves, three offsets, two modes, a stepped part). 0.25 mm is the
-sample step that the solid law already uses.
+**Conservative rule.** A shared geometric section is not proof that its
+samples cover every plane's samples. Law (c) therefore reads the exact
+section for each cut plane that would otherwise use a shared section.
+It pools the original boundary samples. Other geometric queries can still
+use the shared section. Planes that already have their own section reuse
+that section for sampling.
 
-The new reading is not bit-identical to the old reading for a ramped path:
-the sample positions are different. It can convict a move that the old
-reading missed between two of its samples. I found no case where it
-convicts fewer moves, but the tests are fixtures, not a proof.
+This fallback applies to every shared slab. It does not depend on a minimum
+band size, a distance from tangency, or a perimeter limit. No finite fixed
+step proves that it preserves every old contact. A future replacement must
+prove coverage before it can remove the plane-exact fallback.
 
-**What does not change.** A path that only cuts flat (a level ladder)
-reads the same sections and the same samples as before, bit for bit. A
-model with a sloped or curved wall in the slab is sectioned at each plane
-as before. The moves and the posted program do not change: the verifier
-only reads the path.
+**Performance limits.** The first version measured 282 s before the change
+and 1.2 s after it on a plate with 38,432 facets and 16 holes. That faster
+reading used the unsafe sample replacement. It is not a measurement of
+this corrected implementation. The fallback restores plane section work
+and the pooled sample set for law (c). The corrected implementation has
+not been timed on that plate.
 
 **Considered and dropped.**
 
-- Only exact changes (the probe order, a memo of the column surface). They
-  give about 3 times, not 200 times, and the 1 GB sample set stays.
-- One section for each slab with the old corner and midpoint samples only.
-  It lost 19 of 80 findings on the fixture. A collision law must not get
-  weaker for speed.
-- One section for each slab for flat planes also. It would change the
-  samples of each level ladder in each existing project. The flat planes
-  are few, so the cost of their own sections is small.
-- A lower move count for the keep-down ramp (the other option in the
-  issue). That changes posted G-code and is a different decision.
-- A time limit in a test. The pins count sections and wall probes, which
-  do not depend on the machine.
+- Fixed wall spacing, including a smaller step. It cannot prove coverage
+  for narrow bands, near-tangent contacts, or a widened sample step.
+- Only corners and midpoints from one shared section. An earlier fixture
+  lost 19 of 80 findings with this option.
+- Shared sections for flat planes. Their original sample positions must
+  remain available, and a level ladder has few distinct planes.
+- A lower move count for keep-down ramps. That changes posted G-code and
+  is outside this PR.
+- A time limit in a test. Section counts and collision findings give
+  repeatable assertions across machines.
 
-**Cost to change later.** Small. `Slabs::of` is the one gate: if it
-returns `None`, each plane is sectioned on its own again. The test helper
-`Rest::plane_exact` keeps that old reading available as a reference.
+**Cost to change later.** A future coverage proof can replace the law (c)
+fallback. Until then, exact sampling has the previous section and sample
+cost. `Rest::plane_exact` remains the test reference. The verifier reads
+the path; it does not change the moves or the posted program.

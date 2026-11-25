@@ -47,7 +47,8 @@ fn ramp(n: usize, y: f64) -> Vec<Move> {
 }
 
 /// Laws (b) and (c) on `moves`: the findings and the sections sliced,
-/// with the slab reading and with every plane on its own.
+/// with the slab reading and with every plane on its own. The section
+/// count measures law (b); law (c) separately keeps exact plane samples.
 fn both(model: &[Triangle], moves: Vec<Move>, mode: Mode) -> ((Vec<Warning>, usize), (Vec<Warning>, usize)) {
     let (region, tool) = (square(0.0, 0.0, 100.0, 100.0), tool());
     let cx = VerifyContext {
@@ -66,8 +67,9 @@ fn both(model: &[Triangle], moves: Vec<Move>, mode: Mode) -> ((Vec<Warning>, usi
     let run = |rest: Rest| {
         let mut w = Vec::new();
         section::tangency(&path, &cx, &rest, 0.0, cx.gouge_tol, &mut w);
+        let geometric_sections = rest.sliced();
         band_reach_counted(&path, &cx, &rest, cx.gouge_tol, &mut w);
-        (w, rest.sliced())
+        (w, geometric_sections)
     };
     let slab = run(Rest::new(&path, &cx, cx.gouge_tol, &[]));
     let plane = run(Rest::new(&path, &cx, cx.gouge_tol, &[]).plane_exact());
@@ -188,4 +190,49 @@ fn the_gouge_law_probes_a_wall_only_where_a_move_stands_near_it() {
     let (near, probes) = run(vec![feed((10.0, 20.0, 5.0), (1.0, 20.0, 5.0))]);
     assert!(probes > 0, "the near edge is probed");
     assert_eq!(near, Vec::new(), "an open rim over air is no wall");
+}
+
+/// The shank stays above the finished boss. Only the stock law can see
+/// these contacts, including points between fixed wall samples.
+fn stock_collision_hits(width: f64, x: f64, y: f64, radius: f64, shank_radius: f64, z_offset: f64) -> usize {
+    let region = square(0.0, 0.0, width + 100.0, 100.0);
+    let mut model = cube(Point3::new(0.0, 0.0, -2.0), Point3::new(width + 100.0, 100.0, 0.0)).facets.to_vec();
+    model.extend(cube(Point3::new(40.0, 40.0, 0.0), Point3::new(40.0 + width, 60.0, 10.0)).facets.iter().cloned());
+    let tool = ToolGeom { radius, nose_radius: 0.0, flute_len: 20.0, shank_radius, shank_len: 20.0, holder_radius: 0.0, holder_len: 0.0 };
+    let cx = VerifyContext {
+        region: &region,
+        stock: Some(&region),
+        model: Some(&model),
+        tool: &tool,
+        mode: Mode::Area,
+        stock_top_z: 30.0,
+        clearance_z: 60.0,
+        gouge_tol: 0.01,
+        z_tol: 1e-6,
+        ..Default::default()
+    };
+    let moves = (0..500).map(|k| {
+        let z = 9.0 + z_offset - f64::from(k) * 8.0 / 500.0;
+        feed((x, y, z), (x, y, z - 8.0 / 500.0))
+    }).collect();
+    let path = Toolpath { moves, ..Toolpath::default() };
+    shank_hits(&super::verify(&path, &cx))
+}
+
+#[test]
+fn a_shared_slab_keeps_near_tangent_stock_collisions() {
+    // Review #3977: fixed 0.25 mm samples miss every move here.
+    assert_eq!(stock_collision_hits(20.0, 50.125, 35.0501, 3.0, 5.0, 0.0), 500);
+}
+
+#[test]
+fn a_shared_slab_keeps_small_band_stock_collisions() {
+    assert_eq!(stock_collision_hits(20.0, 50.125, 39.97, 0.02, 0.1, 0.0), 500);
+}
+
+#[test]
+fn a_shared_slab_keeps_stock_collisions_when_wall_spacing_would_widen() {
+    // The 40,040 mm perimeter exceeded the old 50,000 sample budget.
+    // Shift the Z planes so their diagonal vertices meet X 10,040.125.
+    assert_eq!(stock_collision_hits(20_000.0, 10_040.125, 35.0501, 3.0, 5.0, 0.0000625), 500);
 }

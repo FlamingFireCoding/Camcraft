@@ -19,17 +19,7 @@
 //! near a vertex level, an unreadable mesh - is not placed, and the
 //! caller sections that plane itself, as it always did.
 
-use crate::geo2d::{Point2, Region};
 use crate::geometry::Triangle;
-
-/// Spacing of [`wall_samples`] along a wall, mm - the solid law's own
-/// sample step (`section::SOLID_STEP`).
-const WALL_STEP: f64 = 0.25;
-/// Most wall samples one section keeps; past it the spacing widens.
-const MAX_WALL_SAMPLES: usize = 50_000;
-/// The nudge of `laws::boundary_samples`, mm: the same side, the same
-/// distance.
-const NUDGE: f64 = 0.05;
 
 /// How far above the asked plane the slicer may probe, mm
 /// (`slice::material_above` tries three planes a millionth apart), with
@@ -103,54 +93,6 @@ impl Slabs {
         let top = *self.zs.get(k + 1)?;
         (z + PROBE_REACH <= top && self.prismatic.get(k).copied().unwrap_or(false)).then_some(k)
     }
-}
-
-/// XY samples along every wall of a slab's section, [`WALL_STEP`]
-/// apart at most, each nudged toward its loop's vertex mean as
-/// `laws::boundary_samples` nudges - which still gives the corners and
-/// the edge midpoints; these are the points between them.
-///
-/// Why: the planes of a prismatic slab were sectioned one by one, and
-/// each put a vertex where the plane met the diagonal of a wall's two
-/// facets - a point that runs from one end of the wall to the other as
-/// the plane rises. Law (c) reads no sample's plane, so a ramp read
-/// its walls at as many points as it had planes. One section for the
-/// slab keeps that reading by sampling the walls themselves.
-pub(super) fn wall_samples(region: &Region) -> Vec<Point2> {
-    let len_of = |a: Point2, b: Point2| (b.x - a.x).hypot(b.y - a.y);
-    let total: f64 = region
-        .loops()
-        .iter()
-        .map(|l| {
-            let p = l.points();
-            (0..p.len()).map(|k| len_of(p[k], p[(k + 1) % p.len()])).sum::<f64>()
-        })
-        .sum();
-    if !total.is_finite() {
-        return Vec::new(); // the corners and midpoints still stand
-    }
-    let step = if total / WALL_STEP > MAX_WALL_SAMPLES as f64 { total / MAX_WALL_SAMPLES as f64 } else { WALL_STEP };
-    let mut out = Vec::new();
-    for l in region.loops() {
-        let pts = l.points();
-        if pts.is_empty() {
-            continue;
-        }
-        let (mx, my) = pts.iter().fold((0.0, 0.0), |s, q| (s.0 + q.x, s.1 + q.y));
-        let (mx, my) = (mx / pts.len() as f64, my / pts.len() as f64);
-        for k in 0..pts.len() {
-            let (a, b) = (pts[k], pts[(k + 1) % pts.len()]);
-            let n = ((len_of(a, b) / step).ceil() as usize).clamp(1, MAX_WALL_SAMPLES);
-            for i in 1..n {
-                let t = i as f64 / n as f64;
-                let q = Point2::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
-                let (dx, dy) = (mx - q.x, my - q.y);
-                let d = (dx * dx + dy * dy).sqrt();
-                out.push(if d > f64::EPSILON { Point2::new(q.x + NUDGE * dx / d, q.y + NUDGE * dy / d) } else { q });
-            }
-        }
-    }
-    out
 }
 
 /// Whether `t` lies in a vertical plane by its own vertices: two of

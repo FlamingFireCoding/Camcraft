@@ -212,11 +212,20 @@ impl<'c, 'a> Rest<'c, 'a> {
         self.slabs.get_or_init(|| Some(Slabs::new(model))).as_ref()?.of(z)
     }
 
-    /// Whether `s` is the one section of a prismatic slab (#3831): it
-    /// stands for every plane between the slab's flat ones, so the reach
-    /// law reads its walls along their length ([`super::slab::wall_samples`]).
-    pub(super) fn stands_for_slab(&self, s: &Rc<IndexedSlice>) -> bool {
-        self.slab_cache.borrow().values().any(|v| Rc::ptr_eq(v, s))
+    /// The section whose vertices law (c) samples at plane `z`.
+    /// A shared slab preserves geometric membership, but not the vertices
+    /// or their mean that `boundary_samples` nudges toward. No replacement
+    /// sample set proves coverage of those points, so section each such
+    /// plane exactly. Other planes reuse their exact cached section.
+    pub(super) fn reach_slice(&self, facets: &[Triangle], z: f64) -> Option<Rc<IndexedSlice>> {
+        let s = self.island_slice(facets, z)?;
+        if !self.slab_cache.borrow().values().any(|v| Rc::ptr_eq(v, &s)) {
+            return Some(s);
+        }
+        self.sliced.set(self.sliced.get().saturating_add(1));
+        crate::geometry::slice::material_above_of(facets, self.bodies, z)
+            .ok()
+            .map(|r| Rc::new(IndexedSlice::new(r)))
     }
 
     /// How many model sections were sliced (#3831); the tests read it.
