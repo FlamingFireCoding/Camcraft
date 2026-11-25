@@ -395,7 +395,7 @@ fn s_add_op() -> Value {
 fn s_edit_op() -> Value {
     // #3324 / #3339: the start / exit picks, named, with the kinds that take them.
     let ring: Vec<&str> = crate::operation::KindInfo::ALL.iter().filter(|k| k.pick() == crate::operation::PickCapability::Ring).map(|k| k.label).collect();
-    let params = format!("Fields to change (see get_job for the current ones). Start / exit picks: picks {{ start: [[x, y, z?], ...], exit: [...] }} in model mm, null or {{}} clears; taken by {} (Wire Contour: start is the threading point; exit ends an open run at its nearest end, or leaves a closed profile there). Each kind's start_exit in list_operation_types says if it takes a pick.", ring.join(", "));
+    let params = format!("Fields to change (see get_job for the current ones). Start / exit picks: picks {{ start: [[x, y, z?], ...], exit: [...] }} in model mm, null or {{}} clears; taken by {} (Wire Contour: start is the threading point; exit ends an open run at its nearest end, or leaves a closed profile there; Face: the start is the corner of the first raster row, the exit is the side where the last row ends, refused when the row count cannot reach it). Each kind's start_exit in list_operation_types says if it takes a pick.", ring.join(", "));
     obj(
         json!({
             "name": { "type": "string", "description": "Operation name (key or label)." },

@@ -55,8 +55,10 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
         match k.ty {
             OpType::Contour => assert_eq!(cap, PickCapability::Ring, "the contour takes a ring pick"),
             OpType::WireContour => assert_eq!(cap, PickCapability::Threading, "the wire takes its threading point"),
+            // #3326: the Face takes the corner of its first row and the side of its last.
+            OpType::Face => assert_eq!(cap, PickCapability::Raster, "the face takes a raster pick"),
             _ => {
-                let PickCapability::NotTaken(why) = cap else { panic!("{}: only the contour and the wire take a pick", k.label) };
+                let PickCapability::NotTaken(why) = cap else { panic!("{}: only the contour, the wire and the face take a pick", k.label) };
                 assert!(!why.is_empty(), "{}: the reason is named", k.label);
             }
         }

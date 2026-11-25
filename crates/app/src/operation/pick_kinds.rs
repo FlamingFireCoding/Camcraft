@@ -67,9 +67,10 @@ impl KindInfo {
         match self.ty {
             OpType::Contour => PickCapability::Ring,
             OpType::WireContour => PickCapability::Threading,
+            // #3326: the corner of the first row, the side of the last.
+            OpType::Face => PickCapability::Raster,
             OpType::Probe => PickCapability::NotTaken(PICK_NO_PATH),
-            OpType::Face
-            | OpType::Pocket
+            OpType::Pocket
             | OpType::Slot
             | OpType::Trace
             | OpType::Adaptive2D
@@ -254,6 +255,10 @@ impl OpParams {
             let what = role.word();
             if matches!(self, OpParams::Contour { tilt: Some(_), .. }) {
                 return Some(format!("a {what} point is not taken on a tilted (3+2) contour yet - clear it or the tilt"));
+            }
+            // #3326: the Face reads a pick in the setup's XY only.
+            if matches!(self, OpParams::Face { tilt: Some(_), .. }) {
+                return Some(format!("a {what} point is not taken on a tilted (3+2) face yet - clear it or the tilt"));
             }
             if !cap.takes(role) {
                 let why = match cap {
