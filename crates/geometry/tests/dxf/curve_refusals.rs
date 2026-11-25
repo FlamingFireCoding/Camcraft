@@ -113,6 +113,41 @@ fn spline_control_points_refuse_orphan_and_duplicate_z() {
 }
 
 #[test]
+fn spline_fit_points_use_a_per_point_z_default() {
+    // Fit points only: one explicit Z of 1 and one omitted Z (the default 0).
+    let fits = |first_z, last_z| {
+        wrap(&format!(
+            "0\nSPLINE\n71\n3\n74\n2\n11\n0\n21\n0\n{first_z}11\n5\n21\n5\n{last_z}"
+        ))
+    };
+    refused(&fits("31\n1\n", ""), "SPLINE", "fit points are not in one Z plane");
+    refused(&fits("", "31\n1\n"), "SPLINE", "fit points are not in one Z plane");
+    // Control points and fit points: all in one plane, explicit or omitted.
+    let both = |control_z: &str, first_z: &str, last_z: &str| {
+        wrap(&format!(
+            "0\nSPLINE\n71\n1\n72\n4\n73\n2\n74\n2\n40\n0\n40\n0\n40\n1\n40\n1\n\
+             10\n0\n20\n0\n{control_z}10\n10\n20\n0\n{control_z}\
+             11\n0\n21\n0\n{first_z}11\n10\n21\n0\n{last_z}"
+        ))
+    };
+    let elevation = |text: String| parse(text.as_bytes()).expect("reads").elevation;
+    assert_eq!(elevation(both("", "", "")), Some(0.0));
+    assert_eq!(elevation(both("30\n2\n", "31\n2\n", "31\n2\n")), Some(2.0));
+    refused(&both("30\n2\n", "31\n2\n", ""), "SPLINE", "fit points are not in one Z plane");
+    refused(&both("30\n2\n", "31\n1\n", "31\n1\n"), "SPLINE", "fit points are not in one Z plane");
+}
+
+#[test]
+fn spline_fit_points_refuse_orphan_and_duplicate_z() {
+    let fits = |points: &str| wrap(&format!("0\nSPLINE\n71\n3\n74\n2\n{points}"));
+    refused(&fits("31\n0\n11\n0\n21\n0\n11\n5\n21\n5\n"), "SPLINE", "Z before X and Y in a fit point");
+    refused(&fits("11\n0\n31\n0\n21\n0\n11\n5\n21\n5\n"), "SPLINE", "Z before X and Y in a fit point");
+    refused(&fits("11\n0\n21\n0\n31\n0\n31\n0\n11\n5\n21\n5\n"), "SPLINE", "duplicate Z in a fit point");
+    refused(&fits("21\n0\n11\n0\n11\n5\n21\n5\n"), "SPLINE", "Y before X in a fit point");
+    refused(&fits("11\n0\n11\n5\n21\n5\n"), "SPLINE", "fit point has no Y coordinate");
+}
+
+#[test]
 fn malformed_ellipses_are_refused_by_name() {
     let ellipse = |edit: &dyn Fn(&str) -> String| {
         wrap(&edit("0\nELLIPSE\n8\n0\n10\n0\n20\n0\n11\n10\n21\n0\n40\n0.5\n41\n0\n42\n6.283185307179586\n"))

@@ -182,6 +182,9 @@ struct Fields {
     x: Option<f64>,
     xy: Option<Point2>,
     z: Option<f64>,
+    fit_x: Option<f64>,
+    fit_xy: bool,
+    fit_z: Option<f64>,
     elevation: Option<f64>,
 }
 
@@ -198,6 +201,23 @@ impl Fields {
             }
             self.elevation = Some(z);
             self.points.push(point);
+        }
+        Ok(())
+    }
+
+    /// The fit point rule is the control point rule: one Z for each point, an omitted Z
+    /// is zero, and all fit and control points are in one Z plane.
+    fn finish_fit(&mut self, kind: &'static str) -> Result<(), DxfError> {
+        if self.fit_x.is_some() {
+            return Err(error(kind, "fit point has no Y coordinate"));
+        }
+        if std::mem::take(&mut self.fit_xy) {
+            // Omitted Z is zero for this fit point.
+            let z = self.fit_z.take().unwrap_or(0.0);
+            if self.elevation.is_some_and(|elevation| elevation != z) {
+                return Err(error(kind, "fit points are not in one Z plane"));
+            }
+            self.elevation = Some(z);
         }
         Ok(())
     }
@@ -231,6 +251,7 @@ pub(super) fn spline(record: Record<'_>, state: &mut State) -> Result<(), DxfErr
             41 => push(&mut f.weights, value()?, controls, "weight")?,
             10 => {
                 f.finish_control(KIND)?;
+                f.finish_fit(KIND)?;
                 f.x = Some(coordinate(value()?, KIND)?);
             }
             20 => {
@@ -254,16 +275,34 @@ pub(super) fn spline(record: Record<'_>, state: &mut State) -> Result<(), DxfErr
             }
             11 => {
                 f.finish_control(KIND)?;
-                coordinate(value()?, KIND)?;
+                f.finish_fit(KIND)?;
+                f.fit_x = Some(coordinate(value()?, KIND)?);
                 f.fit += 1;
                 if f.fit > fits {
                     return Err(error(KIND, "more fit points than group 74 states"));
                 }
             }
+            21 => {
+                if f.fit_x.take().is_none() {
+                    return Err(error(KIND, "Y before X in a fit point"));
+                }
+                coordinate(value()?, KIND)?;
+                f.fit_xy = true;
+            }
+            31 => {
+                if !f.fit_xy {
+                    return Err(error(KIND, "Z before X and Y in a fit point"));
+                }
+                if f.fit_z.is_some() {
+                    return Err(error(KIND, "duplicate Z in a fit point"));
+                }
+                f.fit_z = Some(coordinate(value()?, KIND)?);
+            }
             _ => {}
         }
     }
     f.finish_control(KIND)?;
+    f.finish_fit(KIND)?;
     if f.fit != fits {
         return Err(error(KIND, "fit point count does not match group 74"));
     }
