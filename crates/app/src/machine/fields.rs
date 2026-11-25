@@ -196,8 +196,14 @@ pub fn groups(raw: &Value) -> Vec<FieldGroup> {
         .cloned();
     let mut g = Grid::new(raw, "Spindle range");
     if let Some(h) = &head {
+        // #3246: the `spindle` refusal compares min_speed with max_speed,
+        // so only the two speed fields carry it, not Spindle power.
         for (label, k) in [("Spindle min speed", "min_speed"), ("Spindle max speed", "max_speed"), ("Spindle power", "power")] {
-            g.add(s(label), format!("spindle.{k}"), format!("{h}/spindle/{k}"), N, &[format!("spindle {k}"), s("spindle")]);
+            let mut keys = vec![format!("spindle {k}")];
+            if k != "power" {
+                keys.push(s("spindle"));
+            }
+            g.add(s(label), format!("spindle.{k}"), format!("{h}/spindle/{k}"), N, &keys);
         }
     }
     out.push(g.group);
