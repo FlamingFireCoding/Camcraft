@@ -94,7 +94,9 @@ fn the_saved_condition_selects_the_exact_requested_quality() {
 fn ra035_refuses_unmeasured_heights_without_a_directory() {
     for height in ["15", "40", "80"] {
         let temp = tempfile::tempdir().unwrap();
-        let obj = PUNCH_OBJ.replace(" 20\n", &format!(" {height}\n"));
+        let obj = PUNCH_OBJ
+            .replace(" 20\r\n", &format!(" {height}\r\n"))
+            .replace(" 20\n", &format!(" {height}\n"));
         let script = FINE
             .replace("dz: 20", &format!("dz: {height}"))
             .replace("origin: [0, 0, 20]", &format!("origin: [0, 0, {height}]"))

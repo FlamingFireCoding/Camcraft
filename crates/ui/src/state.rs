@@ -1055,6 +1055,7 @@ impl Default for OpUi {
                 climb: true,
                 // Opt-in, like `seed_face` (M11.1 A).
                 blend_turns: false, blend_radius: None,
+                picks: Default::default(),
             },
         }
     }
