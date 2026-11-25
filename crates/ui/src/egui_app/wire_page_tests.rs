@@ -269,6 +269,8 @@ fn wire_closing_overlap_and_centre_side_apply_and_undo() {
     assert!(st.history.undo(&st.world));
     assert_eq!(live(&h).overlap, 0.0, "one undo restores the plain lap");
     assert!(super::SIDES.iter().any(|s| s.contains("Centre")), "the centre slit is offered as a side");
+}
+
 /// Only the native Agie post reads the open-cut statements (#3996). The
 /// frames after the post change let the page draft follow the new document.
 fn agie_post(h: &mut Harness<'static, State>) {

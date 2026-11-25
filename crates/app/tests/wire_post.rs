@@ -51,6 +51,7 @@ const GOLDEN: &str = "tests/golden/nc/wire-iso/wire_slug_punch.nc";
 const SKIMS_GOLDEN: &str = "tests/golden/nc/wire-iso/wire_contour_punch_skims.nc";
 const OPEN_GOLDEN: &str = "tests/golden/nc/wire-iso/wire_contour_open_cutoff.nc";
 const OPEN_SKIMS_GOLDEN: &str = "tests/golden/nc/wire-iso/wire_contour_open_skims.nc";
+const CENTRE_SKIMS_GOLDEN: &str = "tests/golden/nc/wire-iso/wire_contour_centre_skims.nc";
 
 fn cps(name: &str) -> &'static str {
     camcraft_app::posting::builtin_post_text(name).expect("registered")
@@ -426,6 +427,12 @@ fn each_skim_refusal_is_named_at_the_door() {
 /// from the picked chain's own travel, so the fixture holds whichever way
 /// the feature graph orders the edge. `skims` ride after the rough pass.
 fn cutoff_doc_with(wrong: bool, skims: Vec<WireSkim>) -> World {
+    cutoff_doc_side(wrong, false, skims)
+}
+
+/// [`cutoff_doc_side`] forced onto the centre-line slit (`centre`): the
+/// same open chain, cut with the wire riding the run itself (#3216).
+fn cutoff_doc_side(wrong: bool, centre: bool, skims: Vec<WireSkim>) -> World {
     use camcraft_app::geometry::feature;
     use camcraft_app::model;
     use camcraft_app::operation::{FeatureSel, GeoSel};
@@ -453,7 +460,13 @@ fn cutoff_doc_with(wrong: bool, skims: Vec<WireSkim>) -> World {
         })
         .expect("the part's top edge at x = 60 is its own open chain");
     // Travelling +Y the offcut (x > 60) is on the right.
-    let side = if up != wrong { WireSide::Right } else { WireSide::Left };
+    let side = if centre {
+        WireSide::Centre
+    } else if up != wrong {
+        WireSide::Right
+    } else {
+        WireSide::Left
+    };
     let op = WireContourOp {
         overlap: 0.0,
         top_z: Height::fixed(12.0),
@@ -610,6 +623,68 @@ fn an_open_run_with_a_skim_generates_verifies_and_posts() {
     // The rough-only open golden stands byte for byte beside it.
     let rough = posting::post_script(&cutoff_doc(false), &std::env::temp_dir().join("rough-only"), cps(WIRE)).expect("the rough-only open run posts").program;
     assert_eq!(rough, std::fs::read_to_string(OPEN_GOLDEN).expect("golden present"));
+}
+
+/// Done means (#3216, item 2 of the review): the centre-line slit is an
+/// open run for the post too. With one skim it generates (the travel
+/// move marks the pass boundary), verifies with the kerf law said
+/// skipped by statement (CENTRE_SKIP), and posts - the SIDE note says
+/// the centre slit's own words, each pass is cut at its run-out and
+/// threaded again at its run-in in the air, and the skim's condition is
+/// selected at its first move. The right-hand open golden does not move.
+#[test]
+fn a_centre_slit_with_a_skim_generates_verifies_and_posts() {
+    let world = cutoff_doc_side(false, true, vec![skim("S21", false)]);
+    // The generated path: one travel move between the two passes, both
+    // passes riding the run itself (the centre offset is zero).
+    let e = model::find_by_name(&world, "Cutoff1").expect("op");
+    let cache = model::toolpath_of(&world, &e).expect("the cached path");
+    let travels: Vec<usize> = cache
+        .path
+        .moves
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.kind == camcraft_app::cl::MoveKind::Rapid)
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(travels.len(), 1, "one travel between the two passes: {:?}", cache.path.moves.len());
+    assert!(cache.path.is_chained(), "the travel keeps the path one chained program");
+    assert!(cache.path.moves.iter().all(|m| (m.to.x - 60.0).abs() < 1e-9), "the centre slit rides the run itself");
+    // Verified: the ends are judged, the kerf law is said skipped.
+    let clause = posting::wire_clause(&world);
+    assert!(clause.problems.is_empty(), "{:?}", clause.problems);
+    let line = clause.line.expect("the centre slit is judged, not skipped");
+    assert!(
+        line.contains("Cutoff1 open run (centre of travel)") && line.contains("kerf law not applied (a centre slit burns both sides of the run by statement)"),
+        "{line}"
+    );
+    // Posted: the open-run words for Centre at every note site.
+    let text = post_text(&world);
+    if std::env::var_os("WRITE_GOLDEN").is_some() {
+        std::fs::write(CENTRE_SKIMS_GOLDEN, &text).expect("write golden");
+    }
+    assert_eq!(text, std::fs::read_to_string(CENTRE_SKIMS_GOLDEN).expect("golden present"), "the centre program drifted from its golden");
+    let lines: Vec<&str> = text.lines().collect();
+    let count = |w: &str| lines.iter().filter(|l| **l == w).count();
+    assert_eq!((count("FX-THREAD"), count("FX-CUT"), count("FX-TIP-OUT")), (2, 2, 2), "{text}");
+    assert!(lines.contains(&"(SIDE CENTRE - CENTRE-LINE SLIT THROUGH THE AIR, NO KERF IN THE PATH (THE KERF LAW IS SKIPPED))"), "{text}");
+    let at = |w: &str| lines.iter().position(|l| *l == w).unwrap_or_else(|| panic!("no {w} in\n{text}"));
+    let at_from = |w: &str, from: usize| lines.iter().skip(from).position(|l| *l == w).map(|i| i + from).unwrap_or_else(|| panic!("no {w} after {from} in\n{text}"));
+    let (rough_cond, first_cut) = (at("FX-COND C110"), at("FX-CUT"));
+    let g0s: Vec<usize> = lines.iter().enumerate().filter(|(_, l)| l.starts_with("G0 ")).map(|(i, _)| i).collect();
+    assert_eq!(g0s.len(), 2, "one positioning G0, one boundary travel G0: {text}");
+    let travel = g0s[1];
+    let (skim_note, skim_cond) = (at("(SKIM 1)"), at("FX-COND S21"));
+    let last_cut = at_from("FX-CUT", skim_cond);
+    assert!(
+        rough_cond < first_cut && first_cut < travel && travel < skim_note && skim_note < skim_cond && skim_cond < last_cut,
+        "cut at the run-out, travel, thread anew, select the skim's condition, cut again: {text}"
+    );
+    let cuts: Vec<&str> = lines[first_cut..last_cut].iter().filter(|l| l.starts_with("G1 X")).copied().collect();
+    assert!(cuts.iter().all(|l| l.contains("X60.")), "every cut rides the run itself: {text}");
+    // The right-hand open golden stands byte for byte beside it.
+    let right = posting::post_script(&cutoff_doc(false), &std::env::temp_dir().join("right-only"), cps(WIRE)).expect("the right open run posts").program;
+    assert_eq!(right, std::fs::read_to_string(OPEN_GOLDEN).expect("golden present"));
 }
 
 /// Review of #1139: nothing at post refuses a wire setup before its

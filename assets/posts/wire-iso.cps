@@ -246,7 +246,9 @@ function onSection() {
   }
   note(opName + (opKind ? " - " + opKind : ""));
   if (setupName) note("SETUP " + setupName);
-  if (side) note("SIDE " + side.toUpperCase() + " - KERF IN THE PATH");
+  if (side) note(side === "centre"
+    ? "SIDE CENTRE - CENTRE-LINE SLIT THROUGH THE AIR, NO KERF IN THE PATH (THE KERF LAW IS SKIPPED)"
+    : "SIDE " + side.toUpperCase() + " - KERF IN THE PATH");
   taperOk = true;
   if (dialect === "angle" && (taper === 0 || fourAxis !== "")) {
     refuse("angle4" + opName, who() + "an angle-word taper needs one stated angle - refused");
@@ -284,12 +286,13 @@ function onSection() {
 
 // The first motion of a section: go to the start hole with the wire
 // cut, thread there, select the condition, cancel compensation. An open
-// run (#1109, side left / right of travel) has no start hole: its path
+// run (#1109, side left / right of travel, or the centre-line slit)
+// has no start hole: its path
 // starts at its run-in point in the air outside the stock, and it is
 // threaded there; it ends at its run-out point past the stock's far
 // edge, where onSectionEnd cuts the wire - the post writes the path's
 // moves only, so no return to the threading point is ever written.
-function openRun() { return side === "left" || side === "right"; }
+function openRun() { return side === "left" || side === "right" || side === "centre"; }
 function startCut(p) {
   if (threaded) return skimPending ? startSkim() : true;
   if (!codesOk || condition === "") return false;

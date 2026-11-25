@@ -36,6 +36,22 @@ notes). The Sodick post refuses an open run's skims by name at its
 rapid guard instead of writing a structure its manual does not state
 - a named refusal, never a silent wrong post.
 
+Correction (the follow-up rework): item 3 said "the post announces each
+skim after the travel" as if it covered every open run. It covered
+left / right only: wire-iso.cps's `openRun()` did not match "centre",
+so a Centre slit with a skim reached the rapid guard unthreaded and the
+whole post was refused. Fixed: `openRun()` matches "centre" too - a
+Centre travel boundary cuts the wire at the run-out, travels, and
+threads again at the run-in like left / right - and the note sites say
+the open run's words for Centre: the SIDE note names the centre-line
+slit through the air with the kerf law said skipped (the "KERF IN THE
+PATH" note is closed runs only), and the thread and cut notes say the
+run-in / run-out variants. A Centre post test with one skim pins the
+path against its own golden
+(`crates/app/tests/golden/nc/wire-iso/wire_contour_centre_skims.nc`).
+The verify wording stands as it was: the ends' clearance is judged and
+the kerf law is said skipped by statement.
+
 ## Item 4 - unsupported combinations (burnout, 4-axis)
 
 Refused by name at the command door (`wire_op::overlap_refusal`,
