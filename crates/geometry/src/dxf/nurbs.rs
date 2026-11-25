@@ -18,6 +18,8 @@ pub(super) struct Nurbs {
     knots: Vec<f64>,
     points: Vec<Point2>,
     weights: Vec<f64>,
+    /// All weights are equal: the curve is non-rational. Found once, not for each span.
+    uniform: bool,
 }
 
 impl Nurbs {
@@ -76,11 +78,13 @@ impl Nurbs {
         if hi / lo > MAX_WEIGHT_RATIO {
             return Err(error(KIND, "weights differ by more than a factor of 1e6"));
         }
+        let uniform = lo == hi;
         Ok(Nurbs {
             degree,
             knots,
             points,
             weights,
+            uniform,
         })
     }
 
@@ -174,7 +178,7 @@ impl Curve for Nurbs {
     fn speed(&self, t0: f64, t1: f64) -> f64 {
         let p = self.degree;
         let k = self.span(0.5 * (t0 + t1));
-        if self.weights.iter().all(|w| *w == self.weights[0]) {
+        if self.uniform {
             // Non-rational: C' is the B-spline of degree p - 1 with the control points
             // p (P[i+1] - P[i]) / (knots[i+p+1] - knots[i+1]) (The NURBS Book, eq. 3.4), so
             // |C'| on span k is at most the largest of its p active ones (convex hull).

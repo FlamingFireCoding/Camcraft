@@ -3,6 +3,8 @@
 
 use camcraft_geometry::dxf::{Limits, parse, parse_with_limits};
 
+#[path = "dxf/curve_bounds.rs"]
+mod curve_bounds;
 #[path = "dxf/curve_refusals.rs"]
 mod curve_refusals;
 

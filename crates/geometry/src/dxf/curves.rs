@@ -23,8 +23,6 @@ pub const CURVE_TOLERANCE_MM: f64 = 0.001;
 pub const CURVE_MAX_RADIUS_MM: f64 = 1000.0;
 /// The curve evaluations that one drawing may spend on its curves.
 pub(super) const EVALUATION_BUDGET: usize = 50_000_000;
-/// An ellipse whose axis ratio is this near 1 is a circle: kept as an exact arc.
-const ROUND: f64 = 1e-12;
 
 /// Millimetres per drawing unit for the fit: inches when the drawing states no unit.
 fn per_unit(units: Units) -> f64 {
@@ -116,7 +114,18 @@ pub(super) fn ellipse(record: Record<'_>, state: &mut State) -> Result<(), DxfEr
     }
     let start = t0.rem_euclid(TAU);
     let axis = m.y.atan2(m.x);
-    if (1.0 - ratio).abs() <= ROUND {
+    // The circle of radius a is at most a (1 - ratio) from the ellipse, at the minor ends.
+    // A ratio of exactly 1 is the circle itself; a near one is a circle only while that
+    // distance is within the tolerance, which the document then records.
+    let round = ratio == 1.0 || {
+        let tol = CURVE_TOLERANCE_MM / per_unit(state.doc.units);
+        let near = a * (1.0 - ratio) <= tol;
+        if near {
+            fit_settings(state, KIND);
+        }
+        near
+    };
+    if round {
         let primitive = if full {
             Primitive::Circle {
                 center: c,
