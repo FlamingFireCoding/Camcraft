@@ -76,6 +76,7 @@ fn posted_contour5d() -> String {
         tolerance: 0.1, clearance_z: Height::fixed(20.0), retract_z: None,
         top_z: Height::of(HeightReference::TopOfModel, -0.5), bottom_z: Height::of(HeightReference::TopOfModel, -2.5),
         feed: 500.0, plunge_feed: 100.0, climb: true, lead_deg: 15.0, lag_deg: 0.0, max_tilt_deg: 60.0, shank_avoid: false,
+        picks: Default::default(),
     };
     h.execute(&world, ok(CreateOperation::new(&world, "OP", BALL, SrcRef::Entity("part".into()), params), "create"));
     h.execute(&world, ok(GenerateOperation::new(&world, "OP"), "generate"));
