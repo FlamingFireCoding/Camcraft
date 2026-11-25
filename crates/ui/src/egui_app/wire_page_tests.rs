@@ -215,6 +215,9 @@ fn the_open_cutoff_declarations_apply_and_undo_together() {
     let hold = "Both pieces clamped through all passes";
     let travel = "Stock centered in installed XY travel";
     assert!(h.query_by_label(hold).is_none());
+    // Only the native Agie post reads the two statements.
+    h.state_mut().pending.push_back(CommandKind::SelectPostNamed(camcraft_app::posting::agie::POST.into()));
+    h.state_mut().drain_actions();
     let OpParams::WireContour(op) = &mut h.state_mut().op_ui.params else { panic!("wire draft") };
     op.side = camcraft_app::operation::WireSide::Left;
     h.run_steps(3);
@@ -246,4 +249,24 @@ fn wire_sharp_inside_corners_toggle_applies_and_undoes() {
     let st = h.state_mut();
     assert!(st.history.undo(&st.world));
     assert!(!live(&h).sharp_corners, "one undo restores the default");
+}
+
+/// The two open-cut statements and their Agie hint are Agie-only: another
+/// wire post does not read them, so its open cut does not show them.
+#[test]
+fn open_cut_hides_the_agie_statements_for_another_wire_post() {
+    let mut h = wire_page();
+    let OpParams::WireContour(op) = &mut h.state_mut().op_ui.params else { panic!("wire draft") };
+    op.side = camcraft_app::operation::WireSide::Right;
+    h.run_steps(3);
+    assert!(h.query_by_label("Freed piece captured").is_some(), "the Passes tab shows");
+    for row in ["Both pieces clamped through all passes", "Stock centered in installed XY travel"] {
+        assert!(h.query_by_label(row).is_none(), "{row} shows for a non-Agie post");
+    }
+    assert!(h.query_by_label_contains("Agie open cuts").is_none());
+    h.state_mut().pending.push_back(CommandKind::SelectPostNamed(camcraft_app::posting::agie::POST.into()));
+    h.state_mut().drain_actions();
+    h.run_steps(3);
+    assert!(h.query_by_label("Stock centered in installed XY travel").is_some(), "the Agie post shows the rows");
+    assert!(h.query_by_label_contains("Agie open cuts").is_some());
 }
