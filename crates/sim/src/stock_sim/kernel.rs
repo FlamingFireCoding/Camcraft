@@ -19,6 +19,24 @@ pub enum StockError {
 /// from tool sizes and never approach it.
 pub(super) const MAX_CELLS_PER_AXIS: usize = 4096;
 
+/// Cells across `extent` at `cell`: the ceiling, except that an extent
+/// a whole number of cells long up to rounding is that whole number.
+/// A box edge read back from a transform is often a few ulps long
+/// (12.7 mm two ulps long is 50 cells of 0.254 plus about 1e-14); the plain
+/// ceiling gives it one more column, a sliver a few femtometres wide
+/// that carries the full stock top past the box edge. The tolerance is
+/// relative (`1e-9` of the count), far under any cell a program uses.
+#[must_use]
+pub fn cells_across(extent: f64, cell: f64) -> usize {
+    let r = extent / cell;
+    let k = r.round();
+    if (r - k).abs() <= 1e-9 * k.max(1.0) { k as usize } else { r.ceil() as usize }
+}
+
+#[cfg(test)]
+#[path = "cell_count_tests.rs"]
+mod cell_count_tests;
+
 /// The final part's top surface per cell: the highest facet plane
 /// covering each cell center, `-inf` where no facet covers it (the
 /// column is air). Facets whose XY projection is degenerate (vertical
