@@ -17,7 +17,7 @@ use crate::machine::{ConditionField, Kind};
 use crate::machining2d::GenError;
 use crate::verify::Warning;
 use crate::wire_edm::{
-    check_passes, clearance_door, wire_burnout, wire_contour_tapered, wire_passes, TabParams, WireCorner, WireParams, WirePass, WireTaper,
+    check_passes, clearance_door, wire_burnout, wire_passes, TabParams, WireCorner, WireParams, WirePass, WireTaper,
 };
 
 use super::kinds::Carried;
@@ -393,10 +393,11 @@ pub fn skims_refusal(op: &WireContourOp) -> Option<String> {
 /// Generate: `picks` is the picked profile (closed rings, open runs)
 /// when the source is a selection; otherwise `base` - the model's
 /// through-silhouette - is the profile. `stock` is read only for an
-/// open run (#1109). No verification runs yet (the
-/// wire sweep against the part is #534), and the path's notes say so.
+/// open run (#1109). `arcs`: a meshed model's chord, its arcs read back (#3215).
+#[allow(clippy::too_many_arguments)]
 pub(super) fn generate_wire(
     op: &WireContourOp,
+    arcs: Option<f64>,
     cond: Result<(WireCondition, Option<WireCondition>), GenError>,
     hs: &ResolvedHeights,
     picks: Option<(Vec<Loop>, Vec<Vec<Point2>>)>,
@@ -474,7 +475,7 @@ pub(super) fn generate_wire(
             // and leaves a closed profile there; no pick is main's path.
             match op.picks.first(crate::path_picks::PickRole::Exit) {
                 Some(exit) => crate::wire_edm::wire_contour_exit(&loops, &chains, &p, exit.xy)?,
-                None => wire_contour_tapered(&loops, &chains, &p, &taper)?,
+                None => crate::wire_edm::wire_contour_facets(&loops, &chains, &p, &taper, arcs)?,
             }
         }
     };
