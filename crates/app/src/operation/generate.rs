@@ -224,8 +224,12 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         // #1109: an open run is entered from the stock's edge - the
         // setup's stock outline, read only when a run is picked.
         let stock = || stock_facets.as_deref().and_then(|f| slice::project(f, FOOTPRINT_SAMPLES).ok()).filter(|r| !r.is_empty());
+        // #3215: a model's profile has its arcs read back from the facets,
+        // bounded by the model's chord; a drawn chain keeps its polygon.
+        let arcs = wire_sketch.is_none().then_some(crate::geometry::import::step::CHORD_CAP + material.excess);
         let (path, warnings) = super::wire_op::generate_wire(
             op,
+            arcs,
             Ok(cond),
             &hs,
             picks,
@@ -1785,8 +1789,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // paths of every v28 document regenerate byte-identical.
             let shank = (*shank_avoid).then(|| shank_of(&tool));
             // M11.3 owed: the centre-cutting law, read along the pose.
+            // #3330: the contour's start / exit picks seat its rings; an
+            // empty seam is the automatic ladder, byte for byte.
+            let seam = crate::finishing3d::RingSeam::of(&params.path_picks());
             let run = |q: &Finish3DParams| if is_contour {
-                crate::multiaxis::contour5d(&material.facets, q, &axis, shank.as_ref())
+                crate::multiaxis::contour5d_seamed(&material.facets, q, &axis, shank.as_ref(), &seam)
             } else {
                 crate::multiaxis::parallel5d(&material.facets, q, &axis, shank.as_ref())
             };
@@ -2869,6 +2876,16 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     "a Break-through is a mill drill's setting - a lathe's axial and cross holes keep their own exit; clear it".into(),
                 ));
             }
+            // #3328: the picked first and last hole. A lathe's axial holes
+            // share the spindle axis, so no XY pick names one of them.
+            if lathe_axial && !params.path_picks().is_empty() {
+                return Err(GenError::Invalid(format!(
+                    "Drill: a start or exit point is not taken on a lathe's axial hole - {}; clear it on this operation",
+                    super::pick_kinds::PICK_TURRET
+                )));
+            }
+            let ordered = params.holes_in_pick_order(holes).map_err(GenError::Invalid)?;
+            let holes = ordered.as_slice();
             // No region feeds the generator - the hole list is the
             // geometry - but the verify pass below needs one, and it is
             // built the same shared way as every other kind's.
@@ -3067,6 +3084,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
+            // #3328: the picked first and last hole.
+            let holes = params.holes_in_pick_order(holes).map_err(GenError::Invalid)?;
             // #3360: the shared ring order; Auto is the old ladder.
             let path = machining2d::bore_started(&machining2d::BoreParams {
                 links: lk,
@@ -3104,7 +3123,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         // judged at the door, by name. Every move posted is plain
         // 3-axis interpolation (G2/G3 with Z) - no spindle sync.
         OpParams::Thread { holes, external, .. } => {
-            let plan = super::thread_op::kernel_params(&tool, &params, &hl)?;
+            let mut plan = super::thread_op::kernel_params(&tool, &params, &hl)?;
+            // #3328: the picked first and last hole.
+            plan.holes = params.holes_in_pick_order(&plan.holes).map_err(GenError::Invalid)?;
             // The crest law's wall: the tangency verdict reads the
             // furthest the teeth may reach. #1071: a hole's MAJOR circle,
             // grown from the model's own rim where that stands nearer;
