@@ -19,6 +19,8 @@ use super::types::{OpParams, OpType};
 pub enum PickCapability {
     /// A point on a closed ring: the ring is re-sequenced to start there
     /// (the 2D contour). Snaps to a wall. Takes a start and an exit.
+    /// The Sinker Burn's ring is its orbit (#3333): the pick is an angle
+    /// round the burn position.
     Ring,
     /// A point inside the region: the descent place of the first pass
     /// and the end of the last pass. Snaps to a point in the region.
@@ -78,6 +80,10 @@ impl KindInfo {
             // the start pick and run on to the exit pick.
             OpType::Contour | OpType::Contour5D => PickCapability::Ring,
             OpType::WireContour => PickCapability::Threading,
+            // #3333: the orbit ring round the burn position, and the two
+            // ends of the side move.
+            OpType::SinkerBurn => PickCapability::Ring,
+            OpType::SinkerSideBurn => PickCapability::Ends,
             OpType::Probe => PickCapability::NotTaken(PICK_NO_PATH),
             // #3328: the first hole and the last hole of the list.
             OpType::Thread | OpType::Drill | OpType::Bore => PickCapability::HoleOrder,
@@ -119,8 +125,6 @@ impl KindInfo {
             // #1883: the waterjet's lead picks are owed, as the plasma's.
             | OpType::WaterjetProfile
             | OpType::TrochoidalSlot
-            | OpType::SinkerBurn
-            | OpType::SinkerSideBurn
             | OpType::SlotUndercut
             // #2826: the flow band's own start and exit ride its
             // picked chains' own ends, the planner's choice.
@@ -298,6 +302,9 @@ impl OpParams {
         }
         match self {
             OpParams::WireContour(w) => wire_exit_refusal(w),
+            // #3333: a pick that the sinker's orbit or side move cannot hold.
+            OpParams::SinkerBurn(p) => p.orbit_ends().err(),
+            OpParams::SinkerSideBurn(p) => p.side_ends().err(),
             _ => self.hole_order().err(),
         }
     }

@@ -10,6 +10,12 @@
 //! motion::finishing3d (ring_seam) through the application.
 //! Gate map (#3331): covers app::operation (generate: the Facing, Profile
 //! Rough and Profile Finish picks), app::commands (EditOperationParams).
+//! Gate map (#3333, `start_exit_shared/sinker.rs`): covers
+//! motion::sinker_picks, app::operation (sinker_op, sinker_side_op).
+
+// #3333: the sinker kinds' orbit picks and side-move picks.
+#[path = "start_exit_shared/sinker.rs"]
+mod sinker;
 
 mod common;
 // #3328: the hole order of Drill, Bore and Thread under the picks.
@@ -78,6 +84,9 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
             }
             // #3325: the Slot's slice of #1448 shipped.
             OpType::Slot => assert_eq!(cap, PickCapability::Ends, "the slot takes a pick at one of its ends"),
+            // #3333: the orbit ring, and the two ends of the side move.
+            OpType::SinkerBurn => assert_eq!(cap, PickCapability::Ring, "the sinker burn takes a pick on its orbit"),
+            OpType::SinkerSideBurn => assert_eq!(cap, PickCapability::Ends, "the side burn takes an end of its side move"),
             _ => {
                 let PickCapability::NotTaken(why) = cap else { panic!("{}: this kind takes no pick", k.label) };
                 assert!(!why.is_empty(), "{}: the reason is named", k.label);
