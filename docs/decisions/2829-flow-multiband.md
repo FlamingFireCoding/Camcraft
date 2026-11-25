@@ -87,3 +87,70 @@ dedup is the `start` index in `rotary_flow.rs`; the lap morph is
 wiring needed no change: `selection::drive_chains` already passes
 every picked chain, so the app arm is untouched and the new
 behaviour rides the same `RotaryFlow` params.
+
+## #2829 rework (PR #4018 review, 2026-11-25) - set normalization and the ring lap guard
+
+**Decided:** two laws from mkinney's safety-tier review, both taken
+unattended on the same branch.
+
+1. **Normalize the COMPLETE set once.** The first head resolved a
+   guide's winding band by band, on a CLONE of the next track, and
+   the stored track kept its raw pick winding - so a three-guide
+   set with only the middle pick reversed cut band 1 from the
+   normalized pair but band 2 from the raw middle chain, and the
+   last three passes wound `-TAU` while the first four wound
+   `+TAU` at `climb = true`: the second band changed cutting
+   direction without a change to climb. The law now runs ONE pass
+   over the complete ordered set before any band is cut
+   (`normalize_set`): each guide after the first is resolved
+   against its (already normalized) pair-neighbour - wound against
+   it, walked backwards - and the SAME normalized track bounds both
+   adjacent bands. The first guide's pick keeps its winding (the
+   #2824 behaviour of a two-guide pair is byte-identical), and a
+   reversal cascades: guide k is judged against the normalized
+   guide k - 1, never against the raw pick. `climb` is NOT part of
+   the normalization: it reverses every pass uniformly at emit, so
+   the set's direction consistency is independent of it - the pins
+   run both settings.
+2. **Refuse the azimuth-only single guide.** The lap morph gave
+   every lone chain its own next lap, and a chain at ONE axial
+   station and ONE radius - a closed ring or an open arc of one -
+   reads a positive developed width (a whole revolution of arc)
+   while it sweeps NO band area: every pass of the family is the
+   same circle again, and the review's probe posted 56 passes of
+   one closed cut. The law now checks the COMPLETE track before a
+   pass is generated (`refuse_ring_lap`): both the axial-station
+   span and the radius span under the corner-lattice dust `cell`
+   refuse by name, closed rings and open ring arcs alike. A guide
+   that advances in station OR in radius - a helix, an axial line,
+   a radial arc - sweeps a real rotational band and passes; the
+   tolerance is the house DUST scale, so a genuine but
+   dust-shallow helix is also refused as a band that machines
+   nothing honest.
+
+**Why:** both defects are silent wrong output - the worst failure
+class this codebase knows. The direction flip needs no user error
+at all (the extraction of the app layer winds rings either way),
+and the ring lap reads every existing guard green: the width is
+positive, the meet law never runs on a single chain, the passes
+clear the oracle. Only a check on the complete input closes each
+class.
+
+**Considered and dropped:** resolving the winding against `climb`
+inside the normalization (climb states the TRAVEL of a pass, not the
+winding of the set; folding it in would reverse legal aligned
+picks); per-band normalization on the stored track (equivalent for
+two guides, but it re-reads `opposite_sense` per pair and the note
+ordering changes for no gain); a per-pass swept-area check at emit
+(a degenerate family is an INPUT defect - refused at the lap door,
+never half-generated); refusing EVERY constant-station guide
+(a radial arc at one station sweeps a real annulus - only the
+constant-radius and constant-station class is degenerate); refusing
+by the angular width alone (the width is positive exactly when the
+band is degenerate - the width is the wrong witness).
+
+**Cost to change:** `normalize_set` and `refuse_ring_lap` live in
+`rotary_flow_set.rs`; the band loop lost its per-band reversal and
+now clones an already-normalized track. The follow-up the review
+named non-blocking - crossings between NON-adjacent guides still
+pass - is filed as its own issue and stays out of this branch.

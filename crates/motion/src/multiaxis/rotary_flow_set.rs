@@ -1,13 +1,18 @@
 //! The chain-set law of the Rotary Flow kernel (#2829, the third
 //! #2804 slice): the picked guide chains read as ONE ordered set,
-//! never as loose pairs. The law states three things. A single chain
+//! never as loose pairs. The law states five things. The complete
+//! set is wound ONE way before any band is cut: each guide after
+//! the first is resolved once against its pair-neighbour, and the
+//! same normalized track bounds both adjacent bands. A single chain
 //! machines the full revolution: the kernel morphs it to its own
 //! next lap, one whole turn on in the unwrap's own theta, and the
 //! developed band between a chain and its lap is the full-revolution
-//! band a single-start screw or an auger rides. A set of three or
-//! more machines one band per adjacent pair, and the SHARED
-//! boundary chain is cut once - the band above already walked it, so
-//! the band below starts at its first interior pass. And a set that
+//! band a single-start screw or an auger rides - unless the chain
+//! turns at one station and one radius, a ring whose lap sweeps no
+//! band area, which is refused by name. A set of three or more
+//! machines one band per adjacent pair, and the SHARED boundary
+//! chain is cut once - the band above already walked it, so the
+//! band below starts at its first interior pass. And a set that
 //! cannot tile is refused by name: chains that meet or cross, and a
 //! band that doubles back through the chain before it.
 //!
@@ -21,7 +26,7 @@
 use crate::geometry::Point3;
 use crate::machining2d::GenError;
 
-use super::rotary_flow_unwrap::{lerp_at, Unwrapped, TAU};
+use super::rotary_flow_unwrap::{lerp_at, opposite_sense, Unwrapped, TAU};
 
 /// Most flow passes one band may take: a band that needs more is a
 /// wrong pick or a wrong stepover, refused by name.
@@ -41,6 +46,58 @@ pub(super) fn lap_of(a: &Unwrapped) -> Unwrapped {
         rho: a.rho.clone(),
         u: a.u.clone(),
     }
+}
+
+/// The #2829 set normalization (PR #4018's first review law): the
+/// complete ordered guide set is wound ONE way before any band is
+/// cut. Each guide after the first is resolved ONCE against its
+/// pair-neighbour - a chain wound against the one before it is
+/// walked backwards, because the feature layer reads a chain's
+/// direction from the mesh, never from the pick - and the SAME
+/// normalized track then bounds both adjacent bands. Returns the
+/// 0-based indices of the guides that were walked backwards, one
+/// note each. Normalized per set, never per band: a band-by-band
+/// copy leaves the next band's lower boundary at the original
+/// winding, and the cutting direction flips between bands without a
+/// change to `climb`.
+pub(super) fn normalize_set(tracks: &mut [Unwrapped]) -> Vec<usize> {
+    let mut back = Vec::new();
+    for k in 1..tracks.len() {
+        if opposite_sense(&tracks[k - 1], &tracks[k]) {
+            tracks[k].reverse();
+            back.push(k);
+        }
+    }
+    back
+}
+
+/// The #2829 lap guard (PR #4018's second review law): a single
+/// guide that turns about the axis at ONE axial station and ONE
+/// radius - a closed ring or an open arc of one - sweeps the same
+/// circle again at every pass of its lap family. The lap's angular
+/// width reads positive, but the band it develops has no area, and
+/// the pass family repeats one closed cut. Refused by name over the
+/// COMPLETE track before a pass is generated, never guessed past.
+/// A guide that advances in station or in radius - a helix, an
+/// axial line, a radial arc - sweeps a real band and passes.
+pub(super) fn refuse_ring_lap(a: &Unwrapped, dust: f64) -> Result<(), GenError> {
+    let flat = |y: &[f64]| {
+        y.iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &x| {
+                (lo.min(x), hi.max(x))
+            })
+    };
+    let (vlo, vhi) = flat(&a.v);
+    let (rlo, rhi) = flat(&a.rho);
+    if vhi - vlo <= dust && rhi - rlo <= dust {
+        return Err(GenError::Invalid(
+            "Rotary Flow: guide chain 1 turns about the axis at one axial station and one \
+             radius - a ring turned a lap sweeps no band area; pick a helical chain that \
+             advances along the axis, or the two edges that bound the band"
+                .into(),
+        ));
+    }
+    Ok(())
 }
 
 /// `p` clamped onto the segment `a -> b` (the guard's own clamp
@@ -325,6 +382,65 @@ mod tests {
         };
         let (dir, _) = band_shape(&a, &on_side, 8.0, 10.0, 1.0, 17).unwrap();
         assert!((dir.0 - 8.0 * 0.3).abs() < 1e-9, "{dir:?}");
+    }
+
+    #[test]
+    fn the_set_normalization_walks_each_backward_guide_once() {
+        // Mixed winding, resolved ONCE over the complete set: the
+        // guide that winds against its neighbour is walked
+        // backwards, and every later guide is judged against the
+        // NORMALIZED one before it - never against the raw pick.
+        let tr = |w: f64| Unwrapped {
+            th: vec![0.0, w, 2.0 * w],
+            v: vec![0.0, 1.0, 2.0],
+            rho: vec![8.0, 8.0, 8.0],
+            u: vec![0.0, 0.5, 1.0],
+        };
+        // (+, -, +): only the middle guide flips; the third agrees
+        // with the normalized second and stays.
+        let mut set = vec![tr(1.0), tr(-1.0), tr(1.0)];
+        assert_eq!(normalize_set(&mut set), vec![1]);
+        // (+, -, -): the reversal cascades - the third guide is
+        // judged against the normalized second, and flips too.
+        let mut set = vec![tr(1.0), tr(-1.0), tr(-1.0)];
+        assert_eq!(normalize_set(&mut set), vec![1, 2]);
+        for t in &set {
+            let span = t.th.last().unwrap() - t.th.first().unwrap();
+            assert!((span - 2.0).abs() < 1e-9, "a guide kept a mixed winding: {:?}", t.th);
+        }
+        // A set already wound one way is untouched.
+        let mut set = vec![tr(1.0), tr(1.0), tr(1.0)];
+        assert!(normalize_set(&mut set).is_empty());
+    }
+
+    #[test]
+    fn a_ring_lap_is_refused_but_advancing_guides_pass() {
+        // A closed ring: one axial station, one radius, azimuth the
+        // only motion - its lap family repeats one circle.
+        let ring = Unwrapped {
+            th: vec![0.0, 1.0, TAU],
+            v: vec![2.0, 2.0, 2.0],
+            rho: vec![8.0, 8.0, 8.0],
+            u: vec![0.0, 0.5, 1.0],
+        };
+        let e = refuse_ring_lap(&ring, 1e-6).unwrap_err();
+        assert!(format!("{e}").contains("sweeps no band area"), "{e}");
+        // A helix advances in station; a radial arc advances in
+        // radius: each sweeps a real band when turned a lap.
+        let helix = Unwrapped {
+            th: vec![0.0, 1.0, TAU],
+            v: vec![0.0, 1.0, 2.0],
+            rho: vec![8.0, 8.0, 8.0],
+            u: vec![0.0, 0.5, 1.0],
+        };
+        assert!(refuse_ring_lap(&helix, 1e-6).is_ok());
+        let arc = Unwrapped {
+            th: vec![0.0, 0.0, 0.0],
+            v: vec![2.0, 2.0, 2.0],
+            rho: vec![4.0, 8.0, 12.0],
+            u: vec![0.0, 0.5, 1.0],
+        };
+        assert!(refuse_ring_lap(&arc, 1e-6).is_ok());
     }
 
     #[test]

@@ -1,8 +1,12 @@
 //! The multi-band and single-chain laws (#2829, the third #2804
 //! slice): three ordered guide chains machine two bands whose shared
 //! boundary chain is cut once; a single helical chain covers a full
-//! revolution as its own next lap; and a ring that crosses a corner
-//! chain is refused by name, at the crossing's own spot.
+//! revolution as its own next lap; a ring that crosses a corner chain
+//! is refused by name, at the crossing's own spot; a middle pick
+//! reversed holds the cutting direction of every band, for both climb
+//! settings (PR #4018's set normalization); and a single ring guide -
+//! closed or an open arc - is refused by name, its lap family sweeps
+//! no band area.
 //!
 //! Gate map (M4.4): covers camcraft_motion::multiaxis (rotary_flow
 //! and rotary_flow_set, the #2829 laws) on this crate's own
@@ -38,6 +42,25 @@ fn landings(path: &Toolpath, r: f64) -> Vec<Point3> {
         .filter(|m| m.kind == MoveKind::Plunge)
         .filter_map(|m| center_of(m, r))
         .collect()
+}
+
+/// Every pass's ball centres: a plunge opens a pass, and the
+/// retract onto the hop cylinder closes it (the cut moves in
+/// between stay under the link radius).
+fn every_pass(path: &Toolpath, clear: f64, r: f64) -> Vec<Vec<Point3>> {
+    let mut out: Vec<Vec<Point3>> = Vec::new();
+    for m in path.moves.iter().filter(|m| m.kind != MoveKind::Rapid) {
+        let Some(c) = center_of(m, r) else { continue };
+        if cyl(c).1 > clear - 2.0 {
+            continue; // the retract onto the link cylinder
+        }
+        if m.kind == MoveKind::Plunge {
+            out.push(vec![c]);
+        } else if let Some(p) = out.last_mut() {
+            p.push(c);
+        }
+    }
+    out
 }
 
 #[test]
@@ -145,4 +168,121 @@ fn a_ring_that_crosses_a_corner_chain_is_refused_by_name() {
         (at.x - R_ROOT).abs() < 1e-6 && at.y.abs() < 1e-6 && (at.z - 2.0).abs() < 1e-6,
         "the refusal stands at {at:?}, not at the crossing"
     );
+}
+
+#[test]
+fn reversing_only_the_middle_pick_preserves_the_cut_directions() {
+    // The review's reproduction (PR #4018, first blocking item): the
+    // one-turn groove, three root helices at axial offsets 0, 2 and
+    // 4 mm, the middle one picked backwards. The set is ONE ordered
+    // set: the winding of each guide is resolved once against its
+    // neighbour, and the SAME normalized guide bounds both adjacent
+    // bands - so every pass of every band holds the direction the
+    // climb states, for BOTH climb settings, and the second band
+    // never flips its cutting direction without a change to climb.
+    let facets = groove(N_CIRC, 1, 0.0);
+    let tool = ball(2.0);
+    for climb in [true, false] {
+        let mut q = params(&tool, Some(0.9));
+        q.climb = climb;
+        // The control: the aligned trio, every pass one direction.
+        let aligned = rotary_flow(
+            &root_trio(N_CIRC, 1, 0.0),
+            &facets,
+            &stated_axis(),
+            &q,
+            &AxisControl::default(),
+        )
+        .unwrap();
+        // The mixed winding: only the middle pick is reversed.
+        let mut picks = root_trio(N_CIRC, 1, 0.0);
+        picks[1].reverse();
+        let mixed = rotary_flow(&picks, &facets, &stated_axis(), &q, &AxisControl::default())
+            .unwrap();
+        let want = if climb { TAU } else { -TAU };
+        for (name, path) in [("aligned", &aligned), ("mixed", &mixed)] {
+            no_gouge(path, &facets, 1.0);
+            if name == "mixed" {
+                no_swept_gouge(path, &facets, 1.0);
+            }
+            let passes = every_pass(path, 14.0, 1.0);
+            assert_eq!(
+                passes.len(),
+                7,
+                "the {name} bands did not divide into 7 passes: {:?}",
+                path.notes
+            );
+            for (i, p) in passes.iter().enumerate() {
+                let span = wound(p);
+                assert!(
+                    (span - want).abs() < 0.05,
+                    "pass {} of the {name} set winds {span:.3} rad at climb {climb}, not \
+                     {want:.3} - a band changed its cutting direction",
+                    i + 1
+                );
+            }
+        }
+        assert!(
+            mixed
+                .notes
+                .iter()
+                .any(|n| n.contains("winds against guide chain 1 - walked backwards")),
+            "the notes do not state the backward-wound middle guide: {:?}",
+            mixed.notes
+        );
+        assert!(
+            aligned.notes.iter().all(|n| !n.contains("walked backwards")),
+            "an aligned set states a reversal: {:?}",
+            aligned.notes
+        );
+    }
+}
+
+#[test]
+fn a_single_closed_ring_refuses_the_zero_area_lap_family() {
+    // The review's reproduction (PR #4018, second blocking item): a
+    // 72-sided R8 prism from Z0 to Z4, ONE closed ring at Z2, a 2 mm
+    // ball, a 0.9 mm stepover. The lap morph reads a positive angular
+    // width - one whole revolution - but a ring turned a lap sweeps
+    // the same circle again at every pass, and the family repeats
+    // one closed cut. The kernel refuses the degenerate guide by
+    // name, before a pass is generated.
+    let facets = prism(72, R_ROOT, 0.0, 4.0);
+    let hoop = ring(72, R_ROOT, 2.0);
+    let tool = ball(2.0);
+    let e = rotary_flow(
+        &[hoop],
+        &facets,
+        &stated_axis(),
+        &params(&tool, Some(0.9)),
+        &AxisControl::default(),
+    )
+    .unwrap_err();
+    let msg = format!("{e}");
+    assert!(msg.contains("guide chain 1"), "the refusal does not name the guide: {msg}");
+    assert!(msg.contains("sweeps no band area"), "{msg}");
+}
+
+#[test]
+fn a_single_open_ring_arc_refuses_the_zero_area_lap_family() {
+    // The same refusal for the OPEN arc of a ring: an arc at one
+    // axial station and one radius turns onto itself, and its lap
+    // family repeats one arc of the same circle - no band area
+    // either.
+    let facets = prism(72, R_ROOT, 0.0, 4.0);
+    let step = TAU / 72.0;
+    let arc: Vec<Point3> = (0..=36)
+        .map(|k| gp(R_ROOT, step * k as f64, 2.0))
+        .collect();
+    let tool = ball(2.0);
+    let e = rotary_flow(
+        &[arc],
+        &facets,
+        &stated_axis(),
+        &params(&tool, Some(0.9)),
+        &AxisControl::default(),
+    )
+    .unwrap_err();
+    let msg = format!("{e}");
+    assert!(msg.contains("sweeps no band area"), "{msg}");
 }

@@ -23,9 +23,13 @@
 //! never guessed past, and a chain wound against its pair is walked
 //! backwards (the feature layer reads a chain's direction from the
 //! mesh, never from the pick). The #2829 slice reads the chains as
-//! ONE ordered set: three or more machine one band per adjacent
-//! pair with the SHARED boundary chain cut once; a single chain
-//! machines the full revolution as its own next lap; and a set that
+//! ONE ordered set: the complete set is wound one way before any
+//! band is cut, and the same normalized guide bounds both adjacent
+//! bands (`rotary_flow_set::normalize_set`); three or more machine
+//! one band per adjacent pair with the SHARED boundary chain cut
+//! once; a single chain machines the full revolution as its own
+//! next lap, unless it turns at one station and one radius - a ring
+//! whose lap sweeps no band area, refused by name; and a set that
 //! cannot tile - chains that meet or cross, bands that double back -
 //! is refused by name (`rotary_flow_set`).
 //!
@@ -45,7 +49,9 @@ use super::retip::radial_at;
 use super::rotary_flow_emit::Emitter;
 use super::rotary_flow_guard::prove_path;
 use super::rotary_flow_pass::{boxes_of, flow_pass};
-use super::rotary_flow_set::{band_shape, lap_of, meet_or_cross, refuse_backtrack};
+use super::rotary_flow_set::{
+    band_shape, lap_of, meet_or_cross, normalize_set, refuse_backtrack, refuse_ring_lap,
+};
 use super::rotary_flow_unwrap::{self, Basis, Unwrapped, TAU};
 use super::tilt::AxisControl;
 
@@ -168,13 +174,32 @@ pub fn rotary_flow(
         tracks.push(rotary_flow_unwrap::unwrap(ax, &basis, &pts));
         clean.push(pts);
     }
+    // The #2829 set normalization, ONE pass over the complete
+    // ordered set: each guide's winding is resolved against its
+    // pair-neighbour before the first band is cut, and the SAME
+    // normalized guide bounds both adjacent bands. Never per band:
+    // a band-by-band copy leaves the next band's lower boundary at
+    // the original winding, and the cutting direction flips between
+    // bands without a change to climb (PR #4018).
+    let mut notes: Vec<String> = Vec::new();
+    for k in normalize_set(&mut tracks) {
+        notes.push(format!(
+            "Rotary Flow: guide chain {} winds against guide chain {} - walked backwards",
+            k + 1,
+            k
+        ));
+    }
     // The #2829 single-chain case: the chain's own next lap is the
     // second boundary, exact by construction - no arbitrary branch
     // to align away. The lap's two edges are the SAME world curve,
     // so the band closes on itself: the picked chain emits once, at
-    // the band's opening edge, and the closing pass is dropped.
+    // the band's opening edge, and the closing pass is dropped. A
+    // chain that turns at one axial station and one radius - a
+    // ring, closed or open - sweeps no band when turned a lap:
+    // refused by name before a pass is generated (PR #4018).
     let lap = clean.len() == 1;
     if lap {
+        refuse_ring_lap(&tracks[0], cell)?;
         tracks.push(lap_of(&tracks[0]));
     }
     // The passes: one band per adjacent chain pair, the shared
@@ -186,27 +211,12 @@ pub fn rotary_flow(
     };
     let tol_chord = ARC_FIT_TOL.min(p.tolerance);
     let mut emit = Emitter::new(ax, &basis, c, r, p.clearance, p.feed, p.plunge_feed);
-    let mut notes: Vec<String> = Vec::new();
     let mut opened = false;
     let mut prev_last: Option<Point3> = None;
     let mut prev_dir: Option<(f64, f64)> = None;
     for k in 0..tracks.len() - 1 {
         let a = &tracks[k];
         let mut b = tracks[k + 1].clone();
-        if rotary_flow_unwrap::opposite_sense(a, &b) {
-            // #2829: the feature layer reads a chain's direction from
-            // the mesh, never from the pick, so a chain wound against
-            // its pair is walked backwards - said in the notes, never
-            // refused as a pick the user cannot reverse. The raw
-            // pairing would twist the band a whole turn; the reversal
-            // untwists it.
-            b.reverse();
-            notes.push(format!(
-                "Rotary Flow: guide chain {} winds against guide chain {} - walked backwards",
-                k + 2,
-                k + 1
-            ));
-        }
         let shift = if lap && k == 0 {
             0.0
         } else {
