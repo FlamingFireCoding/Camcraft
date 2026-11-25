@@ -22,7 +22,10 @@
     "selection_bg": "#264A6E",
     "selection_stroke": "#4A86C2",
     "viewport": "#171A1F",
-    "ribbon_ink": "#FFFFFF"
+    "ribbon_ink": "#FFFFFF",
+    "handle_shade": "#000000AA",
+    "handle_text": "#FFFFFF",
+    "pick_rim": "#F5F0FA"
   },
   "geometry": {
     "radius_widget": 2,
