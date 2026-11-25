@@ -263,6 +263,8 @@ fn layout_page_setup_post() {
         "Setup post",
         &["This setup has its own post", "Load post (.cps)", "Skip pauses and homes", "This setup has its own post options"],
     );
+    // #3996: the Agie inspection section is Agie-only; this setup mounts no Agie machine.
+    assert!(h.query_by_label_contains("Agie nominal inspection").is_none(), "no Agie section on a non-Agie setup");
 }
 
 #[test]
