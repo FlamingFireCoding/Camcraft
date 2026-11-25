@@ -37,7 +37,17 @@
     "axis_x": "#F54646",
     "axis_y": "#3CDC50",
     "axis_z": "#5A8CFF",
-    "viewport_hover": "#FFD966"
+    "viewport_hover": "#FFD966",
+    "overlay_panel": "#000000C8",
+    "overlay_edge": "#FFFFFF3C",
+    "overlay_text": "#FFFFFF",
+    "overlay_track": "#FFFFFF28",
+    "drop_veil": "#0000008C",
+    "empty_hint": "#FFFFFF96",
+    "pick_halo": "#000000C8",
+    "plate_hole": "#E6BE5A",
+    "plate_dowel": "#78C8FF",
+    "gcode_line": "#FFAA3C"
   },
   "geometry": {
     "radius_widget": 2,

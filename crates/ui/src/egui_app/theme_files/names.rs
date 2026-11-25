@@ -49,6 +49,16 @@ pub const AXIS_X: &str = "axis_x";
 pub const AXIS_Y: &str = "axis_y";
 pub const AXIS_Z: &str = "axis_z";
 pub const VIEWPORT_HOVER: &str = "viewport_hover";
+pub const OVERLAY_PANEL: &str = "overlay_panel";
+pub const OVERLAY_EDGE: &str = "overlay_edge";
+pub const OVERLAY_TEXT: &str = "overlay_text";
+pub const OVERLAY_TRACK: &str = "overlay_track";
+pub const DROP_VEIL: &str = "drop_veil";
+pub const EMPTY_HINT: &str = "empty_hint";
+pub const PICK_HALO: &str = "pick_halo";
+pub const PLATE_HOLE: &str = "plate_hole";
+pub const PLATE_DOWEL: &str = "plate_dowel";
+pub const GCODE_LINE: &str = "gcode_line";
 pub const RIBBON_TAB_H: &str = "ribbon_tab_h";
 pub const RIBBON_CELL_TOP_GAP: &str = "ribbon_cell_top_gap";
 pub const RIBBON_CAPTION_GAP: &str = "ribbon_caption_gap";
@@ -89,6 +99,8 @@ pub const COLOR_NAMES: &[&str] = &[
     SELECTION_STROKE, VIEWPORT, RIBBON_INK, HANDLE_SHADE, HANDLE_TEXT, PICK_RIM,
     CUBE_EDGE, CUBE_LABEL, CUBE_GLYPH_ON, CUBE_GLYPH_OFF, VIEWPORT_HINT, MARKER_STEM,
     MARKER_RING, MARKER_DOT, AXIS_X, AXIS_Y, AXIS_Z, VIEWPORT_HOVER,
+    OVERLAY_PANEL, OVERLAY_EDGE, OVERLAY_TEXT, OVERLAY_TRACK, DROP_VEIL,
+    EMPTY_HINT, PICK_HALO, PLATE_HOLE, PLATE_DOWEL, GCODE_LINE,
 ];
 
 /// The geometry vocabulary (every override is clamped through the
