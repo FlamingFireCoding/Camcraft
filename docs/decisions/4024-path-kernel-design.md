@@ -14,6 +14,13 @@ kernel". This revision changes decision 5, the scope, the migration
 order, and adds the side-branch plan, the roadmap of all operation types
 and the fit check of the other families.
 
+Revision 3 (2026-11-25) takes in the maintainer's answers on revision 2.
+His words: "Yes, start". The crate name is `camcraft-pathkernel`. Bore and
+Thread are in phase 1. Turning moves to phase 3 ("Lathe earlier", then
+"Third"). The side-branch rule, the branch protection, the one heavy run
+before the switch-over, his approval of the switch-over PR and the five
+new issues are decided. No question is open.
+
 ### Plain summary
 
 This part has no code names. It says what a machinist sees.
@@ -67,9 +74,10 @@ the program uses it only through its front door.
   2D milling and 3D Pocket to the new planner at once.
 
 **All operation types, later.** The first replacement covers 2D milling
-and 3D Pocket only. All other operation types (3D finishing, multi-axis,
-drilling, turning, wire and sinker EDM, sheet cutting, probing) move to
-the same six steps in later phases, one family at a time. The first
+(Bore and the thread mill included) and 3D Pocket only. All other
+operation types move to the same six steps in later phases, one family at
+a time, in this order: sheet cutting, drilling and probing; then turning;
+then 3D finishing; then wire and sinker EDM; then multi-axis. The first
 replacement keeps the steps open for them: a pass does not have to lie
 flat, and the tool does not have to point straight down. Some parts of
 those families do not fit the six steps yet (tilting the tool, the
@@ -146,15 +154,16 @@ and a second change removes the old planners.
   (#3752, #3755, #3756 as separate patches); a step-by-step move of each
   operation to main.
 
-The open questions with a recommendation each are at the end of this
-record.
+The maintainer approved the design on 2026-11-25 ("Yes, start"). His
+answers are in "Answered by the maintainer" at the end of this record. No
+question is open.
 
 ### What was decided (technical)
 
 #### Crate and files
 
-The kernel is its own crate (the maintainer, 2026-11-25). Recommended
-name `camcraft-pathkernel` in `crates/pathkernel/`; the name, the
+The kernel is its own crate (the maintainer, 2026-11-25). Its name is
+`camcraft-pathkernel` in `crates/pathkernel/`; the name, the
 dependencies and the gate entries are in "The new crate" below. The
 first plan, a folder `crates/motion/src/path_kernel/`, is replaced. The
 name is not "kernel" alone, because "kernel" already means the geometry
@@ -549,11 +558,11 @@ then it is worked as a K4 step on top of the K4 move.
 | Face | stock top (Inside) | Rows | None | direction | link (hop over a hole) | air lead | `face.rs`, `face_entry.rs` | #3759 |
 | 3D Pocket levels | the level slice (Inside) | as the strategy, per level | as the strategy | start side | link | entry rule | `machining3d/level_side.rs`, `hsm.rs` | #3754 (#3616), #3760 (P7) |
 
-| V-Carve | inside the selection | Medial, depth from the width (a curve with a depth per point) | None | direction | link | entry (the V tip starts at zero depth: proof `IntoMaterial`) | V-Carve generator | phase 1 sub-issue, filed after approval |
-| Slot | the slot | Rows (one serpentine pass) or Medial | None | direction | link | entry rule | `slots.rs` | phase 1 sub-issue, filed after approval |
-| Trochoidal slot | the slot | Medial | Trochoidal | direction | link | entry rule (own bore helix today) | `trochoid_slot.rs` | K3, sub-issue filed after approval |
-| Slot Undercut | the undercut band | Trace of the slot wall at the undercut depth | None | direction | link | air entry at an open end of the slot | Slot Undercut generator | phase 1 sub-issue, filed after approval |
-| Thread (thread mill) | the bore wall | Helix (a curve with a depth per point) | None | climb or conventional | link | arc lead from the bore centre (cleared column) | `thread_ride.rs` | phase 1 sub-issue, filed after approval |
+| V-Carve | inside the selection | Medial, depth from the width (a curve with a depth per point) | None | direction | link | entry (the V tip starts at zero depth: proof `IntoMaterial`) | V-Carve generator | #4034 |
+| Slot | the slot | Rows (one serpentine pass) or Medial | None | direction | link | entry rule | `slots.rs` | #4035 |
+| Trochoidal slot | the slot | Medial | Trochoidal | direction | link | entry rule (own bore helix today) | `trochoid_slot.rs` | K3, #4036 |
+| Slot Undercut | the undercut band | Trace of the slot wall at the undercut depth | None | direction | link | air entry at an open end of the slot | Slot Undercut generator | #4037 |
+| Thread (thread mill) | the bore wall | Helix (a curve with a depth per point) | None | climb or conventional | link | arc lead from the bore centre (cleared column) | `thread_ride.rs` | #4038 |
 
 Each "Step" is a sub-PR on the side branch (see "Side-branch plan").
 
@@ -604,8 +613,8 @@ K6 the recipes, one sub-PR per group, each behind the switch:
          #3752 Pocket, #3753 rest and Zigzag, #3755 Circular, #3756 Bore,
          #3757 Contour, #3758 Trace/Engrave/Chamfer, #3759 Face and the Adaptive air entry,
          #3754 Adaptive fallback and 3D Pocket levels, #3760 (3D Pocket part),
-         and the five kinds that have no issue yet (V-Carve, Slot, Trochoidal slot,
-         Slot Undercut, Thread)
+         #4034 V-Carve, #4035 Slot, #4036 Trochoidal slot, #4037 Slot Undercut,
+         #4038 Thread
 K7 #4027 the law suite grows with each step from K1 on
 P  the switch-over proof (below)
 SW the switch-over PR: side branch -> main, default new; the maintainer approves
@@ -625,7 +634,8 @@ the `issue/` branches, and the name does not use the bare word "kernel"
 as a prefix. The coordinator (the merging session) creates it after this
 record merges, from the merge commit of PR #4030 on `main`, and pushes it.
 It is never deleted, never rebased and never force-pushed. The maintainer
-is asked to protect it on GitHub like `main` (open question 3).
+protects it on GitHub like `main` (decided). A short "Side branch" rule
+goes into AGENTS.md before the branch is made (decided).
 
 **Sub-PRs.** One issue, one sub-PR.
 - A worker makes its worktree from `origin/side/path-kernel`, on a branch
@@ -732,13 +742,11 @@ it, a second PR on `main` removes the old planners and the switch.
 The maintainer, 2026-11-25: "The kernel should be its own crate." This
 replaces the approved folder inside `camcraft-motion`.
 
-**Name.** Recommended: `camcraft-pathkernel`, in `crates/pathkernel/`. It
+**Name.** Decided: `camcraft-pathkernel`, in `crates/pathkernel/`. It
 says "path kernel", the name of #4023, and xtask maps a directory `d` to
-the package `camcraft-d` (`xtask/src/plan.rs:63-65`). Alternatives:
-`camcraft-path` (short, but "path" also means a file path and the
-toolpath of `camcraft-cl`), `camcraft-motionplan` (clear, but it reads as
-a part of `camcraft-motion`). The bare word "kernel" is not used:
-`camcraft-kernel` is the geometry kernel and a heavy lane.
+the package `camcraft-d` (`xtask/src/plan.rs:63-65`). The bare word
+"kernel" is not used: `camcraft-kernel` is the geometry kernel and a heavy
+lane. The dropped names are in "Dropped".
 
 **What goes into the crate.**
 - The stage types and functions of this record: `Recipe`, `WorkPlane`,
@@ -781,7 +789,8 @@ camcraft-geometry  <-  camcraft-pathkernel  <-  camcraft-motion  <-  camcraft-ap
 - The crate depends on `camcraft-geometry` only. It does not depend on
   `cl`, `tools` or `sim`. The tool shape that a stage needs (radius,
   corner radius, can it plunge, flute length) is fewer than five values,
-  so motion passes it in as a value (`ToolDisc`). The in-process stock is
+  so motion passes it in as a value (`ToolShape`, with one variant
+  `Disc` in phase 1; see "What phase 1 keeps open"). The in-process stock is
   a trait (`StockRead`) that motion implements, so there is no edge to
   `sim`.
 - `camcraft-motion` depends on the crate. The crate never imports motion,
@@ -832,21 +841,26 @@ implementations in a `Recipe`. The crate depends on none of them.
 
 The maintainer (#4023): "At one point all 40+ motion types should move to
 the new kernel". There are 49 kinds. Each is in one phase. Phase 1 is the
-first replacement. The later phases are ordered by what they need from
-the stages (the dependency) and by the risk to posted programs. This
-record does not design the later phases, and no issue is filed for them
-before the maintainer approves this revision.
+first replacement. The order of the later phases is the maintainer's
+("Lathe earlier", then "Third"): turning is phase 3. This record does not
+design the later phases, and no issue is filed for them now.
 
 | Phase | Kinds | Count | Needs from the stages | Risk |
 |---|---|---|---|---|
 | 1 | Face, 2D Contour, 2D Pocket, 2D Adaptive, 2D Offset, Engrave, V-Carve, 2D Chamfer, Circular, Slot, Trochoidal slot, Trace, Slot Undercut, Thread, Bore, 3D Pocket | 16 | the six stages, the work plane (11 of them have the 3+2 `tilt` today), curves with a depth per point | high: most programs |
 | 2 | Plasma Profile, Waterjet Profile, Drill, Probe | 4 | 2D profiles with a kerf (as Contour); a pierce entry; a cycle as the entry and exit; points as the guide | low: few moves, simple links |
-| 3 | 3D Finish, Deburr | 2 | a guide on a surface; a link proof against a surface | medium |
-| 4 | Wire Contour, Sinker Burn, Sinker Side Burn | 3 | a guide pair (top and bottom wire guide); an orbit guide of an electrode | medium: special machines |
-| 5 | 5-Axis Contour, 5-Axis Parallel, Swarf, Advanced Swarf, Rotary Contour, Rotary Parallel, Rotary Offset, Multi-Axis Rough, 5-Axis Flow, Multi-Axis Contour, Multi-Axis Deburr, Rotary Flow | 12 | tool axis control; holder collision for each orientation; a rotary (wrapped) work plane | high: collisions |
-| 6 | Facing, Profile Rough, Profile Finish, Groove Rough, Groove Finish, Parting, Threading, Chamfering, Taper Turning, Multi-Pass Turning, Form Turning, Boring (turning) | 12 | the Z-X plane; an insert, not a disc; turning cycles | high: a different machine and tool model |
+| 3 | Facing, Profile Rough, Profile Finish, Groove Rough, Groove Finish, Parting, Threading, Chamfering, Taper Turning, Multi-Pass Turning, Form Turning, Boring (turning) | 12 | the Z-X work plane; a tool shape that is an insert, not a disc; turning cycles | high: a different machine and tool model |
+| 4 | 3D Finish, Deburr | 2 | a guide on a surface; a link proof against a surface | medium |
+| 5 | Wire Contour, Sinker Burn, Sinker Side Burn | 3 | a guide pair (top and bottom wire guide); an orbit guide of an electrode | medium: special machines |
+| 6 | 5-Axis Contour, 5-Axis Parallel, Swarf, Advanced Swarf, Rotary Contour, Rotary Parallel, Rotary Offset, Multi-Axis Rough, 5-Axis Flow, Multi-Axis Contour, Multi-Axis Deburr, Rotary Flow | 12 | tool axis control; holder collision for each orientation; a rotary (wrapped) work plane | high: collisions |
 
-Total: 16 + 4 + 2 + 3 + 12 + 12 = 49.
+Total: 16 + 4 + 12 + 2 + 3 + 12 = 49.
+
+Phase 1, exactly (16 kinds): Face, 2D Contour, 2D Pocket, 2D Adaptive, 2D
+Offset, Engrave, V-Carve, 2D Chamfer, Circular, Slot, Trochoidal slot,
+Trace, Slot Undercut, Thread, Bore, 3D Pocket. The seed table puts Thread
+in the 2D milling section and Bore in the Drilling section; the two were
+already in the 16 of revision 2.
 
 ### Fit check of the other families
 
@@ -870,13 +884,16 @@ orbit of a sinker electrode.
 
 Phase 1 must not close these off. It does not design them.
 
-1. **A work plane in each recipe.** The stages plan in the frame of
-   `Recipe.plane`. Phase 1 needs it already: 11 of its kinds have the 3+2
-   `tilt` today. A later rotary phase adds a wrapped plane as a new kind
-   of `WorkPlane`.
+1. **A work plane in each recipe, from the start.** The stages plan in
+   the frame of `Recipe.plane`. Phase 1 needs it already: 11 of its kinds
+   have the 3+2 `tilt` today. `WorkPlane` is `#[non_exhaustive]`, and no
+   stage reads "XY" or "+Z" directly, so that turning (phase 3) adds the
+   lathe's Z-X plane and the multi-axis phase adds a wrapped plane as new
+   kinds of `WorkPlane`, with no change to the stages.
 2. **Curves with a depth per point.** A guide curve has a coordinate along
    the plane normal for each point. Phase 1 needs it already (V-Carve,
-   Thread). A surface guide of phase 3 then fits the same curve type.
+   Thread). A turning profile (phase 3) and a surface guide (phase 4)
+   then fit the same curve type.
 3. **A tool-axis slot.** `Recipe.axis: AxisControl` with only `Normal` in
    phase 1, and an optional axis vector on each cut (none = the plane
    normal). The enum is `#[non_exhaustive]`. A lift is defined as a move
@@ -892,7 +909,12 @@ Phase 1 must not close these off. It does not design them.
 7. **The stock as a trait.** Load control and the link proof read the
    stock through `StockRead`, so a 3D stock model can come later with no
    edge from the crate to `sim`.
-8. **Laws in tool terms, not plane terms.** The K7 checks state a lift,
+8. **A tool shape that is not only a disc.** The stages read the tool
+   through `ToolShape` (`#[non_exhaustive]`, only `Disc` in phase 1), and
+   stage 1 computes the cutter-centre area from that shape, not from a
+   radius alone. Turning (phase 3) then adds an insert with a nose radius
+   and its angles.
+9. **Laws in tool terms, not plane terms.** The K7 checks state a lift,
    an entry and an engagement along the tool axis and in the work plane,
    so that the same checks hold for the later phases.
 
@@ -914,6 +936,10 @@ Phase 1 must not close these off. It does not design them.
 
 - The kernel as a folder in `camcraft-motion` (approved first, replaced
   by the maintainer's "own crate").
+- The crate names `camcraft-path` ("path" also means a file path and the
+  toolpath of `camcraft-cl`) and `camcraft-motionplan` (it reads as a part
+  of `camcraft-motion`).
+- Turning as the last phase: the maintainer moved it to phase 3.
 - Load control as its own stage with its own entries (trochoidal as a
   strategy): #4023 says it changes a guide curve; a second entry rule is
   the defect class.
@@ -942,45 +968,40 @@ checks and the recipes, not the operations' pages. A later phase adds
 variants to the `#[non_exhaustive]` enums and implements the stage traits;
 phase 1 code does not change for it.
 
-### Decided by the maintainer (2026-11-25, PR #4030)
+### Answered by the maintainer, 2026-11-25
 
-1. The Outside start shape of #3934 (decision 2): approved.
-2. Inside and Outside cut the same passes; only the order, the start
-   point and the direction change: approved.
-3. Trochoidal is load control. Offset rings and Adaptive stay two
-   choices: approved.
+Revision 1 (PR #4030, question dialog):
+1. The Outside start shape of #3934 (decision 2): yes.
+2. Inside and Outside cut the same passes; only the order, the start point
+   and the direction change: yes.
+3. Trochoidal is load control; Offset rings and Adaptive stay two
+   choices: yes.
 4. A strategy with load control plans a cut above the limit again; each
-   cut that stays above the limit has a status line message: approved.
-5. No new material side field on Pocket and 2D Offset: approved.
-6. The exit is part of the entry stage: approved. The folder layout was
-   approved, then replaced: "The kernel should be its own crate."
-7. Early P1 fixes: no. "Replace the whole motion kernel in one go." Scope:
-   2D milling and 3D Pocket, on a side branch with one switch.
-8. "At one point all 40+ motion types should move to the new kernel."
+   cut that stays above the limit has a status line message: yes.
+5. No new material side field on Pocket and 2D Offset: yes.
+6. The exit is part of the entry stage: yes. The folder layout: yes, then
+   replaced: "The kernel should be its own crate."
+7. Early P1 fixes on the old code: no. "Replace the whole motion kernel in
+   one go." Scope: 2D milling and 3D Pocket, on a side branch with one
+   switch.
+8. "At one point all 40+ motion types should move to the new kernel".
+
+Revision 2:
+1. The crate name is `camcraft-pathkernel`.
+2. Bore and Thread are in phase 1: yes.
+3. The phase order: "Lathe earlier", then "Third". Phase 2 is sheet
+   cutting, Drill and Probe; phase 3 is turning; then 3D finish; then wire
+   and sinker; then multi-axis.
+4. One issue each for V-Carve, Slot, Trochoidal slot, Slot Undercut and
+   Thread: yes.
+5. A "Side branch" rule goes into AGENTS.md first, and `side/path-kernel`
+   is protected: yes.
+6. The heavy `motion` and `app` steps run one time on the side branch
+   before the switch-over: yes.
+7. The maintainer reads the list of changed programs and approves the
+   switch-over PR himself: yes.
+8. The design is approved: "Yes, start".
 
 ### Open questions for the maintainer
 
-1. **Crate name.** `camcraft-pathkernel` (recommended), `camcraft-path` or
-   `camcraft-motionplan`. Recommended: `camcraft-pathkernel`.
-2. **A process rule for the side branch.** Sub-PRs start from
-   `side/path-kernel`, not from `main`, and end with `Refs #N`. AGENTS.md
-   says "Start from the latest main". Recommended: one small process PR
-   adds a "Side branch" rule before the branch is made.
-3. **Protect the side branch.** No force-push and no deletion on
-   `side/path-kernel`, as on `main`. Recommended: yes.
-4. **Heavy steps before the switch-over.** AGENTS.md runs the full heavy
-   lanes only at a cut. The proof runs the `motion` and `app` heavy steps
-   once on the side branch head. Recommended: yes, one time, before the
-   switch-over PR.
-5. **Who accepts each program difference.** The switch-over PR lists each
-   catalog program that changes, with its reason. Recommended: you read
-   that list and approve the PR yourself.
-6. **Bore and Thread in phase 1.** The seed table puts Bore under
-   Drilling; both are milled with rings or a helix. Recommended: yes, in
-   phase 1.
-7. **Issues for five phase-1 kinds.** V-Carve, Slot, Trochoidal slot, Slot
-   Undercut and Thread have no issue. Recommended: file one issue each
-   after you approve this revision.
-8. **The order of the later phases.** Sheet and holes, then 3D finishing,
-   then wire and sinker, then multi-axis, then turning. Recommended: yes;
-   each phase gets its own design record before code.
+None. Each question of revisions 1 and 2 is answered above.
