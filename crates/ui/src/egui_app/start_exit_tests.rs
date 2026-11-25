@@ -141,6 +141,43 @@ fn switching_the_exit_point_off_clears_it() {
 }
 
 #[test]
+fn the_slot_lead_tab_has_both_point_groups_and_takes_a_start() {
+    // #3325: the Slot picks an end. Its Lead tab has the two groups, off,
+    // with no "Not taken" line; the switch seeds the draft, Apply commits.
+    let mut state = opened(crate::operations::retype(&face(), kind("Slot")));
+    state.op_tab = SEC_LEADS;
+    let mut harness = page(state);
+    harness.run();
+    for (g, rows) in [(START_GROUP, ["Start X", "Start Y"]), (EXIT_GROUP, ["Exit X", "Exit Y"])] {
+        assert_eq!(harness.query_all_by_label(g).count(), 1, "the {g} group is on the tab one time");
+        let sw = on_row(&harness, g, Role::CheckBox);
+        assert_eq!(sw.accesskit_node().toggled(), Some(Toggled::False), "{g} is off on a new slot");
+        for r in rows {
+            assert!(harness.query_by_label(r).is_none(), "{r} hides while {g} is off");
+        }
+    }
+    assert_eq!(harness.query_all_by_label_contains(super::NOT_TAKEN).count(), 0, "the Slot takes both picks");
+    assert_eq!(draft(&harness), (None, None), "drawing the tab writes no point");
+
+    on_row(&harness, START_GROUP, Role::CheckBox).click();
+    harness.run();
+    assert!(same(draft(&harness).0, 0.0, 0.0), "switching on seeds the origin: {:?}", draft(&harness));
+    assert!(harness.query_by_label("Start X").is_some() && harness.query_by_label("Start Y").is_some());
+    assert!(harness.query_by_label("Pick start").is_some(), "the viewport pick is offered");
+    assert!(
+        harness.query_by_label_contains("refused by name - the start never moves").is_some(),
+        "the safety consequence is said under the rows"
+    );
+    harness.get_by_label("Apply").click();
+    harness.run();
+    harness.state_mut().drain_actions();
+    assert!(same(live(harness.state()).0, 0.0, 0.0), "Apply committed it: {:?}", live(harness.state()));
+    let st = harness.state_mut();
+    assert!(st.history.undo(&st.world));
+    assert_eq!(live(harness.state()), (None, None), "Ctrl+Z puts the automatic start back");
+}
+
+#[test]
 fn kinds_without_a_picked_start_say_so_by_name() {
     // #3324: the maintainer's 2D Offset, a lead-tab kind (2D Pocket) and
     // a Geometry-only kind (Face): each draws both groups, no switch and
