@@ -6,12 +6,18 @@
 //!
 //! Gate map (#3324): covers app::operation (kinds pick capability,
 //! path_picks accessor, sane), app::mcp (tools schema, job kind list).
+//! Gate map (#3331): covers app::operation (generate: the Facing, Profile
+//! Rough and Profile Finish picks), app::commands (EditOperationParams).
 
 use camcraft_app::mcp::Server;
 use camcraft_app::geo2d::Point2;
 use camcraft_app::operation::{Carried, Height, HeightReference, KindInfo, OpParams, OpType, PickCapability};
 use camcraft_app::path_picks::PickRole;
 use serde_json::{json, Value};
+
+// #3331: the turning kinds' picks, in the lathe (Z, X) plane.
+#[path = "start_exit_shared/turning.rs"]
+mod turning;
 
 fn call(s: &mut Server, name: &str, args: Value) -> (bool, Value) {
     let msg = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": name, "arguments": args } });
@@ -55,10 +61,14 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
         match k.ty {
             OpType::Contour => assert_eq!(cap, PickCapability::Ring, "the contour takes a ring pick"),
             OpType::WireContour => assert_eq!(cap, PickCapability::Threading, "the wire takes its threading point"),
+            // #3331 slice 1: a point in the lathe (Z, X) plane.
+            OpType::Facing | OpType::ProfileRough | OpType::ProfileFinish => {
+                assert_eq!(cap, PickCapability::Meridian, "{} takes a lathe-plane pick", k.label)
+            }
             // #3325: the Slot's slice of #1448 shipped.
             OpType::Slot => assert_eq!(cap, PickCapability::Ends, "the slot takes a pick at one of its ends"),
             _ => {
-                let PickCapability::NotTaken(why) = cap else { panic!("{}: only the contour, the slot and the wire take a pick", k.label) };
+                let PickCapability::NotTaken(why) = cap else { panic!("{}: this kind takes no pick", k.label) };
                 assert!(!why.is_empty(), "{}: the reason is named", k.label);
             }
         }
@@ -66,6 +76,7 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
     assert!(PickCapability::Ring.takes(PickRole::Start) && PickCapability::Ring.takes(PickRole::Exit));
     // #3332: the wire takes its exit too.
     assert!(PickCapability::Threading.takes(PickRole::Start) && PickCapability::Threading.takes(PickRole::Exit));
+    assert!(PickCapability::Meridian.takes(PickRole::Start) && PickCapability::Meridian.takes(PickRole::Exit));
     let probe = KindInfo::ALL.iter().find(|k| k.ty == OpType::Probe).map(KindInfo::pick);
     assert!(matches!(probe, Some(PickCapability::NotTaken(w)) if w.contains("cuts no path")), "{probe:?}");
 }
