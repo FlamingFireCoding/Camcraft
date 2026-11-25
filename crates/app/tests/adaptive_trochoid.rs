@@ -437,3 +437,44 @@ fn merged_arc_and_trochoidal_parameters_round_trip_and_keep_the_arc_refusal() {
     let err = operation::generate(&world, &op, "A1").map(|_| ()).expect_err("generation refuses arc turns").to_string();
     assert!(err.contains("arc turns") && err.contains("Trochoidal"), "{err}");
 }
+
+/// #3849: an over-limit clean-up engagement note is promoted to an advisory
+/// `Warning::EngagementExceeded` that never holds the post, and a clean-up
+/// cut under a tighter custom engagement limit (`60 deg`) steps down and posts.
+#[test]
+fn cleanup_engagement_warning_is_advisory_and_custom_limit_generates_clean() {
+    use camcraft_app::cl::{Move, Toolpath};
+    use camcraft_app::geometry::Point3;
+    use camcraft_app::machining2d::cleanup_engagement_note;
+    use camcraft_app::verify::Warning;
+
+    let synth = Toolpath {
+        moves: vec![
+            Move::new(MoveKind::Rapid, Point3::new(0.0, 0.0, 10.0), Point3::new(0.0, 0.0, 2.0), None),
+            Move::new(MoveKind::Feed, Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 0.0), Some(800.0)),
+        ],
+        notes: vec![cleanup_engagement_note(102.5, Point3::new(5.0, -3.0, 0.0), 90.0)],
+        ..Default::default()
+    };
+    let w = operation::cleanup_engagement_warning(&synth).expect("warning promoted from note");
+    assert_eq!(w, Warning::EngagementExceeded { at: 1, measured_deg: 102.5, limit_deg: 90.0 });
+    assert!(!w.blocks_post(), "tool-load warning must remain advisory");
+    let text = w.to_string();
+    assert!(text.contains("102.5 deg") && text.contains("90.0 deg") && text.contains("move 1"), "{text}");
+
+    let (world, mut h) = job_mesh(
+        block_with_pocket(40.0, 30.0, &rounded_rect(15.0, 12.0, 0.0, 1), 17.0, 20.0),
+        90.0,
+        70.0,
+        AdaptiveMethod::Trochoidal,
+    );
+    let mut custom = adaptive(AdaptiveMethod::Trochoidal);
+    if let OpParams::Adaptive2D { troch, .. } = &mut custom {
+        troch.max_engagement = 60.0;
+    }
+    h.execute(&world, EditOperationParams::new(&world, "A1", custom).expect("edit 60 deg"));
+    h.execute(&world, GenerateOperation::new(&world, "A1").expect("generates with 60 deg limit"));
+    let e = model::find_by_name(&world, "A1").expect("op");
+    let c = model::toolpath_of(&world, &e).expect("cached");
+    assert!(c.warnings.iter().all(|w| !w.blocks_post()), "advisory only: {:?}", c.warnings);
+}

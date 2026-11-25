@@ -12,18 +12,65 @@ use super::adaptive::corner_radius;
 use super::adaptive_troch::AdaptiveTrochParams;
 use super::face::GenError;
 use super::pocket::PocketParams;
+use super::trochoid_level::emit_level;
+use super::trochoid_slot::LaneLayout;
 
 const MIN_REMOVED_AREA: f64 = 0.02;
 const UNCUT_SKIN_ERODE: f64 = 0.025;
 const MAX_PEEL_STEPS: usize = 64;
+const CLEANUP_LADDER: &[f64] = &[1.0, 0.75, 0.5, 0.35, 0.25];
+
+/// Note prefix emitted when trochoidal clean-up passes exceed the engagement limit (#3849).
+pub const CLEANUP_ENGAGEMENT_NOTE_PREFIX: &str = "2D Adaptive (Trochoidal): clean-up engagement measured ";
+const CLEANUP_ENGAGEMENT_NOTE_PREFIX_3D: &str = "3D Adaptive (Trochoidal): clean-up engagement measured ";
+
+/// Named note for a clean-up pass exceeding `limit_deg` (#3849).
+#[must_use]
+pub fn cleanup_engagement_note(measured_deg: f64, at: Point3, limit_deg: f64) -> String {
+    format!(
+        "{CLEANUP_ENGAGEMENT_NOTE_PREFIX}{measured_deg:.1} deg at ({:.3}, {:.3}), above the {limit_deg:.1} deg limit",
+        at.x, at.y
+    )
+}
+
+/// Extract `(measured_deg, limit_deg)` when any note reports an over-limit clean-up pass (#3849).
+#[must_use]
+pub fn cleanup_engagement_exceeded(notes: &[String]) -> Option<(f64, f64)> {
+    for note in notes {
+        let rest = note
+            .strip_prefix(CLEANUP_ENGAGEMENT_NOTE_PREFIX)
+            .or_else(|| note.strip_prefix(CLEANUP_ENGAGEMENT_NOTE_PREFIX_3D));
+        let Some(rest) = rest else { continue };
+        let Some((m_str, tail)) = rest.split_once(" deg") else { continue };
+        let Some((_, l_tail)) = tail.split_once("above the ") else { continue };
+        let Some((l_str, _)) = l_tail.split_once(" deg limit") else { continue };
+        if let (Ok(measured), Ok(limit)) = (m_str.trim().parse::<f64>(), l_str.trim().parse::<f64>())
+            && measured.is_finite()
+            && limit.is_finite()
+        {
+            return Some((measured, limit));
+        }
+    }
+    None
+}
 
 /// One clean-up chain at a level: plunge into cut air at `pts[0]` and feed along `pts`.
 pub(super) struct CleanChain {
     pub(super) pts: Vec<Point2>,
 }
 
+/// Checked clean-up plan for a level: chains, swept region, and engagement status.
+pub(super) struct CleanPlan {
+    pub(super) chains: Vec<CleanChain>,
+    pub(super) cleared: Region,
+    pub(super) max_deg: f64,
+    pub(super) step_reduced: bool,
+    pub(super) exceeded: Option<(f64, Point3)>,
+}
+
 /// Peel outward from `cleared.offset(-(r + 0.02))` inside `center` up to `step <= 0.6*r`
 /// per ring, keeping only chains that remove real uncut stock inside `reach`.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(super) fn plan_cleanup(
     center: &Region,
@@ -34,6 +81,21 @@ pub(super) fn plan_cleanup(
     optimal_load: f64,
     climb: bool,
     t: &AdaptiveTrochParams,
+) -> Result<(Vec<CleanChain>, Region), GenError> {
+    plan_cleanup_step(center, reach, used_center, cleared, d, optimal_load, climb, t, 1.0)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn plan_cleanup_step(
+    center: &Region,
+    reach: &Region,
+    used_center: &Region,
+    cleared: &Region,
+    d: f64,
+    optimal_load: f64,
+    climb: bool,
+    t: &AdaptiveTrochParams,
+    step_scale: f64,
 ) -> Result<(Vec<CleanChain>, Region), GenError> {
     let r = 0.5 * d;
     let raw_center = center.offset(-0.5e-3)?;
@@ -57,14 +119,15 @@ pub(super) fn plan_cleanup(
     let safe_center = round_acute_corners(&raw_center, rho_acute, 0.20 * r)?.union(&air0)?.intersect(&raw_center)?;
     let mut prev_safe = air0.clone();
     // 0.18*r peel steps with 0.20*r 90-deg rounding hold <= 90 deg even into tight neck corners.
-    let step = load_step(d, optimal_load).min(0.18 * r);
+    let base_step = load_step(d, optimal_load).min(0.18 * r);
     // A custom contact-angle limit must also bound the cleanup front.
     let angle_scale = if t.max_engagement < 90.0 { 1.0 - t.max_engagement.to_radians().cos() } else { 1.0 };
     let engagement_step = 0.18 * r * angle_scale;
-    let step = step.min(engagement_step);
+    let step = (base_step.min(engagement_step) * step_scale).max(1e-4);
+    let max_peel_steps = ((MAX_PEEL_STEPS as f64) / step_scale).ceil().max(1.0) as usize;
     let mut chains = Vec::new();
 
-    for k in 1..=MAX_PEEL_STEPS {
+    for k in 1..=max_peel_steps {
         if uncut.offset(-UNCUT_SKIN_ERODE)?.is_empty() || safe_center.difference(&prev_safe)?.area() < 0.02 {
             break;
         }
@@ -104,6 +167,108 @@ pub(super) fn plan_cleanup(
         prev_safe = a_k;
     }
     Ok((chains, cur_cleared))
+}
+
+/// Plan clean-up passes and measure their radial engagement against a single-level
+/// post-lane stock model. If clean-up exceeds `t.max_engagement`, steps down along
+/// [`CLEANUP_LADDER`] and, if still above the limit, records `exceeded` so callers
+/// surface a named diagnostic rather than overloading silently (#3849).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn plan_cleanup_checked(
+    region: &Region,
+    center: &Region,
+    reach: &Region,
+    layouts: &[LaneLayout],
+    used_center: &Region,
+    cleared: &Region,
+    p: &PocketParams,
+    t: &AdaptiveTrochParams,
+) -> Result<CleanPlan, GenError> {
+    let mut base = Some(plan_cleanup_step(
+        center,
+        reach,
+        used_center,
+        cleared,
+        p.tool_diameter,
+        p.optimal_load,
+        p.climb,
+        t,
+        1.0,
+    )?);
+    if base.as_ref().is_some_and(|(chains, _)| chains.is_empty()) {
+        let (chains, cleared) = base.take().expect("checked non-empty");
+        return Ok(CleanPlan { chains, cleared, max_deg: 0.0, step_reduced: false, exceeded: None });
+    }
+
+    let spec = crate::quality::QualitySpec::new(p.tool_diameter);
+    let one_p = PocketParams { top_z: 1.0, bottom_z: 0.0, stepdown: 1.0, clearance_z: 3.0, retract_z: Some(2.0), ..*p };
+    let mut lane_bld = PathBuilder::approached(Point3::new(
+        layouts.first().map_or(0.0, |l| l.entry.x),
+        layouts.first().map_or(0.0, |l| l.entry.y),
+        3.0,
+    ));
+    if !layouts.is_empty() {
+        let p3 = |q: Point2, zz: f64| Point3::new(lattice(q.x), lattice(q.y), lattice(zz));
+        let hop = 2.0;
+        let above = 1.0;
+        let from = (above + crate::approach::DEFAULT_PLUNGE_HEIGHT).min(hop).max(above);
+        for (li, lay) in layouts.iter().enumerate() {
+            if li > 0 {
+                let at = lane_bld.at();
+                if (at.z - hop).abs() > 1e-6 {
+                    lane_bld.push(MoveKind::Rapid, Point3::new(at.x, at.y, hop), None);
+                }
+                lane_bld.push(MoveKind::Rapid, p3(lay.entry, hop), None);
+            }
+            lane_bld.push(MoveKind::Rapid, p3(lay.entry, from), None);
+            emit_level(&mut lane_bld, &lay.lay, &lay.tp, 0.0, from, true, lay.open)?;
+        }
+        let at = lane_bld.at();
+        lane_bld.push(MoveKind::Rapid, Point3::new(at.x, at.y, hop), None);
+    }
+    let lane_path = lane_bld.finish();
+    let make_post_lane_stock = || -> Result<crate::stock_sim::Stock, GenError> {
+        let mut stock = crate::quality::stock_for(region, 1.0, 0.0, p.tool_diameter, &spec)
+            .map_err(|e| GenError::Invalid(format!("2D Adaptive (Trochoidal): measuring stock: {e}")))?;
+        crate::quality::measure(&lane_path, &mut stock, &spec)
+            .map_err(|e| GenError::Invalid(format!("2D Adaptive (Trochoidal): measuring stock: {e}")))?;
+        Ok(stock)
+    };
+
+    let mut best: Option<(Vec<CleanChain>, Region, f64, Point3, bool)> = None;
+    for (idx, &scale) in CLEANUP_LADDER.iter().enumerate() {
+        let (chains, cur_cleared) = if idx == 0 {
+            base.take().expect("baseline cleanup")
+        } else {
+            plan_cleanup_step(center, reach, used_center, cleared, p.tool_diameter, p.optimal_load, p.climb, t, scale)?
+        };
+        if chains.is_empty() {
+            continue;
+        }
+        let start_xy = chains[0].pts[0];
+        let mut cb = PathBuilder::approached(Point3::new(lattice(start_xy.x), lattice(start_xy.y), 2.0));
+        emit_cleanup(&mut cb, &chains, &one_p, 0.0, 1.0, 2.0);
+        let clean_path = cb.finish();
+        let mut stock = make_post_lane_stock()?;
+        let q = crate::quality::measure(&clean_path, &mut stock, &spec)
+            .map_err(|e| GenError::Invalid(format!("2D Adaptive (Trochoidal): measuring clean-up stock: {e}")))?;
+        let reduced = idx > 0;
+        if q.max_deg <= t.max_engagement {
+            return Ok(CleanPlan {
+                chains,
+                cleared: cur_cleared,
+                max_deg: q.max_deg,
+                step_reduced: reduced,
+                exceeded: None,
+            });
+        }
+        if best.as_ref().is_none_or(|(_, _, d, _, _)| q.max_deg < *d) {
+            best = Some((chains, cur_cleared, q.max_deg, q.max_at, reduced));
+        }
+    }
+
+    let (chains, cleared, max_deg, max_at, step_reduced) = best.expect("at least baseline candidate existed");
+    Ok(CleanPlan { chains, cleared, max_deg, step_reduced, exceeded: Some((max_deg, max_at)) })
 }
 
 /// Emit `chains` at level `z`: rapid over cut stock (`near >= above`) to `pts[0]`,
