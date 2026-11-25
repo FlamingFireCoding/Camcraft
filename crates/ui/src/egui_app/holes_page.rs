@@ -28,7 +28,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             holes,
             cross,
             break_through,
-            break_through_from,
+            break_through_from, picks: _,
         } => {
             if tab == SEC_GEO {
                 field(ui, "Holes");
@@ -126,6 +126,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             break_through,
             pass_start,
             entry,
+            picks: _,
         } => {
             if tab == SEC_LEADS {
                 // Each hole opens with the entry the user chose (plunge by
@@ -196,7 +197,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             hand,
             external,
             passes,
-            break_through,
+            break_through, picks: _,
         } => {
             if tab == SEC_GEO {
                 // #985: holes, or bosses for an external thread.

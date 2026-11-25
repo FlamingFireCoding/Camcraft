@@ -131,6 +131,13 @@ mod page_layout_tool_library;
 mod tool_library_editor;
 // #3894: the 3D and side preview of the tool library window's editor.
 mod tool_library_preview;
+// #3895: the holder, gauge length and stick-out in the tool library window.
+mod tool_library_assembly;
+// #3896: the Recipes tab of the tool library window's editor.
+mod tool_library_recipes;
+// #3897 (U6 of #3663): the Holders page and the mock-up gaps.
+mod tool_library_holders_ui;
+mod tool_library_mockup;
 mod anchors;
 mod stock_fit;
 mod stock_source_default;
@@ -2008,6 +2015,7 @@ fn headless_run_succeeds() {
 #[test]
 #[ignore = "release lane (#255): pixel snapshot golden, run and regenerated only at minor/major cuts (gate -Tier release); structural twin in tests/structural.rs"]
 fn egui_shell_snapshot() {
+    let _gpu = super::gpu_test_lock::gpu_guard(); // #3379
     let _g = snapshot_guard();
     let mut harness = shell_harness();
     harness.run_steps(3);
@@ -2038,6 +2046,7 @@ fn snapshot_guard() -> std::sync::MutexGuard<'static, ()> {
 #[test]
 #[ignore = "release lane (#255): pixel snapshot golden, run and regenerated only at minor/major cuts (gate -Tier release); structural twin in tests/structural.rs"]
 fn egui_shell_snapshot_light() {
+    let _gpu = super::gpu_test_lock::gpu_guard(); // #3379
     let _g = snapshot_guard();
     let mut harness = shell_harness();
     theme_set(&harness.state_mut().state.world, &ThemeRef::Named("light".to_owned()));
@@ -2158,6 +2167,7 @@ fn tool_settings_edit_live_and_the_shape_editor_follows_its_tool() {
 #[test]
 #[ignore = "release lane (#255): pixel snapshot golden, run and regenerated only at minor/major cuts (gate -Tier release); structural twin in tests/structural.rs"]
 fn tool_editor_snapshot() {
+    let _gpu = super::gpu_test_lock::gpu_guard(); // #3379
     let _g = snapshot_guard();
     let mut harness = shell_harness();
     harness.state_mut().state.ui_target = UiTarget::Tool("EM-0600-4FL".to_owned());
