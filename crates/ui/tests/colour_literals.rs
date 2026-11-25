@@ -10,9 +10,16 @@
 //! - a file whose literals moved to tokens fails until its row is
 //!   lowered or removed, so the list only shrinks.
 //!
-//! The permanent rows are the token tables themselves and the verdict
-//! colour maths (colour-vision simulation, contrast). Each other row is
-//! a site family that a later #1120 PR moves to tokens.
+//! A literal is a named constant (`Color32::WHITE`) or a constructor
+//! whose arguments are all numbers written in place
+//! (`Color32::from_rgb(245, 240, 250)`). A constructor over variables
+//! (`from_rgb(r, g, b)`) converts a colour chosen elsewhere and does not
+//! count. Colour data kept as plain numbers (a `[u8; 3]` const, a table
+//! of tuples) is not seen; the #1120 family PRs move those by name.
+//!
+//! The permanent rows are the token tables themselves, the contrast
+//! maths and a colour that only measures text. Each other row is a site
+//! family that a later #1120 PR moves to tokens.
 //! Provenance: our own test over our own source tree.
 //!
 //! Gate map (#1120): covers ui::egui_app::theme, ui::egui_app.
@@ -54,25 +61,20 @@ const PATTERNS: &[&str] = &[
 ];
 
 /// `(path under crates/ui/src, literal count, why)`. Keep it sorted by
-/// path. A `keep:` row is not a colour choice at a draw site; a `move`
+/// path. A `keep:` row is not a colour choice for a theme; a `move`
 /// row names the #1120 family PR that moves it to tokens and lowers it.
 #[rustfmt::skip]
 const ALLOWED: &[(&str, usize, &str)] = &[
-    ("align_pick_viz.rs", 4, "move (#1120 viewport overlays): pick, avoid and handle inks"),
-    ("avoid_viz.rs", 2, "move (#1120 viewport overlays): pick, avoid and handle inks"),
-    ("egui_app/colorvision.rs", 17, "move (#1120 verdict palettes): into the token table, values unchanged; the colour-vision maths stays"),
-    ("egui_app/contrast.rs", 5, "keep: contrast maths (black or white text on a fill, gamma blend)"),
+    ("align_pick_viz.rs", 1, "move (#1120 viewport overlays): pick, handle and overlay inks"),
+    ("egui_app/colorvision.rs", 15, "move (#1120 verdict palettes): into the token table, values unchanged; the colour-vision maths stays"),
+    ("egui_app/contrast.rs", 4, "keep: contrast maths (black or white text on a fill)"),
     ("egui_app/error_text.rs", 1, "move (#1120 status inks): the red fallback of an error line"),
-    ("egui_app/file_drop.rs", 3, "move (#1120 viewport overlays): pick, avoid and handle inks"),
-    ("egui_app/gcode_highlight.rs", 1, "move (#1120 G-code syntax colours): the dark and light word colours"),
-    ("egui_app/gen_overlay.rs", 6, "move (#1120 viewport overlays): pick, avoid and handle inks"),
-    ("egui_app/ground_ink.rs", 22, "move (#1120 viewport overlays): pick, avoid and handle inks"),
-    ("egui_app/move_handles.rs", 3, "move (#1120 viewport overlays): pick, avoid and handle inks"),
-    ("egui_app/ribbon_cell.rs", 1, "keep: a token ink with the disabled alpha"),
-    ("egui_app/shell.rs", 11, "move (#1120 viewport overlays): pick, avoid and handle inks"),
-    ("egui_app/shell_window/capture.rs", 1, "keep: pixels read back from the GPU"),
+    ("egui_app/file_drop.rs", 3, "move (#1120 viewport overlays): pick, handle and overlay inks"),
+    ("egui_app/gen_overlay.rs", 6, "move (#1120 viewport overlays): pick, handle and overlay inks"),
+    ("egui_app/ground_ink.rs", 22, "move (#1120 viewport overlays): pick, handle and overlay inks"),
+    ("egui_app/move_handles.rs", 3, "move (#1120 viewport overlays): pick, handle and overlay inks"),
+    ("egui_app/shell.rs", 9, "move (#1120 viewport overlays): pick, handle and overlay inks"),
     ("egui_app/theme/tables.rs", 32, "keep: the token tables themselves"),
-    ("egui_app/theme_files.rs", 2, "keep: a colour parsed from a theme file's hex value"),
     ("egui_app/tool_body_lathe_page.rs", 3, "move (#1120 tool drawings): tool, holder and profile previews"),
     ("egui_app/tool_body_page.rs", 4, "move (#1120 tool drawings): tool, holder and profile previews"),
     ("egui_app/tool_holder_picker.rs", 2, "move (#1120 tool drawings): tool, holder and profile previews"),
@@ -80,15 +82,13 @@ const ALLOWED: &[(&str, usize, &str)] = &[
     ("egui_app/tool_library_dialog/holder_view.rs", 5, "move (#1120 tool drawings): tool, holder and profile previews"),
     ("egui_app/tool_library_dialog/side_view.rs", 2, "move (#1120 tool drawings): tool, holder and profile previews"),
     ("egui_app/tool_library_dialog/thumbs.rs", 2, "move (#1120 tool drawings): tool, holder and profile previews"),
-    ("egui_app/tool_model_view.rs", 2, "move (#1120 tool drawings): tool, holder and profile previews"),
+    ("egui_app/tool_model_view.rs", 1, "move (#1120 tool drawings): tool, holder and profile previews"),
     ("egui_app/tool_preview.rs", 8, "move (#1120 tool drawings): tool, holder and profile previews"),
     ("egui_app/tool_profile_page.rs", 10, "move (#1120 tool drawings): tool, holder and profile previews"),
-    ("egui_app/turn_handles.rs", 3, "move (#1120 viewport overlays): pick, avoid and handle inks"),
-    ("egui_app/viewcube.rs", 2, "move (#1120 viewport overlays): pick, avoid and handle inks"),
-    ("egui_app/viewport_bar.rs", 2, "move (#1120 viewport overlays): pick, avoid and handle inks"),
+    ("egui_app/turn_handles.rs", 3, "move (#1120 viewport overlays): pick, handle and overlay inks"),
+    ("egui_app/viewcube.rs", 1, "move (#1120 viewport overlays): pick, handle and overlay inks"),
     ("egui_app/viewport_layout.rs", 1, "keep: the colour only measures text, it is not drawn"),
     ("egui_app/window_chrome.rs", 2, "move (#1120 window chrome): the close button hover and its ink"),
-    ("pick_ink.rs", 1, "move (#1120 viewport overlays): pick, avoid and handle inks"),
 ];
 
 fn src_root() -> PathBuf {
@@ -118,21 +118,74 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// The literals on the lines of one file; a line comment does not count.
+/// A number written in place: `255`, `0x2B`, `1.0`, `0.5_f32`.
+fn is_number(arg: &str) -> bool {
+    let a = arg.trim();
+    a.starts_with(|c: char| c.is_ascii_digit())
+        && a.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+}
+
+/// The arguments of the call whose `(` ends at `open`, split at the
+/// commas of its own depth; `None` when the call does not close.
+fn call_args(text: &str, open: usize) -> Option<Vec<&str>> {
+    let mut depth = 0usize;
+    let mut start = open;
+    let mut args = Vec::new();
+    for (k, c) in text[open..].char_indices() {
+        let at = open + k;
+        match c {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    args.push(&text[start..at]);
+                    return Some(args);
+                }
+            }
+            ',' if depth == 1 => {
+                args.push(&text[start..at]);
+                start = at + 1;
+            }
+            _ => {}
+        }
+        if at == open {
+            start = open + 1;
+        }
+    }
+    None
+}
+
+/// The colour literals of one file. A constructor counts only when each
+/// argument is a number written in place: `from_rgb(r, g, b)` converts a
+/// colour chosen elsewhere and is not a literal. A named constant
+/// (`Color32::WHITE`) always counts. A line comment does not count.
 fn count(text: &str) -> usize {
-    let hit = |line: &str, pat: &str| {
-        // `Color32::RED` must not count `Color32::REDDISH`-like names.
-        line.match_indices(pat)
-            .filter(|(i, _)| {
-                pat.ends_with('(')
-                    || !line[i + pat.len()..]
-                        .starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
-            })
-            .count()
-    };
-    text.lines()
+    let code: String = text
+        .lines()
         .filter(|l| !l.trim_start().starts_with("//"))
-        .map(|l| PATTERNS.iter().map(|p| hit(l, p)).sum::<usize>())
+        .collect::<Vec<_>>()
+        .join("\n");
+    PATTERNS
+        .iter()
+        .map(|pat| {
+            code.match_indices(pat)
+                .filter(|(i, _)| {
+                    let end = i + pat.len();
+                    if pat.ends_with('(') {
+                        call_args(&code, end - 1).is_some_and(|args| {
+                            // A trailing comma leaves one empty argument.
+                            let args: Vec<&&str> =
+                                args.iter().filter(|a| !a.trim().is_empty()).collect();
+                            !args.is_empty() && args.iter().all(|a| is_number(a))
+                        })
+                    } else {
+                        // `Color32::RED` must not count `Color32::REDDISH`-like names.
+                        !code[end..].starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+                    }
+                })
+                .count()
+        })
         .sum()
 }
 
@@ -218,10 +271,15 @@ fn the_counter_sees_each_form_and_skips_comments() {
     let text = "let a = Color32::from_rgb(1, 2, 3);\n\
                 // Color32::from_rgb(9, 9, 9) in a comment\n\
                 let b = [Color32::WHITE, Color32::TRANSPARENT, Color32::from_gray(4)];\n\
-                let c = Color32::RED; let d = Color32::REDDISH;\n";
+                let c = Color32::RED; let d = Color32::REDDISH;\n\
+                let e = Color32::from_rgb(\n    0x10,\n    0x20,\n    0x30,\n);\n\
+                let f = Color32::from_rgba_unmultiplied(r, g, b, ALPHA);\n\
+                let g = Color32::from_rgb(rgb.0, rgb.1, rgb.2);\n\
+                let h = Color32::from_black_alpha(170);\n";
     assert_eq!(
         count(text),
-        4,
-        "from_rgb, WHITE, from_gray and RED; not the comment, TRANSPARENT or REDDISH"
+        6,
+        "from_rgb, WHITE, from_gray, RED, the split from_rgb and from_black_alpha; \
+         not the comment, TRANSPARENT, REDDISH or a conversion of variables"
     );
 }
