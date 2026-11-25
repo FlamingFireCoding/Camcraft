@@ -192,8 +192,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
     let OpParams::WireContour(p) = params else {
         return;
     };
-    let WireContourOp { top_z, bottom_z, condition, side, picks, burnout, clearance, taper_deg, four_axis, sharp_corners, overlap, .. } = p;
-    let WireContourOp { top_z, bottom_z, condition, side, picks, burnout, clearance, taper_deg, four_axis, sharp_corners, lead_arc_radius, .. } = p;
+    let WireContourOp { top_z, bottom_z, condition, side, picks, burnout, clearance, taper_deg, four_axis, sharp_corners, overlap, lead_arc_radius, .. } = p;
 
     if tab == SEC_GEO {
         let mut si = SIDE_OF.iter().position(|s| s == side).unwrap_or(0);
