@@ -109,6 +109,12 @@ fn new_token() -> String {
         .collect()
 }
 
+/// A fresh client nonce, from the same randomness as [`new_token`].
+#[must_use]
+pub fn new_nonce() -> String {
+    new_token()
+}
+
 /// The first line a client sends.
 #[must_use]
 pub fn hello_line(token: &str) -> String {
@@ -126,6 +132,76 @@ pub fn hello_matches(line: &[u8], token: &str) -> bool {
     let Some(got) = v.get("token").and_then(Value::as_str) else { return false };
     got.len() == token.len()
         && got.bytes().zip(token.bytes()).fold(0_u8, |acc, (a, b)| acc | (a ^ b)) == 0
+}
+
+/// The first line a client sends, with a nonce (#3874). The window's
+/// answer must carry a proof that it mixed this nonce with the token, so
+/// a peer that never read the discovery file cannot pass as the window.
+#[must_use]
+pub fn hello_with_nonce(token: &str, nonce: &str) -> String {
+    json!({ "camcraft_link": FORMAT, "token": token, "nonce": nonce }).to_string()
+}
+
+/// The nonce a client put in its hello line; `None` when there is none
+/// (an older CLI). At most 128 bytes: no honest nonce is longer.
+#[must_use]
+pub fn hello_nonce(line: &[u8]) -> Option<String> {
+    let v = serde_json::from_slice::<Value>(line).ok()?;
+    v.get("nonce")?
+        .as_str()
+        .map(str::to_owned)
+        .filter(|n| !n.is_empty() && n.len() <= 128)
+}
+
+/// The proof of the token (#3874): two FNV-1a 64-bit words over `token`,
+/// a zero byte, `nonce`. This is a knowledge proof, not encryption - the
+/// token itself already crosses the same socket in the clear - so a
+/// simple published hash is enough. The proof only binds the answer to a
+/// peer that read the discovery file and saw this client's fresh nonce.
+#[must_use]
+pub fn token_proof(token: &str, nonce: &str) -> String {
+    fn fnv1a(data: &[u8]) -> u64 {
+        // The published FNV-1a 64-bit parameters (public domain).
+        data.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| {
+            (h ^ u64::from(*b)).wrapping_mul(0x0000_0100_0000_01B3)
+        })
+    }
+    let mut data = Vec::with_capacity(token.len() + nonce.len() + 1);
+    data.extend_from_slice(token.as_bytes());
+    data.push(0);
+    data.extend_from_slice(nonce.as_bytes());
+    let a = fnv1a(&data);
+    let b = fnv1a(&a.to_be_bytes());
+    format!("{a:016x}{b:016x}")
+}
+
+/// The window's answer to a good hello: plain [`HELLO_OK`] for a hello
+/// without a nonce (an older CLI), otherwise with the proof of the token
+/// and the client's nonce.
+#[must_use]
+pub fn hello_ok_line(token: &str, nonce: Option<&str>) -> String {
+    match nonce {
+        None => HELLO_OK.to_owned(),
+        Some(n) => json!({ "camcraft_link": FORMAT, "ok": true, "proof": token_proof(token, n) })
+            .to_string(),
+    }
+}
+
+/// Whether an answer proves that the peer knows `token` and mixed in the
+/// client's `nonce`. The compare takes the same time for equal lengths.
+#[must_use]
+pub fn proof_matches(answer: &[u8], token: &str, nonce: &str) -> bool {
+    let Ok(v) = serde_json::from_slice::<Value>(answer) else { return false };
+    if v.get("camcraft_link").and_then(Value::as_u64) != Some(u64::from(FORMAT)) {
+        return false;
+    }
+    if v.get("ok").and_then(Value::as_bool) != Some(true) {
+        return false;
+    }
+    let want = token_proof(token, nonce);
+    let Some(got) = v.get("proof").and_then(Value::as_str) else { return false };
+    got.len() == want.len()
+        && got.bytes().zip(want.bytes()).fold(0_u8, |acc, (a, b)| acc | (a ^ b)) == 0
 }
 
 /// A window's registration: its discovery file (and socket file), removed

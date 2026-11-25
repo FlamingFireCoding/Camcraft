@@ -39,5 +39,15 @@ keyring = { workspace = true }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-time = { workspace = true }
 
+[target.'cfg(unix)'.dependencies]
+# #3874: the CLI checks that the pid in a discovery file is alive before
+# it connects; std has no pid check, so the platform's own `kill`.
+libc = "0.2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# #3874: the same pid-alive check through OpenProcess. Both crates are
+# already in the lock through other deps - no new crate.
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }
+
 [dev-dependencies]
 tempfile = "3"

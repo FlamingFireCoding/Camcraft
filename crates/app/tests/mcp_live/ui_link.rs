@@ -81,8 +81,13 @@ fn a_cli_call_with_no_window_says_so_and_exits_3() {
     let err = String::from_utf8_lossy(&o.stderr);
     assert_eq!(o.status.code(), Some(3), "{err}");
     assert!(err.contains("stale"), "{err}");
+    // The dead pid's file is gone: the CLI removed it, so no later run
+    // sees the stale port (never a live window's file, #3874).
+    assert!(link::entries(&dir).is_empty(), "the stale file of a dead pid is removed");
 
-    // A window asked for by a pid that no file names.
+    // A window asked for by a pid that no file names. The stale file is
+    // written again, so the listing names a file that is not pid 123.
+    write_entry(&dir, &stale);
     let o = cli_ui(&dir, &["--window", "123", "call", "get_job"]);
     let err = String::from_utf8_lossy(&o.stderr);
     assert_eq!(o.status.code(), Some(3), "{err}");
@@ -100,6 +105,66 @@ fn bad_ui_arguments_are_usage_errors() {
     let o = cli_ui(&dir, &["--help"]);
     assert_eq!(o.status.code(), Some(0));
     assert!(String::from_utf8_lossy(&o.stdout).contains("Exit: 0 stood, 1 refused, 2 usage, 3 no running window, 4 window busy"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_false_window_that_does_not_prove_the_token_gets_no_tool_call() {
+    let dir = fresh_dir("false-window");
+    // A false server on the port of a discovery entry (#3874): it read
+    // the file, so it has the token, but it cannot prove it - it answers
+    // a plain HELLO_OK with no mix of the client's nonce. The CLI must
+    // drop it before one tool-call line reaches it.
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind");
+    let entry = Entry {
+        format: link::FORMAT,
+        // A live pid, so the pid-alive check does not remove the file
+        // first: the pid of a window whose file a false server serves.
+        pid: std::process::id(),
+        transport: "tcp".into(),
+        address: listener.local_addr().expect("local address").to_string(),
+        token: "7".repeat(64),
+        project: None,
+        app_version: "0".into(),
+    };
+    write_entry(&dir, &entry);
+
+    use std::io::{Read, Write};
+    let (lines_tx, lines_rx) = std::sync::mpsc::channel::<String>();
+    let server = std::thread::spawn(move || {
+        // One connection: read its first line, answer HELLO_OK without
+        // the proof, then read until the client hangs up.
+        let (mut s, _) = listener.accept().expect("accept");
+        s.set_read_timeout(Some(Duration::from_secs(20))).expect("read timeout");
+        let mut first = Vec::new();
+        let mut chunk = [0_u8; 256];
+        while !first.contains(&b'\n') {
+            let n = s.read(&mut chunk).expect("read the hello");
+            assert!(n > 0, "the client hung up before the hello");
+            first.extend_from_slice(&chunk[..n]);
+        }
+        lines_tx.send(String::from_utf8_lossy(&first).into_owned()).expect("send");
+        s.write_all(format!("{}\n", link::HELLO_OK).as_bytes()).expect("write HELLO_OK");
+        s.flush().expect("flush HELLO_OK");
+        let mut rest = Vec::new();
+        let _ = s.read_to_end(&mut rest);
+        String::from_utf8_lossy(&rest).into_owned()
+    });
+
+    let o = cli_ui(&dir, &["call", "get_job"]);
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(1), "{err}");
+    assert!(err.contains("refused the link token"), "{err}");
+    assert!(err.contains("nothing ran"), "{err}");
+    assert!(o.stdout.is_empty(), "no answer from the false server on stdout");
+
+    let rest = server.join().expect("the false server thread");
+    assert!(!rest.contains("tools/call"), "no tool call after the refusal: {rest}");
+    let first = lines_rx.try_recv().expect("the false server saw one line");
+    assert!(first.contains("camcraft_link"), "{first}");
+    assert!(first.contains("nonce"), "the client sent a nonce: {first}");
+    assert!(!first.contains("tools/call"), "no tool call reached the false server: {first}");
+    assert!(link::entries(&dir).len() == 1, "a live pid's file is not removed");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

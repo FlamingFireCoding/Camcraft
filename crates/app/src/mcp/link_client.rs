@@ -19,9 +19,24 @@ use serde_json::{json, Value};
 use super::link::{self, Entry};
 use super::wire::Stream;
 
-/// How long a connect and the hello answer may take before a window is
-/// read as not answering (a stale file, a hung window).
+/// How long a connect, the hello and its proof answer may take before a
+/// window is read as not answering (a stale file, a hung window). This
+/// deadline covers the whole token-proof exchange: the client sends the
+/// hello with its nonce, and the window's answer must carry the proof.
 const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The most bytes of one answer line (#3874): a peer that sends one line
+/// with no end cannot make the client use all memory. A proof answer or
+/// a tool result never approaches the bound. After the proof, no read
+/// deadline applies (a tool may run for minutes, #3751) - but the peer
+/// proved that it read the discovery file, so a bound on what it may
+/// send is what remains to check.
+const MAX_ANSWER: u64 = 1024 * 1024;
+
+/// The most bytes a `--ui mcp` bridge session copies from the window to
+/// the MCP client, so a peer that never stops writing cannot run for
+/// ever. A link session transfers far less.
+const MAX_BRIDGE: u64 = 256 * 1024 * 1024;
 
 /// Which window to talk to.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -103,7 +118,10 @@ fn describe(entry: &Entry) -> String {
     format!("pid {} ({project})", entry.pid)
 }
 
-/// Connect to one window and pass its token check.
+/// Connect to one window, pass its token check, and require the proof
+/// that the peer mixed the client's fresh nonce with the token (#3874):
+/// a peer that answers `HELLO_OK` without the proof never read the
+/// discovery file, so it is not the window.
 fn open(entry: &Entry) -> std::io::Result<Stream> {
     let stream = match entry.transport.as_str() {
         "tcp" => {
@@ -129,17 +147,73 @@ fn open(entry: &Entry) -> std::io::Result<Stream> {
     stream.set_read_timeout(Some(HELLO_TIMEOUT))?;
     stream.set_write_timeout(Some(HELLO_TIMEOUT))?;
     let mut writer = stream.try_clone()?;
-    writeln!(writer, "{}", link::hello_line(&entry.token))?;
+    // The nonce makes the window's proof answer fresh, so a recorded
+    // answer of an earlier session proves nothing.
+    let nonce = link::new_nonce();
+    writeln!(writer, "{}", link::hello_with_nonce(&entry.token, &nonce))?;
     writer.flush()?;
     let mut answer = String::new();
-    BufReader::new(stream.try_clone()?).take(4096).read_line(&mut answer)?;
-    if answer.trim() != link::HELLO_OK {
-        return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "the window refused the link token"));
+    BufReader::new(stream.try_clone()?).take(MAX_ANSWER).read_line(&mut answer)?;
+    if !link::proof_matches(answer.as_bytes(), &entry.token, &nonce) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "the peer did not prove the link token",
+        ));
     }
     // A tool may run for minutes (generate): no read deadline from here.
+    // The peer proved that it read the discovery file; its answer lines
+    // stay bounded by MAX_ANSWER.
     stream.set_read_timeout(None)?;
     stream.set_write_timeout(None)?;
     Ok(stream)
+}
+
+/// Whether the process `pid` runs now. `Some(false)` only when the OS
+/// says the pid does not exist; `None` when the check cannot say (an
+/// access error) - the caller then treats the window as alive.
+#[cfg(unix)]
+fn pid_alive(pid: u32) -> Option<bool> {
+    // A signal of 0 checks existence and sends nothing.
+    match unsafe { libc::kill(pid as libc::pid_t, 0) } {
+        0 => Some(true),
+        -1 => match std::io::Error::last_os_error().raw_os_error() {
+            Some(libc::ESRCH) => Some(false),
+            // EPERM: the process exists, it is just not ours.
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+#[cfg(windows)]
+fn pid_alive(pid: u32) -> Option<bool> {
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError};
+    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, OpenProcess};
+    // PROCESS_QUERY_LIMITED_INFORMATION: enough for the exit code, and
+    // allowed on another user's process.
+    const QUERY_LIMITED: u32 = 0x1000;
+    const STILL_ACTIVE: u32 = 259;
+    const ERROR_INVALID_PARAMETER: u32 = 87;
+    unsafe {
+        let handle = OpenProcess(QUERY_LIMITED, 0, pid);
+        if handle.is_null() {
+            return match GetLastError() {
+                // No process with this pid exists.
+                ERROR_INVALID_PARAMETER => Some(false),
+                // Cannot say (access denied): treat the window as alive.
+                _ => None,
+            };
+        }
+        let mut code = 0_u32;
+        let said = GetExitCodeProcess(handle, &mut code);
+        CloseHandle(handle);
+        (said != 0).then_some(code == STILL_ACTIVE)
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn pid_alive(_pid: u32) -> Option<bool> {
+    None
 }
 
 /// Find the selected window in `dir` and open a session with it.
@@ -155,8 +229,8 @@ pub fn connect(dir: &Path, select: &Select) -> Result<(Entry, Stream), LinkError
             dir.display()
         )));
     }
-    let candidates: Vec<&Entry> = all.iter().filter(|e| select.admits(e)).collect();
-    if candidates.is_empty() {
+    let selected: Vec<&Entry> = all.iter().filter(|e| select.admits(e)).collect();
+    if selected.is_empty() {
         let running: Vec<String> = all.iter().map(describe).collect();
         let wanted = match select {
             Select::Only => "a window".to_owned(),
@@ -168,6 +242,27 @@ pub fn connect(dir: &Path, select: &Select) -> Result<(Entry, Stream), LinkError
             running.join(", ")
         )));
     }
+    // A file a crashed window left behind (#3874): its pid is dead, so no
+    // window serves that socket - and a local process may have bound the
+    // port to read the token and the tool calls. The file is removed
+    // (never a live window's file) and the entry is skipped. When the
+    // check cannot say whether the pid lives, the entry stays and the
+    // token proof in `open` guards the connection.
+    let candidates: Vec<&Entry> = selected
+        .into_iter()
+        .filter(|entry| {
+            if entry.pid == std::process::id() || pid_alive(entry.pid) != Some(false) {
+                return true;
+            }
+            tracing::info!("ui link: {} is gone; its link file is stale and is removed", describe(entry));
+            match std::fs::remove_file(dir.join(format!("{}.json", entry.pid))) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => tracing::warn!("ui link: cannot remove the stale file: {e}"),
+            }
+            false
+        })
+        .collect();
     let mut refused = None;
     let mut busy = None;
     let mut open_ones = Vec::new();
@@ -223,7 +318,9 @@ pub fn call(dir: &Path, select: &Select, tool: &str, args: &Value) -> Result<Val
     let mut reader = BufReader::new(stream);
     loop {
         let mut text = String::new();
-        if reader.read_line(&mut text).map_err(lost)? == 0 {
+        // Bounded (#3874): one answer line never exceeds MAX_ANSWER.
+        let got = reader.by_ref().take(MAX_ANSWER).read_line(&mut text).map_err(lost)?;
+        if got == 0 {
             return Err(LinkError::Failed(format!(
                 "the window {} closed the link before it answered",
                 describe(&entry)
@@ -262,6 +359,12 @@ pub fn bridge(dir: &Path, select: &Select, input: impl Read + Send + 'static, mu
             let _ = to_app.shutdown_write();
         })
         .map_err(lost)?;
-    std::io::copy(&mut from_app, &mut output).map_err(lost)?;
+    // Bounded (#3874): a peer that never stops writing ends at MAX_BRIDGE
+    // bytes, it cannot run for ever.
+    let copied = std::io::copy(&mut std::io::Read::by_ref(&mut from_app).take(MAX_BRIDGE), &mut output)
+        .map_err(lost)?;
+    if copied == MAX_BRIDGE {
+        tracing::warn!("ui link bridge: the answer reached the {} byte bound; the copy ended", MAX_BRIDGE);
+    }
     Ok(())
 }
