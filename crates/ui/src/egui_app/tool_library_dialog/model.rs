@@ -181,12 +181,15 @@ pub(crate) fn draft_body(t: &Tool, entry: &str, gauge: f64, projection: f64) -> 
     Ok(body)
 }
 
+/// A mesh's box: the low and the high corner.
+pub(crate) type Bounds = ([f64; 3], [f64; 3]);
+
 impl ToolModel {
     /// #3908: the mesh the 3D view paints for the Holder and the Flutes
     /// toggles, and the box it is fitted by. The box is the plain mesh's
     /// box (the flutes only take radius away), so a toggle never jumps
     /// the view.
-    pub(crate) fn shown(&self, holder: bool, flutes: bool) -> (&Arc<[Triangle]>, ([f64; 3], [f64; 3])) {
+    pub(crate) fn shown(&self, holder: bool, flutes: bool) -> (&Arc<[Triangle]>, Bounds) {
         let (plain, fluted, bounds) = if holder {
             (&self.mesh, &self.fluted, self.bounds)
         } else {

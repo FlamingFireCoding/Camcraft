@@ -118,7 +118,6 @@ fn tools_without_flutes_draw_the_plain_model() {
 
 #[test]
 fn the_fluted_steel_keeps_to_its_facet_bound() {
-    assert!(MAX_TRIS <= crate::egui_app::tool_model_view::MAX_PAINTED, "the bound is inside the painted budget");
     for name in ["EM-1000-4FL", "BB-1000-R1", "CM-0600-90", "EM-0200-2FL"] {
         let t = with(name, Some(MAX_FLUTES), Some(80.0));
         let n = fluted(&t, &steel(&t)).map_or(0, |m| m.len());

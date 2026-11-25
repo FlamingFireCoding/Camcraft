@@ -45,6 +45,9 @@ pub(crate) const MAX_FLUTES: u32 = 16;
 pub(crate) const MAX_POINTS: usize = 120;
 /// The most facets of the fluted steel (two per segment and step).
 pub(crate) const MAX_TRIS: usize = 2 * SEGS * (MAX_POINTS - 1);
+// The bound stays inside the model view's painted budget (checked when
+// the crate compiles).
+const _: () = assert!(MAX_TRIS <= crate::egui_app::tool_model_view::MAX_PAINTED);
 /// The rings the fluted length is cut into: at least, at most.
 const RINGS: (usize, usize) = (16, 64);
 /// The largest twist between two rings, radians.
@@ -104,7 +107,8 @@ pub(crate) fn fluted(t: &Tool, prof: &[(f64, f64)]) -> Option<Vec<Triangle>> {
     if pts.len() > MAX_POINTS {
         return None;
     }
-    Some(revolve(&pts, |th, z, r| r * g.scale(th, z)))
+    let tris = revolve(&pts, |th, z, r| r * g.scale(th, z));
+    (tris.len() <= MAX_TRIS).then_some(tris)
 }
 
 /// `prof` with the segments of the fluted length (`0..len`) cut into
