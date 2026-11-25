@@ -552,6 +552,40 @@ fn detect_holes_fills_a_drill_from_its_model_and_undo_empties_it() {
     assert!(e.contains("not a drilling operation"), "{e}");
 }
 
+/// #3544: a Drill operation added without a source reads the stock. Detect
+/// holes then names the stock, not "the source model", and names each model
+/// to pick. A model source with no holes keeps its old refusal.
+#[test]
+fn detect_holes_on_a_stock_source_names_the_stock_and_the_models_to_pick() {
+    let dir = tmp_dir("holes-stock-source");
+    let (disc, block) = (dir.join("disc.stl"), dir.join("block.stl"));
+    write_bored_disc_stl(&disc);
+    write_box_stl(&block);
+    let mut c = Client::new();
+    c.request("initialize", json!({ "protocolVersion": "2025-06-18" }));
+    c.ok("set_stock", json!({ "box": { "dx": 30.0, "dy": 30.0, "dz": 10.0 } }));
+    c.ok("add_tool", json!({ "catalog": "DR-0400" }));
+    c.ok("add_operation", json!({ "kind": "drill", "tool": "DR-0400", "name": "D1" }));
+    let e = c.refused("detect_holes", json!({ "name": "D1" }));
+    assert!(e.contains("no drilled holes found in the stock - Z or radial."), "{e}");
+    assert!(e.contains("'D1' reads the stock, not a model: import a model and pick it as the source"), "{e}");
+
+    c.ok("import_model", json!({ "path": disc.display().to_string() }));
+    c.ok("import_model", json!({ "path": block.display().to_string() }));
+    let e = c.refused("detect_holes", json!({ "name": "D1" }));
+    assert!(!e.contains("source model"), "the stock is not the source model: {e}");
+    assert!(
+        e.contains(r#"'D1' reads the stock, not a model: pick a model as the source (source: "block" or source: "disc")"#)
+            || e.contains(r#"'D1' reads the stock, not a model: pick a model as the source (source: "disc" or source: "block")"#),
+        "{e}"
+    );
+
+    c.ok("add_operation", json!({ "kind": "drill", "tool": "DR-0400", "source": "block", "name": "D2" }));
+    let e = c.refused("detect_holes", json!({ "name": "D2" }));
+    assert!(e.ends_with("no drilled holes found in the source model - Z or radial"), "a model source keeps its refusal: {e}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn a_nested_patch_typo_is_refused_by_its_path() {
     let mut c = Client::new();

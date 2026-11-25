@@ -90,6 +90,8 @@ mod stamp_stock;
 pub use stamp_stock::reads_setup_stock;
 pub(crate) use stamp_stock::write_setup_stock;
 mod material;
+// #3544: Detect holes on a stock source names the stock and the models.
+mod detect_source;
 // #2496: a drill makes its own size; a wider hole is named.
 mod drill_size;
 // #3525: a cut deeper than the flute length is named first.
