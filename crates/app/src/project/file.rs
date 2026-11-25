@@ -246,8 +246,6 @@ pub fn tip_form_read_version(version: u32) -> u32 {
         version
     }
 }
->>>>>>> origin/main
-
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
     #[error("I/O error: {0}")]
