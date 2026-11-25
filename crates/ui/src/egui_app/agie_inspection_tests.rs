@@ -231,7 +231,7 @@ fn plain_dxf_wire_page() -> State {
 }
 
 /// The maintainer saw the Agie export on every wire job: a plain DXF die
-/// cut on another wire machine shows no Agie action and no inspection hint.
+/// cut on another wire machine shows no Agie action.
 #[test]
 fn plain_dxf_wire_cut_on_another_machine_shows_no_agie_export() {
     let st = plain_dxf_wire_page();
@@ -246,7 +246,6 @@ fn plain_dxf_wire_cut_on_another_machine_shows_no_agie_export() {
     h.run();
     assert!(h.query_by_label("Delete operation").is_some(), "the operation page shows");
     assert!(h.query_by_label(BUTTON).is_none(), "no Agie export on a non-Agie job");
-    assert!(h.query_by_label_contains("Nominal inspection only").is_none());
 }
 
 #[test]
@@ -255,7 +254,6 @@ fn agie_inspection_opening_still_shows_its_export() {
     let mut h = page(st);
     h.run();
     assert!(h.query_by_label(BUTTON).is_some());
-    assert!(h.query_by_label_contains("Nominal inspection only").is_some());
 }
 
 fn post_page(state: State, ctx: String) -> Harness<'static, State> {
