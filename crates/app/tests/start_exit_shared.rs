@@ -62,8 +62,10 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
             OpType::WireContour => assert_eq!(cap, PickCapability::Threading, "the wire takes its threading point"),
             // #3328: the first hole and the last hole of the list.
             OpType::Drill | OpType::Bore | OpType::Thread => assert_eq!(cap, PickCapability::HoleOrder, "{}: a hole order pick", k.label),
+            // #3325: the Slot's slice of #1448 shipped.
+            OpType::Slot => assert_eq!(cap, PickCapability::Ends, "the slot takes a pick at one of its ends"),
             _ => {
-                let PickCapability::NotTaken(why) = cap else { panic!("{}: only the contour, the wire and the hole kinds take a pick", k.label) };
+                let PickCapability::NotTaken(why) = cap else { panic!("{}: only the contour, the slot, the wire and the hole kinds take a pick", k.label) };
                 assert!(!why.is_empty(), "{}: the reason is named", k.label);
             }
         }

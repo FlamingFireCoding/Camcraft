@@ -73,6 +73,12 @@ pub const ROTARY_KIND_UNMEASURED: &str = "a rotary cut turns the part under a po
 pub fn rotary_kind_lift(params: &OpParams) -> Option<Result<(), &'static str>> {
     match params {
         OpParams::RotaryParallel { .. } | OpParams::RotaryContour { .. } | OpParams::RotaryOffset { .. } => Some(Ok(())),
+        // #2826: the flow band is a rotary cut, but its chord-pass
+        // parity and cost on the field are not measured yet - the
+        // module's own law lands a new rotary kind here until its
+        // lane of `rotary_field_parity.rs` is green, never on the
+        // eye unmeasured.
+        OpParams::RotaryFlow { .. } => Some(Err(ROTARY_KIND_UNMEASURED)),
         _ => None,
     }
 }
