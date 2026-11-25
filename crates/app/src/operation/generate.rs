@@ -1968,18 +1968,35 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #2848: picked faces. Rotary Parallel keeps its cut over
             // them (the axis still reads the whole model); a selection
             // the kind cannot use refuses here, by name.
-            let picked = super::rotary_picks::usable(rotary_picks.take(), &material.facets)?;
-            let run = |q: &Finish3DParams| if is_contour {
-                crate::multiaxis::rotary_contour(&material.facets, q, &axis)
-            } else {
-                crate::multiaxis::rotary_parallel_over(&material.facets, stock_facets.as_deref(), picked.as_deref(), q, &axis)
-            };
+            // #2772 parts 1-2: a stated rotation axis first - the op's
+            // own direction, else the machine's stated rotary lines,
+            // each anchored through the work offset origin and judged
+            // against the model's faces (`axis_stated::judged_any`);
+            // nothing stated keeps today's free fit.
             let kind = if is_contour { "Rotary Contour" } else { "Rotary Parallel" };
-            // M13.5 B: the letter is the machine's. The fitted line
-            // the kernel will turn about must be a rotary the mounted
-            // machine states (A/B on a table, or the spindle's C -
-            // issue #33 - whose angle the path then states).
-            let spindle_c = rotary_letter_gate(machine_rotaries.as_ref(), &material.facets, kind)?;
+            let lines = crate::rotary_stated::lines_of(
+                crate::rotary_stated::op_stated(&params),
+                machine_rotaries.as_ref().map(|(_, r)| r.as_slice()),
+                wcs_origin,
+            )
+            .transpose()
+            .map_err(|e| GenError::Invalid(format!("{kind}: {e}")))?;
+            let ax = match &lines {
+                Some(ls) => crate::multiaxis::axis_stated::judged_any(&material.facets, ls)?,
+                None => crate::multiaxis::axis::fit(&material.facets)?,
+            };
+            let picked = super::rotary_picks::usable(rotary_picks.take(), &material.facets, &ax)?;
+            let run = |q: &Finish3DParams| if is_contour {
+                crate::multiaxis::rotary_contour_stated(&material.facets, ax, q, &axis)
+            } else {
+                crate::multiaxis::rotary_parallel_over_stated(&material.facets, stock_facets.as_deref(), picked.as_deref(), ax, q, &axis)
+            };
+            // M13.5 B: the letter is the machine's. The line the
+            // kernel will turn about - stated (#2772) or fitted - must
+            // be a rotary the mounted machine states (A/B on a table,
+            // or the spindle's C - issue #33 - whose angle the path
+            // then states).
+            let spindle_c = super::rotary_gate::letter_gate(machine_rotaries.as_ref(), lines.as_ref().map(|_| &ax), &material.facets, kind)?;
             let path = super::plunge_solid::guard_posed(
                 kind, tool.center_cutting, tool.kind == crate::tools::ToolKind::BallNose, stock_facets.as_deref(), m_gen, frame.as_ref(), &fp, run,
             )?;
@@ -2066,15 +2083,32 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             if let Some(picks) = rotary_picks.take() {
                 picks?;
             }
+            // #2772 parts 1-2: a stated rotation axis first - the op's
+            // own direction, else the machine's stated rotary lines,
+            // each anchored through the work offset origin and judged
+            // against the model's faces (`axis_stated::judged_any`);
+            // nothing stated keeps today's free fit.
+            let lines = crate::rotary_stated::lines_of(
+                crate::rotary_stated::op_stated(&params),
+                machine_rotaries.as_ref().map(|(_, r)| r.as_slice()),
+                wcs_origin,
+            )
+            .transpose()
+            .map_err(|e| GenError::Invalid(format!("Rotary Offset: {e}")))?;
+            let ax = match &lines {
+                Some(ls) => crate::multiaxis::axis_stated::judged_any(&material.facets, ls)?,
+                None => crate::multiaxis::axis::fit(&material.facets)?,
+            };
             // M13.5 B: the machine's letter for the line the ladder
             // wraps about, or the refusal by name.
-            let spindle_c = rotary_letter_gate(machine_rotaries.as_ref(), &material.facets, "Rotary Offset")?;
+            let spindle_c = super::rotary_gate::letter_gate(machine_rotaries.as_ref(), lines.as_ref().map(|_| &ax), &material.facets, "Rotary Offset")?;
             // M13.8: the ladder peels from the setup STOCK's outer
-            // radius about the fitted axis (the part's skin when no
+            // radius about the axis (the part's skin when no
             // separate stock is set, or when the stock sits inside it).
-            let path = crate::multiaxis::rotary_offset_in(
+            let path = crate::multiaxis::rotary_offset_stated(
                 &material.facets,
                 stock_facets.as_deref(),
+                ax,
                 &pp,
                 &axis,
             )?;
@@ -2093,7 +2127,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // revolved about the same fitted axis, so a move in the air
             // outside its radius is clean and one into it is judged.
             super::plunge_solid::audit_bar(
-                "Rotary Offset", tool.center_cutting, &material.facets, stock_facets.as_deref(), &path, d * 0.5,
+                "Rotary Offset", tool.center_cutting, &material.facets, stock_facets.as_deref(), &path, d * 0.5, &ax,
             )?;
             (region, path)
         }
@@ -4105,6 +4139,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     stock_facets.as_deref(),
                     &cutter,
                     (tol, material.excess),
+                    rotary_axis.as_ref(),
                 );
             }
             // The all-air verdict (M13.8): a finish that provably cuts
@@ -4296,24 +4331,6 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             Ok((path_world, warns))
         }
     }
-}
-
-/// The rotary kinds' letter door (M13.5 B): the line the kernel will
-/// turn the part about, fitted from the same facets it reads, held
-/// against the mounted machine's rotary inventory. A fit that fails
-/// here is left to the kernel, which refuses it by its own name; a
-/// line no stated rotary holds refuses here. The spindle's C answers
-/// the fitted line (issue #33) - the path is then stamped with its C.
-fn rotary_letter_gate(
-    machine: Option<&(String, Vec<crate::machine::AxisLimits>)>,
-    facets: &[Triangle],
-    kind: &str,
-) -> Result<Option<crate::multiaxis::axis::Axis>, GenError> {
-    let Ok(ax) = crate::multiaxis::axis::fit(facets) else {
-        return Ok(None);
-    };
-    let letter = super::rotary_gate::rotary_letter(machine, [ax.dir.x, ax.dir.y, ax.dir.z], kind)?;
-    Ok((letter == Some('C')).then_some(ax))
 }
 
 /// The fixture laws (c2)/(d2) at generation, exactly as the post gate

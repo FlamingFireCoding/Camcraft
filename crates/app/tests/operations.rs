@@ -5789,6 +5789,7 @@ fn rotary_contour_params(top_z: f64, bottom_z: f64) -> OpParams {
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
+        stated_axis: None,
         picks: Default::default(),
     }
 }
@@ -5807,6 +5808,7 @@ fn rotary_parallel_params(top_z: f64, bottom_z: f64) -> OpParams {
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
+        stated_axis: None,
         picks: Default::default(),
     }
 }
@@ -5838,6 +5840,7 @@ fn rotary_offset_params(top_z: f64, bottom_z: f64) -> OpParams {
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
+        stated_axis: None,
         picks: Default::default(),
     }
 }
