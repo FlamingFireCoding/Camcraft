@@ -1350,7 +1350,7 @@
         "kind": "form_mill",
         "diameter": 25.4,
         "corner_r": 0.0,
-        "flute_len": 17.46,
+        "flute_len": 17.5,
         "shank_d": 12.7,
         "shank_len": 32.0,
         "holder_d": 32.0,
@@ -1368,7 +1368,7 @@
             "pilot_radius": 6.35,
             "height": 12.7
           },
-          "pilot_len": 4.76
+          "pilot_len": 4.8
         }
       }
     },
@@ -1406,7 +1406,7 @@
         "kind": "form_mill",
         "diameter": 25.4,
         "corner_r": 0.0,
-        "flute_len": 17.46,
+        "flute_len": 17.5,
         "shank_d": 12.7,
         "shank_len": 32.0,
         "holder_d": 32.0,
@@ -1424,7 +1424,7 @@
             "pilot_radius": 6.35,
             "height": 12.7
           },
-          "pilot_len": 4.76
+          "pilot_len": 4.8
         }
       }
     },

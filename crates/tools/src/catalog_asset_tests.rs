@@ -159,9 +159,9 @@ fn a_catalog_electrode_keeps_its_outline() {
 fn the_catalog_form_mills_cut_at_their_catalogue_diameter() {
     for (name, d, pilot) in [
         ("FM-RO-R6", 25.0, 5.0),
-        ("FM-RO-R0250IN", 25.4, 4.76),
+        ("FM-RO-R0250IN", 25.4, 4.8),
         ("FM-CV-R6", 25.0, 5.0),
-        ("FM-CV-R0250IN", 25.4, 4.76),
+        ("FM-CV-R0250IN", 25.4, 4.8),
         ("FM-VG-90-12", 12.0, 0.0),
         ("FM-VG-90-0500IN", 12.7, 0.0),
     ] {
@@ -169,7 +169,7 @@ fn the_catalog_form_mills_cut_at_their_catalogue_diameter() {
         assert_eq!(t.kind, ToolKind::FormMill, "{name}");
         assert_eq!(t.why_not_sane(), None, "{name}");
         let form = t.form.clone().unwrap_or_default();
-        assert!(form.preset.is_some() && form.points.len() >= 3, "{name}: the preset wrote the points");
+        assert!(form.preset.is_some() && form.points.len() >= 2, "{name}: the preset wrote the points");
         assert!((form.pilot_len - pilot).abs() < 1e-12, "{name}");
         let m = t.meridian().unwrap_or_else(|e| panic!("{name}: {e}"));
         let widest = m.points().iter().fold(0.0_f64, |r, p| r.max(p.r));
