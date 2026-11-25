@@ -193,3 +193,17 @@ fn each_view_cube_ink_is_a_theme_key() {
         );
     }
 }
+
+#[test]
+fn the_facet_veil_keeps_the_hover_colour_of_a_semi_transparent_token() {
+    use camcraft_ui::egui_app::ground_ink::facet_veil;
+    // The built-in gold gives the veil it gave before #1120.
+    assert_eq!(
+        facet_veil(GOLD),
+        Color32::from_rgba_unmultiplied(255, 217, 102, 90)
+    );
+    // The probe of the #3993 review: `#FF000080` gave [45, 0, 0, 90],
+    // because the stored channels are already multiplied by alpha.
+    let half_red = parse("dark", r##""viewport_hover":"#FF000080""##).viewport_hover;
+    assert_eq!(facet_veil(half_red).to_array(), [90, 0, 0, 90]);
+}

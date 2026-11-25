@@ -25,6 +25,11 @@ takes the default of each of the twelve keys from the built-in table of the
 resulting ground when that ground's lightness differs from the base's. A key
 that the file sets always wins. The user guide says so.
 
+The veil over a hovered facet is `ground_ink::facet_veil(viewport_hover)`:
+the token's colour, read unmultiplied, at alpha 90. `Color32` stores its
+channels multiplied by alpha, so reading `r()`, `g()`, `b()` darkened a
+theme's semi-transparent hover a second time (found in the #3993 review).
+
 **Why.** Flat names, as in the first family (`docs/decisions/1120-handle-inks.md`).
 The ground rule keeps the behaviour of every theme file that exists, and it
 is one `match` in one function.

@@ -181,6 +181,19 @@ pub fn cube() -> CubeInk {
     cube_ink_on(&t, light_ground(t.viewport))
 }
 
+/// The alpha of the veil over a hovered facet of the machined part.
+const FACET_VEIL_ALPHA: u8 = 90;
+
+/// The veil over a hovered facet: the hover ink's own colour at
+/// `FACET_VEIL_ALPHA`. `Color32` keeps its channels multiplied by alpha,
+/// so the colour is read unmultiplied first: a theme's semi-transparent
+/// `viewport_hover` must not darken twice (#3993 review).
+#[must_use]
+pub fn facet_veil(ink: Color32) -> Color32 {
+    let [r, g, b, _] = ink.to_srgba_unmultiplied();
+    Color32::from_rgba_unmultiplied(r, g, b, FACET_VEIL_ALPHA)
+}
+
 /// How much of its own colour an unselected path keeps on a light
 /// ground: it fades toward the ground (a dimmed line on paper is a
 /// paler one), never toward black, which turns every hue to ink.

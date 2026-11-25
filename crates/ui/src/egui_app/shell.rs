@@ -745,7 +745,7 @@ fn viewport_panel(
             let ink = super::theme::current().viewport_hover;
             ui.painter().add(egui::Shape::convex_polygon(
                 tri.iter().map(|uv| to_px(*uv)).collect(),
-                egui::Color32::from_rgba_unmultiplied(ink.r(), ink.g(), ink.b(), 90),
+                super::ground_ink::facet_veil(ink),
                 egui::Stroke::new(1.5, ink),
             ));
         }
