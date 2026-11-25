@@ -190,7 +190,10 @@ fn arcs_stay_refused_for_taper_and_a_hatch_still_blocks_the_cut() {
     // #1865: a block reference is expanded, so one to a block that is not defined stops
     // the import by name.
     let insert = DIE.replace("0\nENDSEC\n0\nEOF", "0\nINSERT\n8\nnotes\n2\nBOLT\n10\n30\n20\n0\n0\nENDSEC\n0\nEOF");
-    let why = ImportDxf::from_bytes(&new_world(), None, "drawing.dxf", insert.as_bytes(), &DxfOptions::default())
+    let world = new_world();
+    let stock = StockShape::Box { dx: 100.0, dy: 100.0, dz: 12.0 };
+    History::default().execute(&world, SetStock::new(&world, stock, Location::default()).expect("stock"));
+    let why = ImportDxf::from_bytes(&world, None, "drawing.dxf", insert.as_bytes(), &DxfOptions::default())
         .err()
         .expect("refused")
         .to_string();
