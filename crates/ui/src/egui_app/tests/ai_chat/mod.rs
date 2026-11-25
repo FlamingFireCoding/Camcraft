@@ -61,6 +61,22 @@ pub(super) fn submit_prompt(h: &mut Harness<'static, ShellUi>, text: &str) {
 /// A slow machine must never reach it, so no test outcome depends on this clock.
 pub(super) const HANG_GUARD: Duration = Duration::from_secs(120);
 
+pub(super) fn pump_until_started(
+    h: &mut Harness<'static, ShellUi>,
+    started: &AtomicBool,
+    hang_guard: Duration,
+) {
+    let deadline = Instant::now() + hang_guard;
+    while !started.load(Ordering::SeqCst) {
+        assert!(
+            Instant::now() < deadline,
+            "AI chat transport never started before the hang guard expired"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+        h.step();
+    }
+}
+
 pub(super) fn pump_until_idle(h: &mut Harness<'static, ShellUi>) {
     let deadline = Instant::now() + HANG_GUARD;
     while h.state().state.ai_chat.is_running() {

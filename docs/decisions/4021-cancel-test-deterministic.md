@@ -13,3 +13,11 @@ click and failed before the fix.
 Dropped: a channel for `started`. The `AtomicBool` already signals it, and the
 cancel flag itself is an `AtomicBool` by design. The assertions of the test are
 unchanged.
+
+Review correction: both cancellation tests use one startup helper with
+`HANG_GUARD`. A missing transport start fails with a clear diagnostic. This
+keeps the startup wait bounded even when the request ends before `complete`
+runs. The pin uses a short deadline to check the missing-start case.
+
+Dropped: separate startup loops. They allowed the stall test to wait forever.
+Changing this choice later only changes the test helper and its callers.
