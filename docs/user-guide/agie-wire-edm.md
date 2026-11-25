@@ -157,6 +157,26 @@ cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/three-corne
 
 The `ROUND20` job has four corner arcs with alternating radii of 6 and 4 mm, and the hole at X0 Y−21. The `THREEARC` job has three arcs of R5 that sweep about 143.13, 126.87 and 90 degrees, an oblique straight side, and the hole at X12 Y−12.
 
+## Die opening from a DXF chain of lines and arcs
+
+A closed DXF chain of `LINE` and `ARC` entities can be one die opening in a 20 mm plate. The opening can be reentrant: parts of the plate can project into it. Set the wire side to **Die**, select the chain as for a punch, put the threading hole inside the opening and set **Freed piece captured**. These conditions apply:
+
+- Each arc joins its neighbours tangentially. Only two straight walls can meet at a sharp corner.
+- A sharp corner where the plate projects into the opening is accepted: the control turns the wire around it. A sharp inside corner of the plate fails if the rough offset (0.245 mm) leaves more than 0.002 mm at the vertex. Use a fillet there.
+- An arc that turns counter-clockwise in the counter-clockwise opening (an inside fillet of the plate) must have a radius larger than the rough offset, 0.245 mm. The control does not refuse a smaller arc: it leaves that arc out of each pass whose offset is larger, and cuts a sharp corner. CamCraft refuses it. All arcs have radii from 0.5 to 20 mm.
+- Walls that are not neighbours stay apart by more than two rough offsets plus the longest rough corner, about 1 to 1.2 mm.
+- At least one straight wall is parallel to X or Y. Place the hole at least 3 mm inside that wall, with at least 3 mm of the wall on each side of the perpendicular entry. The complete 2 mm hole is more than 1 mm from every wall, and the straight lead stays more than 0.4 mm from every other wall. CamCraft enters the nearest such wall.
+- All joints and arc centres must be on the five-decimal ISO grid, with equal squared radii at both ends of each arc. The control moves the centre of an arc whose radii differ slightly and plots no path when they differ more.
+- Leave at least 0.4 mm of plate between each wall and arc extremum of the opening and the stock edge. Other drawing geometry must not touch or enter the opening.
+
+The ISO object lists the nominal opening counter-clockwise from the entry with `G01`, `G02` and `G03` blocks and incremental `I`/`J` centres. The setup script is the die setup (`c_die`).
+
+```sh
+cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/reentrant-die.camscript
+```
+
+The `REENT20` job has R2 corners, a tooth with two sharp tips on the right wall, a tongue with an R4 round tip on the top wall, and the hole at X0 Y−7. On an offline copy of the control software the job imported with zero steps, took the TECCUT row for 20 mm and passed FORMALCHECK. The plot showed the rough pass inside the opening, a concentric arc for each fillet, a round turn at each tooth tip and the 1 mm separation before the entry.
+
 ## Open the job in Agie Control
 
 Keep all files of the job directory together. A punch group has one ISO object for each work: import each of them. In the control’s file manager, open **Imp/exp** and import the ISO object into **ISO Sys**. Then import the SBL into **SBL Sys**, keeping the matching SBR beside the SBL. In the workpiece list choose **New workpiece → Script Files**, select the imported SBL and confirm with **OK**.

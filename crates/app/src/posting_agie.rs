@@ -124,7 +124,7 @@ pub(super) fn post(
         ));
     }
     // One selected DXF circle, racetrack (#2022) or convex tangent loop (#2983)
-    // posts native arcs. A group reads modeled punches or the openings of one
+    // punch, or one die opening of lines and arcs (#3178), posts native arcs. A group reads modeled punches or the openings of one
     // modeled die plate.
     let round = match operations.as_slice() {
         [(op_name, op)] if crate::operation::wire_sketch::selected(&op.src, &op.params) => {
@@ -168,8 +168,11 @@ pub(super) fn post(
         .and_then(|v| v.as_f64())
         .ok_or("The Agie Wire EDM post must declare its separation cut length in millimetres")?;
     let (bundle, works) = match &round {
-        Some((job, shape)) => {
+        Some((job, crate::operation::AgieSketch::Punch(shape))) => {
             (camcraft_post::agie::export_round_with_review(job, shape, dest, name, separation)?, 1)
+        }
+        Some((job, crate::operation::AgieSketch::Die(walls))) => {
+            (camcraft_post::agie::export_opening_with_review(job, walls, dest, name, separation)?, 1)
         }
         None => match (quality, jobs.as_slice()) {
             (Quality::Ccb035, [job]) => (

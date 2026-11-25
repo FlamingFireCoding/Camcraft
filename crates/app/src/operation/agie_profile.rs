@@ -61,38 +61,59 @@ pub(crate) fn agie_job(
     })
 }
 
-/// The nominal punch of `op` on one selected DXF circle, racetrack (#2022) or
-/// convex tangent loop (#2983), and that shape in setup XY. The selected-chain
+/// The nominal shape of a selected DXF chain: a punch profile (#2022,
+/// #2983), or the walls of a die opening in the setup frame (#3178).
+pub(crate) enum AgieSketch {
+    Punch(WireProfile),
+    Die(Vec<camcraft_post::agie_setup::InspectionSegment>),
+}
+
+/// The nominal job of `op` on one selected DXF chain: a punch on a circle,
+/// racetrack (#2022) or convex tangent loop (#2983), or a die opening of
+/// lines and arcs (#3178), and that shape in setup XY. The selected-chain
 /// door has refused models, fixtures and other drawings in the setup.
 pub(crate) fn agie_sketch_job(
     world: &World,
     op: &Operation,
     name: &str,
-) -> Result<(agie::AgieJob, WireProfile), String> {
-    if !matches!(&op.params, OpParams::WireContour(w) if w.side == WireSide::Punch) {
-        return Err("The Agie Wire EDM job reads a selected DXF chain only for a captured punch".into());
+) -> Result<(agie::AgieJob, AgieSketch), String> {
+    if !matches!(&op.params, OpParams::WireContour(w) if matches!(w.side, WireSide::Punch | WireSide::Die)) {
+        return Err("The Agie Wire EDM job reads a selected DXF chain only for a captured punch or die opening".into());
     }
     let (side, job, lo, hi, [ox, oy, oz]) = checked(world, op, name, None)?;
     let (OpParams::WireContour(wire), Some(chain)) = (&op.params, job.wire_sketch.as_ref()) else {
-        return Err("Select one closed DXF chain for the Agie Wire EDM punch".into());
+        return Err("Select one closed DXF chain for the Agie Wire EDM job".into());
     };
     let start = wire
         .picks
         .first(crate::path_picks::PickRole::Start)
-        .ok_or("The DXF punch requires a predrilled 2 mm threading hole")?;
+        .ok_or("The DXF job requires a predrilled 2 mm threading hole")?;
     let start = [start.xy.x, start.xy.y];
-    let mut shape = chain.wire_profile()?;
-    // The rest of the drawing must clear the whole native work: the arc
-    // extrema with the rough pass and wire (as the post bounds them), and the
-    // complete threading hole. The box of the two holds the straight lead.
-    let rough = camcraft_post::agie_setup::qn2_offsets_um(20_000)
-        .ok_or("The QN2 recipe has no measured offset for 20 mm stock")?[0];
-    let reach = f64::from((u32::from(rough) + 125).next_multiple_of(100)) / 1000.0;
-    let [a, b] = shape.bounds();
-    let low = Point2::new((a.x - reach).min(start[0] - 1.0), (a.y - reach).min(start[1] - 1.0));
-    let high = Point2::new((b.x + reach).max(start[0] + 1.0), (b.y + reach).max(start[1] + 1.0));
-    chain.check_envelope(low, high)?;
-    shape.place(|p| Point2::new(p.x - ox, p.y - oy));
+    let shape = if side == agie::AgieSide::Die {
+        // The wire stays inside the opening. Nothing else of the drawing may
+        // touch or enter it, and the complete hole lies inside it.
+        let mut clearance = camcraft_geometry::sketch_chains::ChainClearance::new(&chain.chain)
+            .map_err(|e| e.to_string())?;
+        if !clearance.contains_disk(chain.local(Point2::new(start[0], start[1])), 1.0 + 1e-8) {
+            return Err("The complete 2 mm start hole must lie inside the selected die opening".into());
+        }
+        chain.check_opening_clear(&mut clearance, |_, _| Ok(()))?;
+        AgieSketch::Die(chain.opening_spans([ox, oy])?)
+    } else {
+        let mut shape = chain.wire_profile()?;
+        // The rest of the drawing must clear the whole native work: the arc
+        // extrema with the rough pass and wire (as the post bounds them), and the
+        // complete threading hole. The box of the two holds the straight lead.
+        let rough = camcraft_post::agie_setup::qn2_offsets_um(20_000)
+            .ok_or("The QN2 recipe has no measured offset for 20 mm stock")?[0];
+        let reach = f64::from((u32::from(rough) + 125).next_multiple_of(100)) / 1000.0;
+        let [a, b] = shape.bounds();
+        let low = Point2::new((a.x - reach).min(start[0] - 1.0), (a.y - reach).min(start[1] - 1.0));
+        let high = Point2::new((b.x + reach).max(start[0] + 1.0), (b.y + reach).max(start[1] + 1.0));
+        chain.check_envelope(low, high)?;
+        shape.place(|p| Point2::new(p.x - ox, p.y - oy));
+        AgieSketch::Punch(shape)
+    };
     let job = agie::AgieJob {
         side,
         contour: Vec::new(),
