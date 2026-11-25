@@ -2499,6 +2499,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             helix_radius, blend_turns, blend_radius,
             extend_start,
             extend_end,
+            picks,
             ..
         } => {
             // #1504: picks bound the room the slot may cut in - a slot
@@ -2510,10 +2511,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 room?.judge(*a, *b, *width)?;
             }
             let (ea, eb) = machining2d::slot_extended_ends(*a, *b, *extend_start, *extend_end)?;
-            let path = machining2d::slot(
-                ea,
-                eb,
-                &SlotParams {
+            let sp = SlotParams {
                     links: lk,
                     tool_diameter: d,
                     entry: *entry,
@@ -2529,8 +2527,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     feed: *feed,
                     plunge_feed: *plunge_feed,
                     climb: *climb,
-                },
-            )?;
+            };
+            // #3325: a start or exit pick chooses which end the pass
+            // starts on; without a pick the ends come back as they are.
+            let (ea, eb) = machining2d::slot_picked_ends(ea, eb, &sp, picks)?;
+            let path = machining2d::slot(ea, eb, &sp)?;
             let region = region_for_job(
                     &mut picked_region,
                     &mut section_z,

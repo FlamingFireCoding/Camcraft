@@ -68,9 +68,10 @@ impl KindInfo {
             OpType::Contour => PickCapability::Ring,
             OpType::WireContour => PickCapability::Threading,
             OpType::Probe => PickCapability::NotTaken(PICK_NO_PATH),
+            // #3325: the end where the pass starts, and where it stops.
+            OpType::Slot => PickCapability::Ends,
             OpType::Face
             | OpType::Pocket
-            | OpType::Slot
             | OpType::Trace
             | OpType::Adaptive2D
             | OpType::Offset2D
@@ -263,6 +264,10 @@ impl OpParams {
             let what = role.word();
             if matches!(self, OpParams::Contour { tilt: Some(_), .. }) {
                 return Some(format!("a {what} point is not taken on a tilted (3+2) contour yet - clear it or the tilt"));
+            }
+            // #3325: a pick is a model-frame point; the tilted slot's ends are not.
+            if matches!(self, OpParams::Slot { tilt: Some(_), .. }) {
+                return Some(format!("a {what} point is not taken on a tilted (3+2) slot yet - clear it or the tilt"));
             }
             if !cap.takes(role) {
                 let why = match cap {
