@@ -551,13 +551,13 @@ pub(super) fn emit_rings_seamed(
                 }
                 // #3330: a picked exit runs the lap on to the pick; the
                 // retract column there is judged up to the clearance plane.
-                if let (true, Some(s)) = (closed, seam.as_deref_mut()) {
-                    if let Some(f) = s.run_on(&mut poly) {
-                        if !column_clear(f.x, f.y, z_tip + r, p.clearance_z.max(z_tip) + r, r - p.tolerance, &sups) {
-                            return Err(s.blocked_exit(z_tip));
-                        }
-                        walk = fit_arcs(&poly, p.tolerance * 0.25);
+                if let (true, Some(s)) = (closed, seam.as_deref_mut())
+                    && let Some(f) = s.run_on(&mut poly)
+                {
+                    if !column_clear(f.x, f.y, z_tip + r, p.clearance_z.max(z_tip) + r, r - p.tolerance, &sups) {
+                        return Err(s.blocked_exit(z_tip));
                     }
+                    walk = fit_arcs(&poly, p.tolerance * 0.25);
                 }
                 push_walk(b, &walk, z_tip, p.feed);
                 *last = Some(z_tip);
