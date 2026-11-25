@@ -220,6 +220,47 @@ pub fn connect(dir: &Path, select: &Select) -> Result<(Entry, Stream), LinkError
     }
 }
 
+/// Maximum byte length for one answer line from a window (16 MiB, #3874).
+pub const MAX_ANSWER_LINE: usize = 16 * 1024 * 1024;
+
+/// Error from [`read_answer_line`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum ReadLineError {
+    /// The stream reached end-of-file before any bytes were read.
+    Eof,
+    /// The line exceeded the maximum allowed byte length.
+    TooLong { limit: usize, bytes_read: usize },
+    /// An I/O error occurred while reading from the stream.
+    Io(String),
+}
+
+impl fmt::Display for ReadLineError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Eof => write!(f, "end of input"),
+            Self::TooLong { limit, bytes_read } => {
+                write!(f, "line exceeded limit of {limit} bytes (read {bytes_read} bytes)")
+            }
+            Self::Io(e) => write!(f, "I/O error: {e}"),
+        }
+    }
+}
+
+/// Read one line up to `limit` bytes.
+///
+/// # Errors
+/// Returns [`ReadLineError::TooLong`] when the line exceeds `limit`.
+pub fn read_answer_line(reader: &mut impl BufRead, limit: usize) -> Result<String, ReadLineError> {
+    let mut buf = Vec::new();
+    let cap = u64::try_from(limit).unwrap_or(u64::MAX).saturating_add(1);
+    match reader.by_ref().take(cap).read_until(b'\n', &mut buf) {
+        Ok(0) => Err(ReadLineError::Eof),
+        Ok(n) if n > limit => Err(ReadLineError::TooLong { limit, bytes_read: n }),
+        Ok(_) => String::from_utf8(buf).map_err(|e| ReadLineError::Io(format!("the line is not UTF-8: {e}"))),
+        Err(e) => Err(ReadLineError::Io(e.to_string())),
+    }
+}
+
 /// Send one `tools/call` to the selected window and return its MCP
 /// result (`content`, `structuredContent`, `isError`).
 ///
@@ -233,14 +274,24 @@ pub fn call(dir: &Path, select: &Select, tool: &str, args: &Value) -> Result<Val
     writeln!(writer, "{line}").and_then(|()| writer.flush()).map_err(lost)?;
     let mut reader = BufReader::new(stream);
     loop {
-        let mut text = String::new();
-        // Limit each answer line to 16 MiB (#3874).
-        if reader.by_ref().take(16 * 1024 * 1024).read_line(&mut text).map_err(lost)? == 0 {
-            return Err(LinkError::Failed(format!(
-                "the window {} closed the link before it answered",
-                describe(&entry)
-            )));
-        }
+        let text = match read_answer_line(&mut reader, MAX_ANSWER_LINE) {
+            Ok(t) => t,
+            Err(ReadLineError::Eof) => {
+                return Err(LinkError::Failed(format!(
+                    "the window {} closed the link before it answered",
+                    describe(&entry)
+                )));
+            }
+            Err(ReadLineError::TooLong { limit, .. }) => {
+                return Err(LinkError::Failed(format!(
+                    "the window {} sent an answer line exceeding the limit of {limit} bytes",
+                    describe(&entry)
+                )));
+            }
+            Err(ReadLineError::Io(e)) => {
+                return Err(LinkError::Failed(format!("the link to {} broke: {e}", describe(&entry))));
+            }
+        };
         let Ok(msg) = serde_json::from_str::<Value>(text.trim()) else { continue };
         // A notification (an idle note) has no id; only our answer counts.
         if msg.get("id") != Some(&json!(1)) {
@@ -276,4 +327,33 @@ pub fn bridge(dir: &Path, select: &Select, input: impl Read + Send + 'static, mu
         .map_err(lost)?;
     std::io::copy(&mut from_app, &mut output).map_err(lost)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn read_answer_line_accepts_valid_line() {
+        let mut reader = Cursor::new(b"{\"id\":1,\"result\":{\"ok\":true}}\n");
+        let line = read_answer_line(&mut reader, 100).expect("valid line");
+        assert_eq!(line, "{\"id\":1,\"result\":{\"ok\":true}}\n");
+    }
+
+    #[test]
+    fn read_answer_line_rejects_oversized_line() {
+        let data = b"0123456789extra_bytes\n";
+        let mut reader = Cursor::new(data);
+        let err = read_answer_line(&mut reader, 10).expect_err("oversized line");
+        assert_eq!(err, ReadLineError::TooLong { limit: 10, bytes_read: 11 });
+    }
+
+    #[test]
+    fn read_answer_line_rejects_oversized_line_without_newline() {
+        let data = b"0123456789extra_bytes_no_nl";
+        let mut reader = Cursor::new(data);
+        let err = read_answer_line(&mut reader, 10).expect_err("oversized line without newline");
+        assert_eq!(err, ReadLineError::TooLong { limit: 10, bytes_read: 11 });
+    }
 }
