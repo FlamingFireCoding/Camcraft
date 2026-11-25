@@ -1784,8 +1784,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // paths of every v28 document regenerate byte-identical.
             let shank = (*shank_avoid).then(|| shank_of(&tool));
             // M11.3 owed: the centre-cutting law, read along the pose.
+            // #3330: the contour's start / exit picks seat its rings; an
+            // empty seam is the automatic ladder, byte for byte.
+            let seam = crate::finishing3d::RingSeam::of(&params.path_picks());
             let run = |q: &Finish3DParams| if is_contour {
-                crate::multiaxis::contour5d(&material.facets, q, &axis, shank.as_ref())
+                crate::multiaxis::contour5d_seamed(&material.facets, q, &axis, shank.as_ref(), &seam)
             } else {
                 crate::multiaxis::parallel5d(&material.facets, q, &axis, shank.as_ref())
             };

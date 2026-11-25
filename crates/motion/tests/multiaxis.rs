@@ -11,14 +11,15 @@
 //!
 //! Gate map (M4.4): covers camcraft_motion::cl, camcraft_motion::finishing3d,
 //! camcraft_motion::geometry, camcraft_motion::machining2d, camcraft_motion::multiaxis.
+//! #3330: the start / exit picks of the ring ladder (finishing3d::ring_seam).
 //! Lane shape (M4.4): all tests here run in seconds; envelope
 //! verdicts over these paths ride the app's ignored lane.
 
 use camcraft_motion::cl::MoveKind;
-use camcraft_motion::finishing3d::{Finish3DParams, FinishPattern, waterline};
+use camcraft_motion::finishing3d::{Finish3DParams, FinishPattern, RingSeam, waterline, waterline_seamed};
 use camcraft_motion::geometry::{Point3, Triangle};
 use camcraft_motion::machining2d::GenError;
-use camcraft_motion::multiaxis::{AxisControl, contour5d, parallel5d};
+use camcraft_motion::multiaxis::{AxisControl, contour5d, contour5d_seamed, parallel5d};
 
 const TAU: f64 = std::f64::consts::TAU;
 const R: f64 = 3.0;
@@ -281,4 +282,103 @@ fn an_empty_model_refuses_like_the_waterline() {
     // own refusal is the refusal - by its own name.
     let e = contour5d(&[], &finish(1.0, 0.0), &control(0.0, 0.0, None), None).err();
     assert!(matches!(e, Some(GenError::Empty(_))), "got {e:?}");
+}
+
+// #3330: the user's start and exit points on the 5-axis contour's rings.
+
+fn seam(start: Option<(f64, f64)>, exit: Option<(f64, f64)>) -> RingSeam {
+    let pt = |(x, y)| camcraft_motion::geo2d::Point2::new(x, y);
+    RingSeam { start: start.map(pt), exit: exit.map(pt) }
+}
+
+/// Every cut move at a level ends on a ring of the automatic ladder:
+/// the pick changes the order, never the geometry (the fitted arcs of
+/// the two walks agree to the fit's own quarter tolerance).
+fn cuts_ride_the_ladder(plan: &camcraft_motion::cl::Toolpath, got: &camcraft_motion::cl::Toolpath) {
+    for m in got.moves.iter().filter(|m| m.kind == MoveKind::Feed && (m.from.z - m.to.z).abs() < 1e-12) {
+        let d = off_ladder(plan, p3(m.to.x, m.to.y, m.to.z + R));
+        assert!(d < TOL, "a cut stands {d} mm off the automatic ladder at {:?}", m.to);
+    }
+}
+
+/// Each ring the path cuts: (first point, last point) of the feed run
+/// at one level that a plunge begins. An open run keeps the ends its
+/// partition gave it; a closed ring returns to its first point.
+fn runs(t: &camcraft_motion::cl::Toolpath) -> Vec<(Point3, Point3)> {
+    let mut out = Vec::new();
+    let mut k = 0;
+    while k < t.moves.len() {
+        if t.moves[k].kind != MoveKind::Plunge {
+            k += 1;
+            continue;
+        }
+        let first = t.moves[k].to;
+        let mut last = first;
+        k += 1;
+        while k < t.moves.len() && t.moves[k].kind == MoveKind::Feed && (t.moves[k].to.z - first.z).abs() < 1e-12 {
+            last = t.moves[k].to;
+            k += 1;
+        }
+        out.push((first, last));
+    }
+    out
+}
+
+fn on_ray(q: Point3, x: bool) -> bool {
+    if x { q.y.abs() < 1e-9 && q.x > 0.0 } else { q.x.abs() < 1e-9 && q.y > 0.0 }
+}
+
+#[test]
+fn contour5d_start_point_seats_every_ring_at_the_pick() {
+    let facets = dome(15.0, 0.9, 8, 16);
+    let p = finish(12.0, 9.8);
+    let s = seam(Some((13.0, 0.0)), None);
+    let plan = waterline(&facets, &p).unwrap();
+    let got = waterline_seamed(&facets, &p, &s).unwrap();
+    let closed: Vec<_> = runs(&got).into_iter().filter(|(a, b)| a == b).collect();
+    assert!(closed.len() > 1, "the ladder has several closed rings: {}", closed.len());
+    for (a, _) in &closed {
+        assert!(on_ray(*a, true), "a closed ring starts off the pick's ray: {a:?}");
+    }
+    cuts_ride_the_ladder(&plan, &got);
+    // The posed kind poses that same seated ladder.
+    let posed = contour5d_seamed(&facets, &p, &control(20.0, 0.0, Some(45.0)), None, &s).unwrap();
+    balls_are_the_plan(&got, &posed);
+    assert!(posed.is_chained());
+}
+
+#[test]
+fn contour5d_exit_point_ends_every_ring_at_the_pick() {
+    let facets = dome(15.0, 0.9, 8, 16);
+    let p = finish(12.0, 9.8);
+    let plan = waterline(&facets, &p).unwrap();
+    let got = waterline_seamed(&facets, &p, &seam(Some((13.0, 0.0)), Some((0.0, 13.0)))).unwrap();
+    let seated: Vec<_> = runs(&got).into_iter().filter(|(a, _)| on_ray(*a, true)).collect();
+    assert!(seated.len() > 1, "several closed rings: {}", seated.len());
+    for (_, b) in &seated {
+        assert!(on_ray(*b, false), "a ring leaves off the exit pick's ray: {b:?}");
+    }
+    cuts_ride_the_ladder(&plan, &got);
+    let cut = |t: &camcraft_motion::cl::Toolpath| t.moves.iter().filter(|m| m.kind == MoveKind::Feed).flat_map(|m| m.segments3(1e-3)).map(|(a, b)| (b - a).dot(b - a).sqrt()).sum::<f64>();
+    assert!(cut(&got) > cut(&plan), "each lap runs on past its seam to the exit");
+}
+
+#[test]
+fn contour5d_pick_far_from_every_ring_is_refused_by_name() {
+    let facets = dome(15.0, 0.9, 8, 16);
+    let p = finish(12.0, 9.8);
+    for (s, what) in [(seam(Some((100.0, 100.0)), None), "start point (100.000, 100.000)"), (seam(None, Some((100.0, 100.0))), "exit point (100.000, 100.000)")] {
+        let e = contour5d_seamed(&facets, &p, &control(20.0, 0.0, Some(45.0)), None, &s).err();
+        let Some(GenError::Invalid(m)) = e else { panic!("{what}: refused as invalid, got {e:?}") };
+        assert!(m.contains(what) && m.contains("farther than"), "{m}");
+    }
+}
+
+#[test]
+fn contour5d_without_a_pick_is_the_automatic_ladder_byte_for_byte() {
+    let facets = dome(15.0, 0.9, 8, 16);
+    let p = finish(12.0, 9.8);
+    let c = control(20.0, 0.0, Some(45.0));
+    assert_eq!(waterline_seamed(&facets, &p, &RingSeam::default()).unwrap(), waterline(&facets, &p).unwrap());
+    assert_eq!(contour5d_seamed(&facets, &p, &c, None, &RingSeam::default()).unwrap(), contour5d(&facets, &p, &c, None).unwrap());
 }
