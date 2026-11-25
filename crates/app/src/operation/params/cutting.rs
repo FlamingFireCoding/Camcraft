@@ -42,8 +42,13 @@ impl OpParams {
                         h.write_u8(3);
                         w(h, p.clearance);
                     }
-                    // #3216: the centre-line slit reads no clearance.
-                    super::WireSide::Centre => h.write_u8(4),
+                    // #3216: the centre slit's run-out clearance places
+                    // its threading point in the air, so it moves the
+                    // stamp as any open run's does.
+                    super::WireSide::Centre => {
+                        h.write_u8(4);
+                        w(h, p.clearance);
+                    }
                 }
                 // #540: written only when set, so no contour's stamp moves.
                 if let Some(c) = p.burnout {

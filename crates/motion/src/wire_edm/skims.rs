@@ -7,6 +7,10 @@
 //! finished profile - and none may stand farther out than the pass
 //! before it, where it would cut only air. One threading cuts every
 //! pass, so every skim's condition must state the rough pass's wire.
+//! An open run (#3216 over #538) threads each pass anew in the air: a
+//! travel move (a rapid, no wire through it) joins one pass's run-out
+//! to the next pass's run-in and marks the pass boundary that the
+//! verify and the post read each pass from.
 //!
 //! Provenance: general wire EDM practice (a rough cut followed by
 //! skim cuts at decreasing offsets, the finishing pass setting the
@@ -15,7 +19,7 @@
 //! manual, condition table or CAM product behaviour was consulted.
 
 use super::{cut_pass, invalid, WireParams, PATH_TOL};
-use crate::cl::Toolpath;
+use crate::cl::{MoveKind, Move, Toolpath};
 use crate::geo2d::{Loop, Point2};
 use crate::machining2d::GenError;
 
@@ -112,20 +116,35 @@ pub fn check_passes(rough: &WireParams, skims: &[WirePass]) -> Result<(), GenErr
 /// exactly. An open run (#3216) takes its skims through the open-run
 /// generator: each re-enters from the air at the run's start end, at
 /// its own run-in point, and is walked in the run's own direction -
-/// the wire is threaded anew for every pass, so no move joins one
-/// pass's run-out to the next pass's run-in.
+/// the wire is threaded anew for every pass, and a travel move (a
+/// rapid, no wire through it) joins one pass's run-out to the next
+/// pass's run-in, marking the pass boundary.
 ///
 /// # Errors
 /// [`check_passes`]'s refusals, then any pass's own.
 pub fn wire_passes(loops: &[Loop], chains: &[Vec<Point2>], rough: &WireParams, skims: &[WirePass]) -> Result<Toolpath, GenError> {
     check_passes(rough, skims)?;
+    let open = rough.side.is_open_side();
     let mut path = cut_pass(loops, chains, rough, false)?;
     for (i, s) in skims.iter().enumerate() {
         let p = s.params(rough);
         let pass = cut_pass(loops, chains, &p, s.reverse)?;
+        // An open run is threaded anew for every pass (#3216 over #538):
+        // the pass before ended at its own run-out, the wire cut there,
+        // and the next pass begins at its own run-in back at the run's
+        // start end. A travel move carries the boundary - the wire is
+        // not threaded through it - so the path stays one chained
+        // program, and the verify and the post read each pass as its
+        // own from the boundary the travel marks.
+        if open {
+            let (Some(from), Some(to)) = (path.end(), pass.start()) else {
+                return Err(invalid("the open run lays down no cut".into()));
+            };
+            path.moves.push(Move::new(MoveKind::Rapid, from, to, None));
+        }
         path.moves.extend(pass.moves);
-        let how = if rough.side.is_open_side() {
-            "in the run's own direction".to_owned()
+        let how = if open {
+            "in the run's own direction, threaded anew in the air at the run's start end".to_owned()
         } else if s.reverse {
             "clockwise (reversed)".to_owned()
         } else {

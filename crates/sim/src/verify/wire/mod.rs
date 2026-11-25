@@ -95,7 +95,8 @@ pub use arcs::ARC_SAG;
 pub use finding::{slugs_said, WireFinding, WireUnder};
 pub use slug::Slug;
 
-use kerf::{gouge_at, polyline, Wire};
+use kerf::{polyline, Wire};
+use passes::Pass;
 
 /// How far (mm) the kerf may come under its offset to the product
 /// before the kerf law calls it a gouge: 0.1 um - the generator builds
@@ -262,13 +263,17 @@ pub fn judge(job: &WireJob<'_>) -> WireVerdict {
         }
     };
     if matches!(job.side, CutSide::Open | CutSide::Centre) {
-        if !job.skim_offsets.is_empty() {
-            v.findings.push(WireFinding::Unreadable(
-                "an open run states skim passes - the wire verify reads one open pass from the air to its run-out; the skims are generated but not verified here yet".into(),
-            ));
-            return v;
-        }
-        open(job, &wire, k, &mut v);
+        // An open run's skims (#3216 over #538): each pass is threaded
+        // anew in the air, a travel move marks each boundary, and each
+        // pass burns its own kerf at its own offset.
+        let passes = match passes::split_open(&wire, k, &job.skim_offsets) {
+            Ok(p) => p,
+            Err(why) => {
+                v.findings.push(WireFinding::Unreadable(why));
+                return v;
+            }
+        };
+        open(job, &wire, &passes, &mut v);
         return v;
     }
     // A tabbed cut's skims (#538 x #539) are not cut: the hold law
@@ -332,33 +337,37 @@ pub fn judge(job: &WireJob<'_>) -> WireVerdict {
 }
 
 /// An open run (#1109, module head): the kerf law against the part at
-/// every height, both ends clear of the stock; no threading, no slug.
-/// A centre slit (#3216) burns both sides by statement, so its kerf
-/// law is not applied - said, never silent; the ends are still judged.
-fn open(job: &WireJob<'_>, wire: &Wire, k: f64, v: &mut WireVerdict) {
+/// every height, both ends of every pass clear of the stock; no
+/// threading, no slug. A centre slit (#3216) burns both sides by
+/// statement, so its kerf law is not applied - said, never silent; the
+/// ends are still judged. With skims (#3216 over #538) each pass is
+/// judged at its own kerf offset and its own ends.
+fn open(job: &WireJob<'_>, wire: &Wire, passes: &[Pass], v: &mut WireVerdict) {
     let centre = job.side == CutSide::Centre;
     v.skipped = Some(if centre { CENTRE_SKIP } else { OPEN_SKIP });
-    let mut worst: Option<(f64, f64, Point2)> = None;
+    let mut worst: Option<(f64, f64, Point2, f64)> = None;
     let mut gouge: Option<WireFinding> = None;
     for s in &job.sections {
         if !centre {
-            let (found, under) = gouge_at(&Product::Part(&s.part), wire, k, s.z, job.verify_tol);
+            let (found, under) = passes::gouge_at(&Product::Part(&s.part), wire, passes, s.z, job.verify_tol);
             gouge = WireFinding::first_gouge(gouge, found);
             v.under = WireUnder::deeper(v.under, under);
         }
         let Some(stock) = s.stock.as_ref() else { continue };
         // The ends where the wire stands at this height (a leaning
-        // wire's ends move with the plane).
+        // wire's ends move with the plane), each pass its own.
         let at = wire.at(s.z);
-        for e in [at.first(), at.last()].into_iter().flatten() {
-            let (clear, _) = dist::clearance(&Product::Part(stock), *e, *e);
-            if worst.is_none_or(|(c, _, _)| clear < c) {
-                worst = Some((clear, s.z, *e));
+        for pass in passes {
+            for e in [at.get(pass.first), at.get(pass.last)].into_iter().flatten() {
+                let (clear, _) = dist::clearance(&Product::Part(stock), *e, *e);
+                if worst.is_none_or(|(c, _, _, _)| clear < c) {
+                    worst = Some((clear, s.z, *e, pass.k));
+                }
             }
         }
     }
-    if let Some((clear, z, at)) = worst.filter(|(c, _, _)| *c < k - KERF_TOL) {
-        v.findings.push(WireFinding::OpenEndInStock { z, at, clear, need: k });
+    if let Some((clear, z, at, need)) = worst.filter(|(c, _, _, k)| *c < *k - KERF_TOL) {
+        v.findings.push(WireFinding::OpenEndInStock { z, at, clear, need });
     }
     v.findings.extend(if job.taper_chord { gouge.map(WireFinding::under_chord) } else { gouge });
 }

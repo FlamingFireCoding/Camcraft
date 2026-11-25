@@ -140,6 +140,12 @@ pub fn condition_of(world: &World, setup: Option<&str>, tool_name: &str, op: &Wi
     if let Some(why) = skims_refusal(op) {
         return Err(why);
     }
+    // A closing overlap with a burnout, a 4-axis cut or a taper
+    // (#3216): refused by name at the door, never cut with the overlap
+    // silently dropped.
+    if let Some(why) = overlap_refusal(op) {
+        return Err(why);
+    }
     // The passes' offset laws (#538) are the machine's numbers alone,
     // so they stand at the door too, not first in the generator.
     let rough = WireParams {
@@ -366,6 +372,37 @@ pub fn tabs_taper_refusal(op: &WireContourOp) -> Option<String> {
     })
 }
 
+/// A stated closing overlap with what does not cut it (#3216): the
+/// overlap rides the seam lap of a vertical, one-profile contour, so a
+/// no-core burnout (#540), a 4-axis cut (#537) or a constant taper
+/// (#536) beside it is refused by name, at the command door and at
+/// generation - never cut with the overlap silently dropped, and never
+/// handed to a builder that reads one clean ring. `None` when the op
+/// states no overlap or none of those.
+#[must_use]
+pub fn overlap_refusal(op: &WireContourOp) -> Option<String> {
+    if op.overlap <= 0.0 {
+        return None;
+    }
+    if op.four_axis.is_some() {
+        return Some(
+            "wire contour: a closing overlap is stated on a 4-axis cut - the overlap rides the seam lap of a vertical one-profile cut, and a 4-axis cut leans its rulings between two profiles; set the overlap to 0 or cut the two profiles without it".into(),
+        );
+    }
+    if op.burnout.is_some() {
+        return Some(
+            "wire contour: a closing overlap is stated with a no-core burnout - the burnout cuts offset rings, no seam lap to ride past; set the overlap to 0 or turn the burnout off".into(),
+        );
+    }
+    if op.taper_deg != 0.0 {
+        return Some(format!(
+            "wire contour: a closing overlap is stated with a {:.3} degree taper - the tapered cut leans one clean ring, and a seam-overlapped lap is not one; set the overlap to 0 or the taper to 0",
+            op.taper_deg
+        ));
+    }
+    None
+}
+
 /// Skims with what they are not cut with yet (#538): the skims walk
 /// the vertical, untabbed contour of one profile, so a taper (#536), a
 /// no-core burnout (#540), tabs (#539) or a 4-axis cut (#537) beside
@@ -409,6 +446,9 @@ pub(super) fn generate_wire(
 ) -> Result<(Toolpath, Vec<Warning>), GenError> {
     let (cond, cutoff) = cond?;
     if let Some(why) = skims_refusal(op) {
+        return Err(GenError::Invalid(why));
+    }
+    if let Some(why) = overlap_refusal(op) {
         return Err(GenError::Invalid(why));
     }
     let corner = corner_rule(op, &cond)?;

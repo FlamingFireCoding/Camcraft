@@ -162,10 +162,15 @@ pub(super) fn walk_from(ring: &[Point2], seg: usize, s: Point2) -> Vec<Point2> {
 
 /// The closing overlap's points (#3216): from the seam point `s` on
 /// edge `seg`, the ring's vertices past the seam in the direction the
-/// walk arrived, until `overlap` mm of arc is ridden - the last point
-/// cut to the exact remainder. The extension stops after one full lap:
-/// riding farther would cut the finished side of a die.
-pub(super) fn past_seam(ring: &[Point2], seg: usize, s: Point2, overlap: f64, reverse: bool) -> Vec<Point2> {
+/// walk arrived, then the seam edge's own remainder back to `s`, until
+/// `overlap` mm of arc is ridden - the last point cut to the exact
+/// remainder. One full lap (back onto `s`) is the limit: riding past
+/// it would burn over the start of the overlap's own ride, so a longer
+/// overlap is refused by name.
+///
+/// # Errors
+/// An overlap longer than the ring's one full lap.
+pub(super) fn past_seam(ring: &[Point2], seg: usize, s: Point2, overlap: f64, reverse: bool) -> Result<Vec<Point2>, GenError> {
     let n = ring.len();
     // The walk arrives at `s` along edge `seg`; continuing in that
     // direction meets ring[seg + 1] first - or, reversed, ring[seg].
@@ -173,8 +178,11 @@ pub(super) fn past_seam(ring: &[Point2], seg: usize, s: Point2, overlap: f64, re
     let mut out: Vec<Point2> = Vec::new();
     let mut acc = 0.0;
     let mut prev = s;
-    for k in 1..=n {
-        let q = ring[idx(k)];
+    // The (n + 1)-th vertex is the seam point itself: the lap closes on
+    // it along the seam edge's remainder - the leg the walk's own last
+    // step rode, without which a long overlap stops short of its arc.
+    for k in 1..=(n + 1) {
+        let q = if k == n + 1 { s } else { ring[idx(k)] };
         let d = dist(prev, q);
         if d > 0.0 && acc + d >= overlap {
             let f = (overlap - acc) / d;
@@ -182,7 +190,7 @@ pub(super) fn past_seam(ring: &[Point2], seg: usize, s: Point2, overlap: f64, re
             if out.last().is_none_or(|l| dist(*l, end) > 1e-9) {
                 out.push(end);
             }
-            return out;
+            return Ok(out);
         }
         acc += d;
         prev = q;
@@ -190,5 +198,7 @@ pub(super) fn past_seam(ring: &[Point2], seg: usize, s: Point2, overlap: f64, re
             out.push(q);
         }
     }
-    out
+    Err(invalid(format!(
+        "the closing overlap {overlap:.3} mm rides past one full lap of the wire path ({acc:.3} mm) - the ride would burn over its own start; state a shorter overlap"
+    )))
 }

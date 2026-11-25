@@ -327,8 +327,15 @@ pub(super) fn cut_pass(loops: &[Loop], chains: &[Vec<Point2>], p: &WireParams, r
             // The closing overlap (#3216): the ride continues past the
             // seam by the stated arc length before the lead-out; the
             // kerf law below judges the return move like every other.
+            // The ride ends back on the seam for a full-lap overlap -
+            // that point is already the path's own, so it never lands
+            // twice.
             if p.overlap > 0.0 {
-                v.extend(ring::past_seam(&path_ring, seg, foot, p.overlap, reverse));
+                for q in ring::past_seam(&path_ring, seg, foot, p.overlap, reverse)? {
+                    if v.last().is_none_or(|l| ring::dist(*l, q) > 1e-9) {
+                        v.push(q);
+                    }
+                }
             }
             v.push(start);
             v

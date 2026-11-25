@@ -66,7 +66,8 @@ pub fn wire_contour_arcs(chain: &ArcChain, p: &WireParams) -> Result<Toolpath, G
     let sign = match p.side {
         WireSide::Die => 1.0,
         WireSide::Punch => -1.0,
-        WireSide::Left | WireSide::Right => {
+        // #3216: centre, like left / right, is an open run's side.
+        WireSide::Left | WireSide::Right | WireSide::Centre => {
             return Err(invalid(format!(
                 "the side is {} of travel, but the profile is closed - a closed profile states its die or punch side",
                 p.side.word()

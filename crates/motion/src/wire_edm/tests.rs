@@ -6,7 +6,7 @@
 //! The wire and gap below are SYNTHETIC - a plausible size, from no
 //! machine's manual (#290 D4, D10).
 
-use super::ring::pt_ring;
+use super::ring::{dist, pt_ring};
 use super::*;
 use crate::cl::MoveKind;
 
@@ -386,4 +386,58 @@ fn the_closing_overlap_rides_past_the_seam_and_is_refused_without_a_seam() {
     n.overlap = -0.5;
     let why = refusal(&sq, &[], &n);
     assert!(why.contains("closing overlap must be zero or more"), "{why}");
+}
+
+/// The arc the ride covers past the seam: from the lap's own closing
+/// point (the last occurrence of the seam in the ride) to the ride's
+/// last point.
+fn seam_ride(path: &Toolpath) -> f64 {
+    let pts = ride(path);
+    let s = pts[0];
+    let seam = pts.iter().rposition(|q| dist(*q, s) < 1e-9).expect("the lap closed on the seam");
+    pts[seam..].windows(2).map(|w| dist(w[0], w[1])).sum()
+}
+
+/// The plain lap's own full arc: the walk from the seam round and back.
+fn lap(path: &Toolpath) -> f64 {
+    ride(path).windows(2).map(|w| dist(w[0], w[1])).sum()
+}
+
+/// #3216 rework: the ride includes the seam edge's own remainder back
+/// to the seam, so a 100 mm overlap on the 40 x 20 die fixture covers
+/// exactly 100 mm of arc - in the walk's own direction and reversed
+/// (a skim's) - where the ride once stopped short at the last vertex.
+/// One full lap is the limit: a ride near it is accepted onto the seam
+/// itself, a ride past it is refused by name.
+#[test]
+fn the_ride_covers_the_seam_remainder_and_refuses_past_one_lap() {
+    let sq = [rounded(40.0, 20.0, 2.0)];
+    let p = params(WireSide::Die, Some((0.0, 0.0)));
+    let plain = wire_contour(&sq, &[], &p).unwrap();
+    let perim = lap(&plain);
+    // The seam's own remainder is long enough that a 100 mm ride must
+    // cross onto it: the ride once stopped at the seam edge's own start
+    // vertex, short of the asked arc.
+    assert!(perim > 100.0, "the fixture's lap covers the asked ride ({perim:.3})");
+    let mut q = p.clone();
+    q.overlap = 100.0;
+    for rev in [false, true] {
+        let over = cut_pass(&sq, &[], &q, rev).unwrap();
+        let rode = seam_ride(&over);
+        assert!((rode - 100.0).abs() < 1e-6, "rev {rev}: the ride covers {rode:.6} mm of arc, not 100.000");
+    }
+    // The note still states the requested distance, never the short one.
+    let over = cut_pass(&sq, &[], &q, false).unwrap();
+    assert!(over.notes.iter().any(|n| n.contains("rides 100.000 mm past its seam")), "{:?}", over.notes);
+    // Near the lap's own length: accepted onto the seam, refused past it.
+    q.overlap = perim - 0.25;
+    let near = cut_pass(&sq, &[], &q, false).unwrap();
+    assert!((seam_ride(&near) - (perim - 0.25)).abs() < 1e-6, "a ride just short of the lap covers its arc");
+    q.overlap = perim;
+    // The ride's closing point IS the seam the walk already stands on:
+    // the builder drops that degenerate move, so acceptance is the pin.
+    assert!(cut_pass(&sq, &[], &q, false).is_ok(), "a full-lap ride lands back on the seam the path already stands on");
+    q.overlap = perim + 0.25;
+    let why = refusal(&sq, &[], &q);
+    assert!(why.contains("rides past one full lap") && why.contains(&format!("{perim:.3}")), "{why}");
 }

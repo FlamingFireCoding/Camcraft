@@ -103,6 +103,34 @@ fn params(world: &World) -> WireContourOp {
     }
 }
 
+/// #3216: a closing overlap beside a no-core burnout is refused by name
+/// at the command door - the burnout cuts offset rings, no seam lap to
+/// ride past - never generated with the overlap silently dropped, as
+/// it once was (identical moves at overlap 0 and 1 mm).
+#[test]
+fn a_closing_overlap_beside_a_burnout_is_refused_by_name() {
+    let (world, mut h) = doc(12.0);
+    burn(&world, &mut h, 0.5);
+    // The edit door: the overlap set on an existing burnout op.
+    let w = WireContourOp { overlap: 1.0, ..params(&world) };
+    let why = EditOperationParams::new(&world, "Burn1", OpParams::WireContour(w))
+        .map(|_| ())
+        .expect_err("refused at the edit door")
+        .to_string();
+    assert!(
+        why.contains("a closing overlap is stated with a no-core burnout") && why.contains("set the overlap to 0 or turn the burnout off"),
+        "{why}"
+    );
+    // The creation door refuses the pair outright.
+    let mut w = burnout(Some(0.5));
+    w.overlap = 1.0;
+    let why = CreateOperation::new(&world, "Burn2", "EDM-W025", SrcRef::Entity("pocket".into()), OpParams::WireContour(w))
+        .map(|_| ())
+        .expect_err("refused at creation")
+        .to_string();
+    assert!(why.contains("a closing overlap is stated with a no-core burnout"), "{why}");
+}
+
 /// Done means: the pocket burns out with nothing to drop - judged by
 /// #534's laws at the gate - and posts its golden: threaded once at the
 /// start hole, the rings in X Y only with no F, cut at the end.
