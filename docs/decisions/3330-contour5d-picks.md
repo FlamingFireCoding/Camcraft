@@ -52,3 +52,15 @@ its own copy of the column and pose laws.
 **Cost to change later.** Small: the law is in `ring_seam.rs` and one
 hook each for the start and the exit in `rings.rs`. A per-ring reach or a
 ring re-order would change only those two places and the pins.
+
+**Review follow-up (PR #4006).**
+- The exit retract column law is pinned on the untrimmed ring ladder
+  (`finishing3d::ring_seam_tests`). Through `waterline_seamed` the column
+  trim (`rings_overhang::trim_blocked_columns`) checks the same column,
+  every 0.25 mm, at a radius that is equal or larger. A canopy there opens
+  the ring first, so the exit pick has no closed ring and is refused by
+  name. The exit law stays as the guard for a ladder without the trim
+  (the 5-axis swarf ladder, `emit_rings_with_trim(.., false)`).
+- `nearest` states a foot at the end of a segment as the start of the
+  next segment. Dropped: a tie rule on the distance alone, which can still
+  pick the last segment at `t = 1` by rounding and add one full lap.
