@@ -247,9 +247,9 @@ pub(super) fn emit_band(
             // pre-M11.2 shape) - unless the pass link keeps down, which
             // feeds straight over where proved (contour_link::ring_link).
             let ring_to_ring = k == 0 && same_level && !first_entry;
-            // A bore-side ring after another one is entered by the user's
-            // arm too, never by the pass link's plunge into material.
-            let ring_in = ring_entry(p, ring_to_ring && inside && !tabbed, rzi == 0, arm, hop_z);
+            // A ring after another one is entered by the user's arm too, never
+            // by the pass link's plunge into material (#3830, #3917 wall side).
+            let ring_in = ring_entry(p, ring_to_ring && !tabbed, inside, rzi == 0, arm, hop_z);
             let enter_ring = ring_in.is_some();
             let wall_arc_on = !inside
                 && arm == Entry3D::Arc
