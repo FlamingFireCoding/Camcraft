@@ -2,21 +2,22 @@
 //! punch cut as true arcs, verified by the wire laws and posted as G2 / G3
 //! with I J through the generic ISO, Sodick and G-EDM wire posts, each to
 //! its golden. TEXT and DIMENSION entities no longer block the cut. A closed SPLINE is read
-//! as tangent arcs (#1865) and cut the same way.
+//! as tangent arcs (#1865) and cut the same way, and a circle in a nested BLOCK posts the
+//! same program as the circle drawn at top level.
 //!
 //! Regenerate the goldens after an intentional change, then read the diff:
 //! `WRITE_GOLDEN=1 cargo test -p camcraft-app --test wire_dxf_selection arcs`
 
 use super::*;
 
-const ISO: &str = "Generic ISO Wire EDM";
-const SODICK: &str = "Sodick Wire EDM (Mark 21)";
-const GEDM: &str = "G-EDM Wire EDM";
-const GEDM_FIXTURE: &str = include_str!("../edm/g-edm-fixture.mch");
+pub(super) const ISO: &str = "Generic ISO Wire EDM";
+pub(super) const SODICK: &str = "Sodick Wire EDM (Mark 21)";
+pub(super) const GEDM: &str = "G-EDM Wire EDM";
+pub(super) const GEDM_FIXTURE: &str = include_str!("../edm/g-edm-fixture.mch");
 
 /// A radius 5 circle about the drawing's origin, with a TEXT and a
 /// DIMENSION entity beside it.
-const DIE: &str = "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n\
+pub(super) const DIE: &str = "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n\
     0\nCIRCLE\n8\noutline\n10\n0\n20\n0\n40\n5\n\
     0\nTEXT\n8\nnotes\n10\n20\n20\n20\n40\n2\n1\nDIE 10\n\
     0\nDIMENSION\n8\nnotes\n10\n-5\n20\n-8\n0\nENDSEC\n0\nEOF\n";
@@ -24,7 +25,7 @@ const DIE: &str = "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSEC
 /// A 20 x 20 L about the origin: its corner at (10, -10) rounded by a
 /// radius 3 fillet (bulge tan(22.5 degrees)), a sharp inside corner at
 /// (0, 0).
-const PUNCH: &str = "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n\
+pub(super) const PUNCH: &str = "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n\
     0\nLWPOLYLINE\n8\noutline\n90\n7\n70\n1\n10\n-10\n20\n-10\n10\n7\n20\n-10\n42\n0.41421356237309503\n\
     10\n10\n20\n-7\n10\n10\n20\n0\n10\n0\n20\n0\n10\n0\n20\n10\n10\n-10\n20\n10\n0\nENDSEC\n0\nEOF\n";
 
@@ -38,7 +39,7 @@ const OVAL: &str = "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSE
     10\n-8.528028654224\n20\n-3.490278871102\n42\n0.560231504260063\n0\nENDSEC\n0\nEOF\n";
 
 /// A start pick at a world point (#3339 moved `start` into `picks`).
-fn start_at(p: [f64; 2]) -> camcraft_app::path_picks::PathPicks {
+pub(super) fn start_at(p: [f64; 2]) -> camcraft_app::path_picks::PathPicks {
     camcraft_app::path_picks::PathPicks {
         start: vec![camcraft_app::path_picks::PathPick::xy(camcraft_app::geo2d::Point2::new(p[0], p[1]))],
         exit: Vec::new(),
@@ -46,7 +47,7 @@ fn start_at(p: [f64; 2]) -> camcraft_app::path_picks::PathPicks {
 }
 
 /// The drawing point (`x`, `y`) in world XY.
-fn to_world(world: &World, x: f64, y: f64) -> [f64; 2] {
+pub(super) fn to_world(world: &World, x: f64, y: f64) -> [f64; 2] {
     let (e, _) = sketch::find(world, "drawing").expect("drawing");
     let pose = sketch::world_pose(world, &e).expect("placed");
     let q = camcraft_app::geometry::transform_point(Point3::new(x, y, 0.0), pose.pos, pose.rot);
@@ -55,7 +56,7 @@ fn to_world(world: &World, x: f64, y: f64) -> [f64; 2] {
 
 /// `dxf` placed and picked as `document` does, on `machine`, cut on
 /// `side` from the drawing point `hole` under `condition`.
-fn doc(dxf: &str, machine: &str, condition: &str, side: WireSide, hole: (f64, f64), sharp: bool) -> World {
+pub(super) fn doc(dxf: &str, machine: &str, condition: &str, side: WireSide, hole: (f64, f64), sharp: bool) -> World {
     let (world, mut h) = document(dxf);
     if machine != FIXTURE {
         let m = machine::parse_mch(machine).expect("machine");
@@ -93,7 +94,7 @@ fn posted(world: &World, post: &str, tag: &str) -> String {
 }
 
 /// Post through `post` and hold the program to `golden`.
-fn golden(world: &World, post: &str, golden: &str) -> String {
+pub(super) fn golden(world: &World, post: &str, golden: &str) -> String {
     let nc = posted(world, post, golden);
     let path = format!("tests/golden/nc/{golden}");
     if std::env::var_os("WRITE_GOLDEN").is_some() {
@@ -104,7 +105,7 @@ fn golden(world: &World, post: &str, golden: &str) -> String {
     nc
 }
 
-fn arc_blocks(nc: &str) -> Vec<&str> {
+pub(super) fn arc_blocks(nc: &str) -> Vec<&str> {
     nc.lines().filter(|l| l.starts_with("G2 ") || l.starts_with("G3 ") || l.starts_with("G02") || l.starts_with("G03")).collect()
 }
 
@@ -186,12 +187,41 @@ fn arcs_stay_refused_for_taper_and_a_hatch_still_blocks_the_cut() {
     let world = doc(&hatch, FIXTURE, "C110", WireSide::Die, (0.0, 0.0), false);
     let why = refusal(&world);
     assert!(why.contains("skipped 1 HATCH entity"), "{why}");
-    // #1865: a block reference no longer stops the import, but its clearance from the wire
-    // cannot be checked, so the cut is refused by name.
+    // #1865: a block reference is expanded, so one to a block that is not defined stops
+    // the import by name.
     let insert = DIE.replace("0\nENDSEC\n0\nEOF", "0\nINSERT\n8\nnotes\n2\nBOLT\n10\n30\n20\n0\n0\nENDSEC\n0\nEOF");
-    let world = doc(&insert, FIXTURE, "C110", WireSide::Die, (0.0, 0.0), false);
-    let why = refusal(&world);
-    assert!(why.contains("skipped 1 INSERT entity"), "{why}");
+    let world = new_world();
+    let stock = StockShape::Box { dx: 100.0, dy: 100.0, dz: 12.0 };
+    History::default().execute(&world, SetStock::new(&world, stock, Location::default()).expect("stock"));
+    let why = ImportDxf::from_bytes(&world, None, "drawing.dxf", insert.as_bytes(), &DxfOptions::default())
+        .err()
+        .expect("refused")
+        .to_string();
+    assert!(why.contains("INSERT BOLT: block is not defined"), "{why}");
+}
+
+/// The die circle of `DIE` drawn in a block (#1865): a radius 10 circle on layer "0" about
+/// the base point (10, 10), inserted at half scale and turned 90 degrees inside a second
+/// block, which is inserted on the "outline" layer. Layer "0" takes the INSERT's layer.
+const DIE_BLOCK: &str = "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nBLOCKS\n\
+    0\nBLOCK\n8\n0\n2\nRing\n70\n0\n10\n10\n20\n10\n30\n0\n0\nCIRCLE\n8\n0\n10\n10\n20\n10\n40\n10\n0\nENDBLK\n\
+    0\nBLOCK\n8\n0\n2\nHolder\n70\n0\n10\n0\n20\n0\n30\n0\n\
+    0\nINSERT\n8\n0\n2\nRing\n10\n0\n20\n0\n41\n0.5\n42\n0.5\n50\n90\n0\nENDBLK\n0\nENDSEC\n\
+    0\nSECTION\n2\nENTITIES\n0\nINSERT\n8\noutline\n2\nHolder\n10\n0\n20\n0\n\
+    0\nTEXT\n8\nnotes\n10\n20\n20\n20\n40\n2\n1\nDIE 10\n\
+    0\nDIMENSION\n8\nnotes\n10\n-5\n20\n-8\n0\nENDSEC\n0\nEOF\n";
+
+#[test]
+fn an_inserted_block_cuts_and_posts_like_the_same_top_level_circle() {
+    let world = doc(DIE_BLOCK, FIXTURE, "C110", WireSide::Die, (0.0, 0.0), false);
+    let (_, drawing) = sketch::find(&world, "drawing").expect("drawing");
+    assert_eq!(drawing.data.chains().closed.len(), 1, "one closed chain on the outline layer");
+    let path = generated(&world);
+    assert_eq!(path.arc_count(), 2, "{:?}", path.moves);
+    let nc = posted(&world, ISO, "die-block");
+    assert!(arc_blocks(&nc).iter().all(|l| l.starts_with("G3")), "{nc}");
+    let want = std::fs::read_to_string("tests/golden/nc/wire-iso/wire_dxf_die_circle.nc").expect("golden present");
+    assert_eq!(nc, want, "the inserted circle posts the top-level circle's program");
 }
 
 /// The X and Y words of `line`, with the modal values of `at` where a word

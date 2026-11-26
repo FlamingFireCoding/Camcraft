@@ -13,7 +13,9 @@ declared. The kind decides
 which operations the document accepts, which posts the picker lists and
 which limits the program is checked against. See [Setups](@/guide/set-up/setups.md)
 for mounting a machine and [Reading a refusal](@/guide/reference/refusals.md) for the
-messages below.
+messages below. For how the machine file differs from the post, and where
+both sit between CAD and the machine, see
+[Model to Machine](@/guide/model-to-machine.md#machine-file-and-post-what-each-one-answers).
 
 | Kind | Operation families allowed | Posts that serve it | Shipped machine files |
 |---|---|---|---|
@@ -22,7 +24,7 @@ messages below.
 | Lathe | Turning, plus the axial Drill | Fanuc Lathe, Tormach PathPilot Lathe | Turning center 2-axis, Tormach 8L, 15L, 15LX |
 | Mill-turn (live tooling) | milling and turning | every post except plasma | Multitasking 5-axis |
 | Plasma | Plasma Profile only | Tormach PathPilot Plasma | Tormach 1300PL |
-| Wire / sinker EDM | Wire Contour (wire EDM); Sinker Burn, Side Burn (sinker EDM) | Generic ISO Wire EDM, Sodick Wire EDM (Mark 21), G-EDM Wire EDM; Sinker EDM (ISO) | Sodick ALC400G (complete its EDM data); supply a sinker machine file |
+| Wire / sinker EDM | Wire Contour (wire EDM); Sinker Burn, Side Burn (sinker EDM) | Generic ISO Wire EDM, Sodick Wire EDM (Mark 21), Sodick Wire EDM (LN2W), G-EDM Wire EDM; Sinker EDM (ISO) | Sodick ALC400G, Sodick AQ600L (complete their EDM data); supply a sinker machine file |
 
 A **waterjet** machine file needs linear X and Y axes; Z is optional. It
 is refused by name if it states a spindle, live tooling, a rotary axis or
@@ -236,6 +238,25 @@ cut ([Conditions](@/guide/operations/operations-edm.md#wire-edm-the-machine-the-
 The file supplies no wire diameter list and no EDM codes. The Sodick
 post writes a vertical 2-axis cut only, so it refuses a taper.
 The ALC400G control has not been confirmed to match the Mark 21 post.
+
+The library also includes **Sodick AQ600L** (`sodick-aq600l.mch`) for
+the LN2W control. Its default post is **Sodick Wire EDM (LN2W)**. The
+file states X/Y travel 600/400 mm, U/V travel 80/80 mm and a taper
+maximum of 20 degrees: check these figures against the specification
+sheet of your machine. The conditions `C001`, `C002` and `C903` and the
+guide heights are examples. Replace them before you cut.
+
+The **Sodick Wire EDM (LN2W)** post starts each cut in this order:
+`G00 X Y U0. V0.` on one line, `Z0.`, `T91`, `T84`, `T94`, the `C` word,
+then the first `G01`. Set Z0 at the control to the height of the upper
+head above the part. The post writes no `G20` or `G21`, because the
+LN2W control refuses `G21`: it posts millimetre documents only, and the
+unit setting of the control must be millimetres. The post writes
+vertical 2-axis cuts only. It refuses a taper, 4-axis cuts and wire
+offset (G41 / G42). A taper (`TP` / `TN`, `G51` / `G52` `A`) needs the
+height of the work above the worktable for each setup, and a confirmed
+corner motion and lean side of the control (#4075). Its output has not
+been verified on a control.
 
 Wire Contour runs on a machine file that declares `wire_edm`. The
 **Generic ISO Wire EDM** post takes its EDM words from the file's

@@ -1216,6 +1216,9 @@ pub struct ToolUi {
     pub pitch_min: f64,
     /// Tap thread hand; older tools default to right-hand.
     pub thread_hand: camcraft_app::tools::ThreadHand,
+    /// The cutter's hand (#4031): right runs M3, left needs the spindle
+    /// reversed (M4) - the app's `Tool` field's law, mirrored.
+    pub cutter_hand: camcraft_app::tools::CutterHand,
     /// Insert nose radius; the turning kind's cutting ball, inert on
     /// the mills (the app's `Tool` field's law, mirrored).
     pub nose_radius: f64,
@@ -1312,6 +1315,7 @@ impl ToolUi {
             pitch: t.pitch,
             pitch_min: t.pitch_min,
             thread_hand: t.thread_hand,
+            cutter_hand: t.cutter_hand,
             nose_radius: t.nose_radius,
             width: t.width,
             flute_len: t.flute_len,
@@ -1402,6 +1406,7 @@ impl ToolUi {
             pitch: self.pitch,
             pitch_min: self.pitch_min,
             thread_hand: self.thread_hand,
+            cutter_hand: self.cutter_hand,
             nose_radius: self.nose_radius,
             width: self.width,
             flute_len: self.flute_len,
@@ -1907,6 +1912,9 @@ pub struct State {
     /// cut to the playhead on a worker thread, its newest picture
     /// feeding `field_view` (dropping it stops and joins the worker).
     pub field_play: Option<camcraft_app::stock_play_worker::PlayWorker>,
+    /// #3336: the layer playback of `field_play` (the GPU cutter on the
+    /// render device, and whether the eye can show its frames).
+    pub layer_play: crate::play_layer::LayerPlayback,
     /// The transport's timeline, built once per `doc_version` (never
     /// per frame: it walks every op's path) - see `shell::cached_script`.
     pub sim_script_cache: Option<(u64, std::sync::Arc<camcraft_app::sim::Script>)>,
@@ -2450,6 +2458,7 @@ impl State {
             program_sim: None,
             field_view: None,
             field_play: None,
+            layer_play: crate::play_layer::LayerPlayback::default(),
             sim_script_cache: None,
             sim_op_starts: None,
             sim_tool_cache: std::sync::Mutex::default(),
@@ -3725,12 +3734,13 @@ impl State {
             CommandKind::AddTool { name, tool } => match AddTool::with_holder(&self.world, &name, tool, HolderPick::MachineDefault) {
                 Ok(command) => {
                     let number = command.number();
-                    let note = command.note();
+                    // #3792: a speed outside the machine's range is said here too.
+                    let notes: Vec<String> = command.note().into_iter().chain(command.warning()).collect();
                     self.history.execute(&self.world, command);
                     self.doc_version += 1;
-                    self.status = match note {
-                        Some(n) => format!("tool {name} added (T{number}) - {n}"),
-                        None => format!("tool {name} added (T{number})"),
+                    self.status = match notes.is_empty() {
+                        false => format!("tool {name} added (T{number}) - {}", notes.join(" - ")),
+                        true => format!("tool {name} added (T{number})"),
                     };
                 }
                 Err(err) => self.refuse(ErrorScope::Tool, format!("tool not added: {err}")),

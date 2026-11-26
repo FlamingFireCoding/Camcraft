@@ -19,7 +19,7 @@ the property table there is the vocabulary, this file is the grammar.
 
 Manifest: top-level assignments only — `description`, `vendor`, `legal`,
 `certificationLevel`, `minimumRevision`, `extension`, `setCodePage`,
-`capabilities`, `serves`, `coolantModes`, `programUnits`, `endUnits`, `liveTooling`, `afterModes`, `axisInversion`, `probeAxisInversion`, `threadHands`, `workOffsetIndex`, `workOffsetMax`, `continuousThreading`, `rotariesBeforeTraverse`, `uprightReturn`. All but `serves` and the last twelve are
+`capabilities`, `serves`, `coolantModes`, `programUnits`, `endUnits`, `liveTooling`, `afterModes`, `axisInversion`, `probeAxisInversion`, `threadHands`, `workOffsetIndex`, `workOffsetMax`, `continuousThreading`, `rotariesBeforeTraverse`, `uprightReturn`, `manualToolChange`. All but `serves` and the last thirteen are
 text the engine reads none of; `serves = ["plasma"];` (#1266; one word or a list of kind words: mill, lathe, mill-turn, plasma, wire_edm, sinker_edm) names the machine kinds a script of the user's own posts to - the app refuses it by name on any other kind, and a script that states none is accepted only on a mill (non-turning dialect), a lathe (turning) or a mill-turn, never on a plasma table or an EDM; shipped posts are judged by registry name and need no `serves`; `programUnits = "mm inch"` (#902) says
 the script writes the program in the document's unit -
 `postOptions.Units`, `"mm"` or `"inch"`, absent = mm: the dialect's
@@ -61,7 +61,7 @@ and tormach-lathe.cps: the LinuxCNC G-code reference's G59.1-G59.3);
 `threadHands = true` (#629) says the script
 reads `PARAM SpindleDirection` and states a thread's hand (M04 when the
 helix needs the spindle reversed) - without it the engine refuses a
-reverse-spindle thread section by name (fanuc-lathe.cps and tormach-lathe.cps set it); `rotariesBeforeTraverse = true` (#3100) says the script turns the rotaries to each section's pose at the safe Z before its first X/Y traverse - the first-traverse law then reads the work at the operation's own pose, not at every pose the previous program can leave; a script without it is read the strict way, a user's own script that declares it is taken at its word with a note on the path, and each shipped post that declares it has a posting test of the real order (tormach.cps sets it); `uprightReturn = true` (#3477) says the script retracts to a safe height and commands the rotaries to zero at the start of each section that follows a tilted section, before its first X/Y traverse - without it the engine refuses by name a section that opens with no stated angle after a section that left a rotary off zero, and each shipped post that declares it has a posting test of the real order (`crates/post/tests/upright_after_tilt.rs`; fanuc, doosan-dnm, mach4 and tormach set it); `liveTooling = true` (issue #33) says the
+reverse-spindle thread section by name (fanuc-lathe.cps and tormach-lathe.cps set it); `rotariesBeforeTraverse = true` (#3100) says the script turns the rotaries to each section's pose at the safe Z before its first X/Y traverse - the first-traverse law then reads the work at the operation's own pose, not at every pose the previous program can leave; a script without it is read the strict way, a user's own script that declares it is taken at its word with a note on the path, and each shipped post that declares it has a posting test of the real order (tormach.cps sets it); `uprightReturn = true` (#3477) says the script retracts to a safe height and commands the rotaries to zero at the start of each section that follows a tilted section, before its first X/Y traverse - without it the engine refuses by name a section that opens with no stated angle after a section that left a rotary off zero, and each shipped post that declares it has a posting test of the real order (`crates/post/tests/upright_after_tilt.rs`; fanuc, doosan-dnm, mach4 and tormach set it); `manualToolChange = ["manual-retract-top"]` (#4085) lists the manual tool change modes (`tooling.tool_change`: `manual`, `manual-retract-top`) for which the script writes a stop and the operator checks at each tool change - on a machine that states a manual mode the script does not list, the engine refuses by name, with the post and the machine, before any hook runs (`crates/post/src/post/manual_change.rs`; heidenhain.cps and heidenhain-klartext.cps list `manual-retract-top`); a script that lists a mode also refuses by name each installation its sequence was not verified for, because the retract and the stop depend on machine parameters (#4114: both Heidenhain posts accept only the Fehlmann Picomax 55 with iTNC 530 NC 340490-03); `liveTooling = true` (issue #33) says the
 script voices a `PARAM LiveTool` section - C-axis live-tool work, the
 stream's X Y Z the part-frame tip and C the stated spindle angle - and
 without it the engine refuses such a section by name (only
@@ -367,6 +367,25 @@ per program and refuses by name taper, 4-axis, any `COMP` record, skims,
 `edm.awt`, an offset other than G54, and every stop or home ask. It was not
 run on a control; `docs/decisions/2700-g-edm-post.md` lists what is not
 confirmed. Its golden rides under `nc/g-edm/` (`g_edm_post.rs`).
+
+`sodick-ln2w.cps` (#4045, "Sodick Wire EDM (LN2W)") is the fifth
+`WIRE_POSTS` entry, never the default of the kind; `sodick-aq600l.mch`
+names it as its post. It is a file of its own beside `sodick-wire.cps`
+(the engine has no include; the Mark 21 file is not changed). It writes
+each cut in the order that the owner of an AQ600L gave: `G00 X Y U0. V0.`
+(one line), `Z0.`, `T91`, `T84` / `T85`, `T94` / `T89`, the `C` word, then
+`G01`. It writes no `G20` / `G21` (the control alarms on `G21`) and
+declares `programUnits = "mm"`. It writes vertical 2-axis cuts only: it
+refuses by name each taper (`WireTaper`, an angle word, a U V lean),
+4-axis and any `COMP` record. A taper (`TP` / `TN`, `G51` / `G52` `A`,
+`G50`) waits for the setup's height above the worktable and for the
+control's corner motion and lean side to be confirmed (#4075). It was
+not run on a control in this form;
+`docs/decisions/4045-sodick-ln2w-dialect.md` lists what is confirmed and
+what is inferred. Its goldens ride under `nc/sodick-ln2w/`
+(`crates/app/tests/wire_post/sodick_aq600l.rs`); its synthetic-stream
+pins are in `crates/post/tests/sodick_ln2w/pins.rs` (test binary
+`script_sodick_ln2w`).
 
 ## Adding a post to the app
 

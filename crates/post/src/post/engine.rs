@@ -128,6 +128,10 @@ pub fn run_program_with(
     if let Some(why) = super::end_units::refusal(&mut s, options)? {
         return Err(PostError::Refused(why));
     }
+    // #4085: a manual tool change machine on a script that writes no stop for it.
+    if let Some(why) = super::manual_change::refusal(&mut s, mch)? {
+        return Err(PostError::Refused(why));
+    }
     let wo = super::work_offset::Manifest::read(&mut s);
     // #1386: Explain G-code on a script that states no comment form is
     // refused by name here, before any hook runs.

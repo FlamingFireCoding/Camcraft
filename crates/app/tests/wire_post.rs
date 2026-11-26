@@ -30,6 +30,12 @@ mod sinker_fixture;
 // #3332: the exit pick of a Wire Contour, over this suite's documents.
 #[path = "wire_post/exit_pick.rs"]
 mod exit_pick;
+// #3215: a meshed model's circles and fillets posted as arcs.
+#[path = "wire_post/model_arcs.rs"]
+mod model_arcs;
+// #4045: the Sodick AQ600L machine file and the LN2W post on the EDM test parts.
+#[path = "wire_post/sodick_aq600l.rs"]
+mod sodick_aq600l;
 
 use flecs_ecs::prelude::World;
 
@@ -107,6 +113,7 @@ fn punch_doc_with(machine_text: &str, skims: Vec<WireSkim>) -> World {
     );
     h.execute(&world, ImportModel::from_mesh("slug", slug()));
     let op = WireContourOp {
+        lead_arc_radius: None,
         top_z: Height::fixed(12.0),
         bottom_z: Height::fixed(0.0),
         condition: "C110".into(),
@@ -145,6 +152,7 @@ fn gouging_die() -> World {
     let stock = SetStock::new(&world, StockShape::Box { dx: 60.0, dy: 60.0, dz: 20.0 }, Location::default()).expect("stock");
     h.execute(&world, stock);
     let op = WireContourOp {
+        lead_arc_radius: None,
         top_z: Height::fixed(12.0),
         bottom_z: Height::fixed(0.0),
         condition: "C110".into(),
@@ -318,9 +326,11 @@ fn skim(id: &str, reverse: bool) -> WireSkim {
 }
 
 fn post_text(world: &World) -> String {
-    let out = std::env::temp_dir().join(format!("camcraft-wire-skims-{}.nc", std::process::id()));
+    // #4159: one directory for each call. Tests run in parallel threads of one
+    // process, and Windows refuses a write to a file that another thread holds.
+    let dir = tempfile::tempdir().expect("a temp folder");
+    let out = dir.path().join("camcraft-wire-skims.nc");
     let posted = posting::post_script(world, &out, cps(WIRE)).expect("the wire program posts");
-    let _ = std::fs::remove_file(&out);
     posted.program
 }
 
@@ -452,6 +462,7 @@ fn cutoff_doc(wrong: bool) -> World {
     // Travelling +Y the offcut (x > 60) is on the right.
     let side = if up != wrong { WireSide::Right } else { WireSide::Left };
     let op = WireContourOp {
+        lead_arc_radius: None,
         top_z: Height::fixed(12.0),
         bottom_z: Height::fixed(0.0),
         condition: "C110".into(),

@@ -100,12 +100,14 @@ pub(crate) mod machines_pane;
 // pub(crate) for `State::ai_chat` and its `WakeFn` (#1946).
 pub(crate) mod ai_chat;
 // pub(crate): `MachinesPane::editor` names its type (#383).
+pub(crate) mod machine_axis_chain;
 pub(crate) mod machine_file_editor;
 mod feeds_page;
 mod spindle_row;
 mod approach_page;
 mod lead_page;
 mod start_exit_rows;
+mod turning_start_exit_rows;
 mod predrilled_page;
 pub(crate) mod op_tabs;
 mod painted;
@@ -212,6 +214,8 @@ mod waterjet_page;
 mod wire_page;
 // #541: the Sinker Burn's fields.
 mod sinker_page;
+// #3333: the sinker kinds' Start point / Exit point groups.
+mod sinker_pick_rows;
 mod trochoid_page;
 // #1444: the Slot Undercut kind's fields.
 mod undercut_page;

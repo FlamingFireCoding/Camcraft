@@ -102,6 +102,7 @@ mod layout;
 mod panel_setups;
 mod machines_pane;
 mod machines_edit;
+mod machines_axis_chain;
 mod machine_wire_edm;
 mod unsaved;
 mod post_refusal;
@@ -122,6 +123,8 @@ mod camera_target;
 mod structural;
 // #2772 parts 1-2 (PR #3674 item 5): the stated rotation axis group.
 mod rotary_stated_axis;
+// #2827: the Rotary Flow band's Passes tab - axis group, band rows, guide hint.
+mod rotary_flow_page;
 // #2181: the transport row of the calculation before playback.
 mod transport_precalc;
 mod sim_op_steps;
@@ -152,6 +155,7 @@ mod catalog_filters;
 mod cycle_combo;
 mod holes_break_through;
 mod holes_fine_bore;
+mod bore_entry_group;
 mod ma_deburr_page;
 mod radial_step_field;
 mod auto_input_manual;
