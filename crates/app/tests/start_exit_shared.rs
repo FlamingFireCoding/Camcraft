@@ -10,6 +10,8 @@
 //! picks), camcraft_motion::plasma (picks, emit).
 //! #3330: app::operation (generate, the 5-Axis Contour arm) and
 //! motion::finishing3d (ring_seam) through the application.
+//! #3330: app::operation (generate, the 5-Axis Parallel arm), app::mcp
+//! (tools schema) and motion::finishing3d (raster_seam).
 //! Gate map (#3331): covers app::operation (generate: the Facing, Profile
 //! Rough and Profile Finish picks), app::commands (EditOperationParams).
 //! Gate map (#3333, `start_exit_shared/sinker.rs`): covers
@@ -80,6 +82,8 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
             OpType::Contour => assert_eq!(cap, PickCapability::Ring, "the contour takes a ring pick"),
             // #3330: the 5-axis contour seats its waterline rings at the pick.
             OpType::Contour5D => assert_eq!(cap, PickCapability::Ring, "the 5-axis contour takes a ring pick"),
+            // #3330: the 5-axis parallel starts at a raster corner.
+            OpType::Parallel5D => assert_eq!(cap, PickCapability::Raster, "the 5-axis parallel takes a raster corner"),
             OpType::WireContour => assert_eq!(cap, PickCapability::Threading, "the wire takes its threading point"),
             // #3334: the pierce and the torch-off place on a closed contour.
             OpType::PlasmaProfile => assert_eq!(cap, PickCapability::Ring, "the plasma profile takes a ring pick"),
@@ -183,3 +187,7 @@ fn the_mcp_doors_name_the_pick_fields_and_the_kinds_that_take_them() {
 // #3330: the 5-Axis Contour takes a start and an exit pick.
 #[path = "start_exit_shared/contour5d.rs"]
 mod contour5d;
+
+// #3330: the 5-Axis Parallel takes a start and an exit pick.
+#[path = "start_exit_shared/parallel5d.rs"]
+mod parallel5d;
