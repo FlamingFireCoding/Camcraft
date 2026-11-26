@@ -57,8 +57,9 @@ pub struct Tokens {
     pub viewport: Color32,
     /// Ink of a plain ribbon glyph, read against `strip_fill` (#2021).
     pub ribbon_ink: Color32,
-    /// Viewport handles (#1120): the shadow under a move or turn handle
-    /// and its readout, and the readout text over the viewport.
+    /// Viewport handles (#1120): the shadow under a move or turn handle,
+    /// its readout and the origin triads, and the readout text over the
+    /// viewport.
     pub handle_shade: Color32,
     pub handle_text: Color32,
     /// Rim of a picked point's disc in the viewport (#1120).
@@ -79,6 +80,20 @@ pub struct Tokens {
     pub axis_y: Color32,
     pub axis_z: Color32,
     pub viewport_hover: Color32,
+    /// The viewport overlays (#1120): the generate progress panel, the
+    /// file drop hint, the empty-view text, the pick halo, the fixture
+    /// plate marks and the selected G-code move. Both tables hold the
+    /// values the draw sites wrote before.
+    pub overlay_panel: Color32,
+    pub overlay_edge: Color32,
+    pub overlay_text: Color32,
+    pub overlay_track: Color32,
+    pub drop_veil: Color32,
+    pub empty_hint: Color32,
+    pub pick_halo: Color32,
+    pub plate_hole: Color32,
+    pub plate_dowel: Color32,
+    pub gcode_line: Color32,
     // -- geometry: the Phase-6 complaint made themeable - ribbon size,
     // input fields and button size are tokens, not literals.
     /// Corner radius of widget rects and painted cells/rows.
@@ -204,6 +219,7 @@ impl Tokens {
             selection_stroke, viewport: _, ribbon_ink: _,
             handle_shade: _, handle_text: _, pick_rim: _,
             cube_edge: _, cube_label: _, cube_glyph_on: _, cube_glyph_off: _, viewport_hint: _, marker_stem: _, marker_ring: _, marker_dot: _, axis_x: _, axis_y: _, axis_z: _, viewport_hover: _,
+            overlay_panel: _, overlay_edge: _, overlay_text: _, overlay_track: _, drop_veil: _, empty_hint: _, pick_halo: _, plate_hole: _, plate_dowel: _, gcode_line: _,
             radius_widget, radius_window, radius_menu,
             item_spacing_x: _, item_spacing_y: _,
             button_padding_x: _, button_padding_y: _,

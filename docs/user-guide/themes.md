@@ -39,7 +39,7 @@ clamped to the range.
 | `selection_stroke` | Outline of a selection |
 | `viewport` | Ground of the 3D view |
 | `ribbon_ink` | Ink of a plain ribbon glyph |
-| `handle_shade` | Shadow under a move or turn handle and its readout |
+| `handle_shade` | Shadow under a move or turn handle, its readout, and the origin triads |
 | `handle_text` | Readout text of a move or turn handle in the 3D view |
 | `pick_rim` | Rim of a picked point in the 3D view |
 | `cube_edge` | Outline of a view cube face and of a nav button |
@@ -54,6 +54,16 @@ clamped to the range.
 | `axis_y` | Y axis of the Axes button and of a handle |
 | `axis_z` | Z axis of the Axes button and of a handle |
 | `viewport_hover` | Hover dot on the view cube and the hovered facet of the machined part |
+| `overlay_panel` | Ground of the generate progress panel over the 3D view |
+| `overlay_edge` | Outline of the generate progress panel |
+| `overlay_text` | Text of the generate progress panel, and the frame and text of the file drop hint |
+| `overlay_track` | Track of the generate progress bar |
+| `drop_veil` | Veil over the 3D view while a file is dragged over the window |
+| `empty_hint` | Text of the empty 3D view |
+| `pick_halo` | Dark halo under a picked edge and under the Geometry-list row hover |
+| `plate_hole` | Hole crosses and row and column names of a fixture plate |
+| `plate_dowel` | Dowel diamonds of a fixture plate |
+| `gcode_line` | The move of the selected G-code line, in the 3D view |
 
 ## Geometry (`geometry`, in points)
 

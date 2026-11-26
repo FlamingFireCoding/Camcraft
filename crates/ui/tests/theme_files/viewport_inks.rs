@@ -207,3 +207,78 @@ fn the_facet_veil_keeps_the_hover_colour_of_a_semi_transparent_token() {
     let half_red = parse("dark", r##""viewport_hover":"#FF000080""##).viewport_hover;
     assert_eq!(facet_veil(half_red).to_array(), [90, 0, 0, 90]);
 }
+
+/// The overlay inks of a token table, in the order of `OVERLAY_KEYS`.
+fn overlays(t: &Tokens) -> [Color32; 10] {
+    [
+        t.overlay_panel,
+        t.overlay_edge,
+        t.overlay_text,
+        t.overlay_track,
+        t.drop_veil,
+        t.empty_hint,
+        t.pick_halo,
+        t.plate_hole,
+        t.plate_dowel,
+        t.gcode_line,
+    ]
+}
+
+const OVERLAY_KEYS: [&str; 10] = [
+    "overlay_panel",
+    "overlay_edge",
+    "overlay_text",
+    "overlay_track",
+    "drop_veil",
+    "empty_hint",
+    "pick_halo",
+    "plate_hole",
+    "plate_dowel",
+    "gcode_line",
+];
+
+#[test]
+fn the_built_in_columns_keep_the_overlay_colours() {
+    // The literals of `gen_overlay.rs`, `file_drop.rs`, `shell.rs` and
+    // `pick_ink.rs` before #1120, in both columns: these draw sites did
+    // not follow the ground.
+    let before = [
+        Color32::from_black_alpha(200),
+        Color32::from_white_alpha(60),
+        Color32::WHITE,
+        Color32::from_white_alpha(40),
+        Color32::from_black_alpha(140),
+        Color32::from_white_alpha(150),
+        Color32::from_black_alpha(camcraft_ui::pick_ink::HALO_ALPHA),
+        Color32::from_rgb(230, 190, 90),
+        Color32::from_rgb(120, 200, 255),
+        Color32::from_rgb(255, 170, 60),
+    ];
+    assert_eq!(overlays(&Tokens::DARK), before, "dark column");
+    assert_eq!(overlays(&Tokens::LIGHT), before, "light column");
+    // The origin triads' outline reads the handle shadow: the same 170.
+    assert_eq!(Tokens::DARK.handle_shade, Color32::from_black_alpha(170));
+}
+
+#[test]
+fn each_overlay_ink_is_a_theme_key() {
+    for (at, name) in OVERLAY_KEYS.iter().enumerate() {
+        assert!(
+            tf::COLOR_NAMES.contains(name),
+            "{name} is a colour key of the theme format"
+        );
+        let t = parse("light", &format!(r##""{name}":"#0A0B0C""##));
+        assert_eq!(
+            overlays(&t)[at],
+            Color32::from_rgb(10, 11, 12),
+            "{name} sets its own ink"
+        );
+    }
+    // A key the file omits keeps its base value; the ground rule of
+    // the view cube inks does not touch the overlays.
+    let dark_vp = format!(r#""viewport":"{}""#, hex(Tokens::DARK.viewport));
+    assert_eq!(
+        overlays(&parse("light", &dark_vp)),
+        overlays(&Tokens::LIGHT)
+    );
+}
