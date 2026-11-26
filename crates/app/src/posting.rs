@@ -61,10 +61,11 @@ pub const PLASMA_POSTS: &[&str] = &["Tormach PathPilot Plasma"];
 /// The registry entries that speak WIRE EDM (#533): RS-274 motion with
 /// the control's own codes from the machine file, and (#617) the Sodick
 /// dialect with its manual's words, and (#2700) the G-EDM dialect for
-/// G-RBLv3 controllers. They serve wire EDMs only, and no cutting post
-/// serves one. The first is the default for a wire EDM.
+/// G-RBLv3 controllers, and (#4045) the Sodick LN2W dialect. They serve
+/// wire EDMs only, and no cutting post serves one. The first is the
+/// default for a wire EDM.
 pub const WIRE_POSTS: &[&str] =
-    &["Generic ISO Wire EDM", "Sodick Wire EDM (Mark 21)", agie::POST, "G-EDM Wire EDM"];
+    &["Generic ISO Wire EDM", "Sodick Wire EDM (Mark 21)", agie::POST, "G-EDM Wire EDM", "Sodick Wire EDM (LN2W)"];
 
 /// The registry entries that speak SINKER EDM (#542): RS-274 motion
 /// with the control's own codes from the machine file, each declaring

@@ -368,6 +368,25 @@ per program and refuses by name taper, 4-axis, any `COMP` record, skims,
 run on a control; `docs/decisions/2700-g-edm-post.md` lists what is not
 confirmed. Its golden rides under `nc/g-edm/` (`g_edm_post.rs`).
 
+`sodick-ln2w.cps` (#4045, "Sodick Wire EDM (LN2W)") is the fifth
+`WIRE_POSTS` entry, never the default of the kind; `sodick-aq600l.mch`
+names it as its post. It is a file of its own beside `sodick-wire.cps`
+(the engine has no include; the Mark 21 file is not changed). It writes
+each cut in the order that the owner of an AQ600L gave: `G00 X Y U0. V0.`
+(one line), `Z0.`, `T91`, `T84` / `T85`, `T94` / `T89`, the `C` word, then
+`G01`. It writes no `G20` / `G21` (the control alarms on `G21`) and
+declares `programUnits = "mm"`. It writes vertical 2-axis cuts only: it
+refuses by name each taper (`WireTaper`, an angle word, a U V lean),
+4-axis and any `COMP` record. A taper (`TP` / `TN`, `G51` / `G52` `A`,
+`G50`) waits for the setup's height above the worktable and for the
+control's corner motion and lean side to be confirmed (#4075). It was
+not run on a control in this form;
+`docs/decisions/4045-sodick-ln2w-dialect.md` lists what is confirmed and
+what is inferred. Its goldens ride under `nc/sodick-ln2w/`
+(`crates/app/tests/wire_post/sodick_aq600l.rs`); its synthetic-stream
+pins are in `crates/post/tests/sodick_ln2w/pins.rs` (test binary
+`script_sodick_ln2w`).
+
 ## Adding a post to the app
 
 1. Write the `.cps` here (copy `mazak.cps` as the structural skeleton
