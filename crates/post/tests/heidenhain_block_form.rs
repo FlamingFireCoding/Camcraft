@@ -276,3 +276,85 @@ fn heidenhain_keeps_the_legacy_no_spindle_tap_refusal_and_maps_presets() {
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
     assert!(!out.program.contains("G247"), "no WorkOffset keeps the control's active preset: {}", out.program);
 }
+
+#[test]
+fn heidenhain_dwell_writes_g04_f_for_itnc_and_function_dwell_for_newer() {
+    let make_stream = || {
+        use cnc::CycleRec;
+        use cnc::Record as R;
+        let rs = vec![
+            R::Param { name: "OperationName".into(), value: json!("Ream") },
+            R::Param { name: "SpindleSpeed".into(), value: json!(1000.0) },
+            R::Param { name: "ClearancePlane".into(), value: json!(10.0) },
+            R::Tool { number: 1, name: "Reamer".into() },
+            R::Section { begin: true },
+            R::Cycle(CycleRec {
+                kind: CycleKind::Ream,
+                x: 0.0,
+                y: 0.0,
+                r_z: 2.0,
+                bottom_z: -10.0,
+                entry_z: 0.0,
+                peck: 0.0,
+                dwell: 0.5,
+                first_move: 0,
+                feed: Some(100.0),
+            }),
+            mv(MoveKind::Rapid, 0.0, 0.0, 2.0, None),
+            mv(MoveKind::Feed, 0.0, 0.0, -10.0, Some(100.0)),
+            mv(MoveKind::Feed, 0.0, 0.0, 2.0, Some(100.0)),
+            mv(MoveKind::Rapid, 0.0, 0.0, 10.0, None),
+            R::Section { begin: false },
+        ];
+        cnc::serialize(&rs)
+    };
+    let cps = read("assets/posts/heidenhain.cps");
+    let stream = make_stream();
+
+    // 1. Fehlmann Picomax 55 (iTNC 530 NC 340490-03) machine file
+    let fehlmann = serde_json::from_str::<serde_json::Value>(
+        &read("assets/machines/fehlmann-picomax55.mch"),
+    ).expect("fehlmann machine");
+    let out = engine::run(&cps, &fehlmann, &stream).expect("posts with fehlmann");
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert!(out.program.contains("G04 F0.5*"), "iTNC 530 writes G04 F: {}", out.program);
+    assert!(!out.program.contains("FUNCTION DWELL"), "iTNC 530 must not write FUNCTION DWELL: {}", out.program);
+
+    // 2. Generic machine stating iTNC 530
+    let mut itnc_mch: serde_json::Value =
+        serde_json::from_str(&read("assets/machines/3axis-vmc.mch")).expect("vmc");
+    itnc_mch["controller"] = json!({
+        "identity": { "model": "iTNC 530", "nc_software": "606425-04" }
+    });
+    let out = engine::run(&cps, &itnc_mch, &stream).expect("posts with itnc 606425");
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert!(out.program.contains("G04 F0.5*"), "iTNC 606425 writes G04 F: {}", out.program);
+    assert!(!out.program.contains("FUNCTION DWELL"), "iTNC 606425 must not write FUNCTION DWELL");
+
+    // 3. TNC 640 before -07 (e.g. 340590-06) writes G04 F
+    let mut tnc640_old = itnc_mch.clone();
+    tnc640_old["controller"] = json!({
+        "identity": { "model": "TNC 640", "nc_software": "340590-06" }
+    });
+    let out = engine::run(&cps, &tnc640_old, &stream).expect("posts with tnc 640 -06");
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert!(out.program.contains("G04 F0.5*"), "TNC 640 -06 writes G04 F: {}", out.program);
+    assert!(!out.program.contains("FUNCTION DWELL"));
+
+    // 4. TNC 640 with -07 writes FUNCTION DWELL TIME with space
+    let mut tnc640_new = itnc_mch.clone();
+    tnc640_new["controller"] = json!({
+        "identity": { "model": "TNC 640", "nc_software": "340590-07" }
+    });
+    let out = engine::run(&cps, &tnc640_new, &stream).expect("posts with tnc 640 -07");
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert!(out.program.contains("FUNCTION DWELL TIME 0.5*"), "TNC 640 -07 writes FUNCTION DWELL TIME with space: {}", out.program);
+    assert!(!out.program.contains("G04 F"));
+
+    // 5. Default/generic machine without controller identity writes FUNCTION DWELL TIME with space
+    let base_mch: serde_json::Value =
+        serde_json::from_str(&read("assets/machines/3axis-vmc.mch")).expect("vmc");
+    let out = engine::run(&cps, &base_mch, &stream).expect("posts with base machine");
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert!(out.program.contains("FUNCTION DWELL TIME 0.5*"), "Default machine writes FUNCTION DWELL TIME with space: {}", out.program);
+}
