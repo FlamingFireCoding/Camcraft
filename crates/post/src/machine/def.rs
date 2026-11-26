@@ -265,6 +265,10 @@ pub struct Machine {
     /// Tool-changing procedure supported by this particular installation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_change: Option<super::ToolChangeMode>,
+    /// `tooling.max_tool_number` (#4087): the highest tool number the
+    /// control's tool table holds. `None` when the file states none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tool_number: Option<u32>,
     /// Explicit `controller.rtcp` capability flag (#1962); `None` infers from tilt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub controller_rtcp: Option<bool>,
