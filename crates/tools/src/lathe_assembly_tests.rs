@@ -8,9 +8,9 @@ use crate::component_fit::FitProperty;
 use crate::component_geometry::{ComponentBody, ComponentGeometry};
 use crate::connection_code::ConnectionCode;
 use crate::frame::Frame;
-use crate::insert_codes::{Clamping, Hand};
+use crate::insert_codes::Hand;
 use crate::insert_iso1832::InsertSpec;
-use crate::insert_seat::{HolderDesignation, HolderStyle, InsertSeatSpec};
+use crate::insert_seat::{Clamping, HolderDesignation, HolderStyle, InsertSeatSpec};
 use crate::lathe_assembly::{
     BodyBox, LatheAssemblyError, LatheBody, LatheNode, LatheStation, ResolvedLathe, resolve_lathe,
 };
