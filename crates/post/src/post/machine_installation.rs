@@ -75,6 +75,15 @@ pub(super) fn script_props(m: &Value, props: &mut Value) {
     if let Some(mode) = m.pointer("/tooling/tool_change").and_then(Value::as_str) {
         props["toolChangeMode"] = json!(mode);
     }
+    if let Some(tol) = m
+        .pointer("/controller/arc_tolerance")
+        .and_then(Value::as_f64)
+        .or_else(|| m.pointer("/controller/arcTolerance").and_then(Value::as_f64))
+        .or_else(|| m.get("arc_tolerance").and_then(Value::as_f64))
+        .or_else(|| m.get("arcTolerance").and_then(Value::as_f64))
+    {
+        props["arcTolerance"] = json!(tol);
+    }
     // #4087: absent when unstated; the posts keep their own limit then.
     if let Some(n) = m.pointer("/tooling/max_tool_number").and_then(Value::as_u64) {
         props["toolNumberMax"] = json!(n);
