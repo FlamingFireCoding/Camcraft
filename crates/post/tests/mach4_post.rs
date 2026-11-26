@@ -281,3 +281,28 @@ fn mach4_supported_cycle_dwells_use_seconds_on_g82_and_g89_only() {
         );
     }
 }
+
+#[test]
+fn mach4_zero_dwell_backbore_posts_g85() {
+    let cps = mach4_post();
+    let mch = default_vmc();
+    let out = engine::run(&cps, &mch, &cycle_stream("BACKBORE", 0)).expect("zero dwell backbore");
+    assert!(out.warnings.is_empty(), "warnings: {:?}", out.warnings);
+    let line = out
+        .program
+        .lines()
+        .find(|line| line.split_whitespace().any(|w| w == "G85"))
+        .unwrap_or_else(|| panic!("missing G85 for zero-dwell BACKBORE:\n{}", out.program));
+    assert!(
+        !line.split_whitespace().any(|w| w.starts_with('P')),
+        "G85 must not write P: {line}"
+    );
+    assert!(
+        !out.program
+            .lines()
+            .any(|line| line.split_whitespace().any(|w| w == "G89")),
+        "G89 must not be emitted for zero-dwell BACKBORE:\n{}",
+        out.program
+    );
+}
+
