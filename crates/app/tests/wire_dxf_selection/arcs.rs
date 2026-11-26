@@ -250,3 +250,46 @@ fn tangent_arcs_post_arc_to_arc_with_no_block_that_stands_still() {
         at = to;
     }
 }
+
+/// The reentrant die of examples/agie/reentrant-die.dxf (#3178) on the
+/// layer this suite picks: R2 and R1 fillets, a tooth with sharp tips and a
+/// tongue with an R4 round tip about the drawing point X0 Y4.
+fn reentrant() -> String {
+    include_str!("../../../../examples/agie/reentrant-die.dxf").replace("\n8\nprofile\n", "\n8\noutline\n")
+}
+
+#[test]
+fn a_reentrant_die_of_lines_and_arcs_passes_the_laws_and_a_2um_gouge_does_not() {
+    let world = doc(&reentrant(), FIXTURE, "C110", WireSide::Die, (0.0, -7.0), false);
+    // The laws accept the generated cut: no finding, captured, one slug.
+    let path = generated(&world);
+    // The tongue tip, offset outward about its centre on the waste side.
+    let c = to_world(&world, 0.0, 4.0);
+    let tip = path
+        .moves
+        .iter()
+        .position(|m| m.arc.is_some_and(|a| (a.center.x - c[0]).hypot(a.center.y - c[1]) < 1e-9))
+        .expect("the tongue tip arc");
+    let r = (path.moves[tip].to.x - c[0]).hypot(path.moves[tip].to.y - c[1]);
+    assert!((r - (4.0 + 0.165)).abs() < 1e-9, "{r}");
+    // Move that arc 2 um toward its centre, into the retained tongue, and
+    // keep the path joined at both of its ends. The first gouging move is
+    // that arc or a line that now leans into the tongue at its end.
+    let mut gouged = path.clone();
+    let pull = |p: Point3| {
+        let k = (r - 0.002) / r;
+        Point3::new(c[0] + (p.x - c[0]) * k, c[1] + (p.y - c[1]) * k, p.z)
+    };
+    let (from, to) = (pull(gouged.moves[tip].from), pull(gouged.moves[tip].to));
+    gouged.moves[tip].from = from;
+    gouged.moves[tip].to = to;
+    gouged.moves[tip - 1].to = from;
+    gouged.moves[tip + 1].from = to;
+    let e = model::find_by_name(&world, "Cut").expect("operation");
+    e.entity_view(&world).set(camcraft_app::schema::Toolpath::new(gouged, Vec::new()));
+    let verdict = operation::wire_verify::wire_verdict(&world, &e).expect("wire").expect("verifiable");
+    assert!(
+        verdict.findings.iter().any(|f| matches!(f, camcraft_app::verify::wire::WireFinding::Gouge { move_no, .. } if (tip..=tip + 2).contains(move_no))),
+        "{verdict:?}"
+    );
+}

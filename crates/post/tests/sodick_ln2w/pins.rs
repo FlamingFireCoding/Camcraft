@@ -8,7 +8,7 @@
 //! Gate map: covers assets/posts/sodick-ln2w.cps, camcraft_post::post::engine,
 //! camcraft_post::post::cnc.
 
-use camcraft_post::cl::{ArcPlane, CompSide, MoveKind};
+use camcraft_post::cl::{ArcPlane, MoveKind};
 use camcraft_post::post::cnc::{self, MoveRec, Record};
 use camcraft_post::post::engine;
 use serde_json::{json, Value};
@@ -152,14 +152,4 @@ fn a_skim_pass_takes_the_low_flushing_word_and_its_own_condition() {
     let at = w.iter().position(|l| *l == "T85").expect("the skim's flushing word");
     assert_eq!(&w[at..at + 3], ["T85", "C002", "G01 X-25.02 Y10."], "{}", out.program);
     assert_eq!(w.iter().filter(|l| **l == "T91").count(), 1, "one threading for the section: {}", out.program);
-}
-
-#[test]
-fn a_control_side_wire_offset_is_refused_by_name() {
-    let mut r = head(&[]);
-    r.insert(r.len() - 1, Record::Comp { side: Some(CompSide::Left), radius_mm: 0.165, wear: false });
-    r.extend([mv(MoveKind::Feed, -25.0, 10.0), Record::Section { begin: false }]);
-    let out = run(&machine(json!({})), &r);
-    assert!(out.warnings.iter().any(|w| w.contains("G41/G42 H") && w.contains("not supported")), "{:?}", out.warnings);
-    assert!(!words(&out).iter().any(|l| l.starts_with("G01") || l.contains("G41") || l.contains("G42")), "{}", out.program);
 }

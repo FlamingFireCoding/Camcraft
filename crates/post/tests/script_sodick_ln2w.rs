@@ -21,3 +21,11 @@ post_suite!("sodick-ln2w.cps");
 // The post's own words on synthetic wire streams (start order, taper, skims, refusals).
 #[path = "sodick_ln2w/pins.rs"]
 mod pins;
+
+// The control-side wire offset (#4076): G41 / G42 H, G40 on the lead-out.
+#[path = "sodick_ln2w/offset.rs"]
+mod offset;
+
+// A constant taper as a 4-axis program (#4075): TP / TN, G74, U V, G75.
+#[path = "sodick_ln2w/taper.rs"]
+mod taper;

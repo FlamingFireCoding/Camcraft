@@ -152,6 +152,10 @@ A script may define a top-level `declaredOptions` map so the host renders typed 
   record (feeds, plunges, arcs at the quarter points they pass, cycle
   centres) as `{minX, maxX, minY, maxY}` in mm, or `null` when nothing
   is cut. Rapids do not count.
+- `programOffsets` (global, before `onOpen`, #4076): one entry for each
+  section of the stream, `"control"` or `"wear"` when a `COMP` record
+  engages that compensation in it, else `""`. A note that is written
+  before the `COMP` record arrives reads it (`sodick-ln2w.cps`).
 - `machine.travel`: the linear axes' stated strokes, `{X, Y, Z}`, each
   `[min, max]` in mm or `null` when the machine file states none.
 
@@ -317,10 +321,10 @@ goldens ride under `crates/post/tests/golden/waterjet/`
 (`waterjet_iso_post.rs`); the decision record is
 `docs/decisions/1882-waterjet-post.md`.
 
-## The wire EDM post
+## The wire EDM posts
 
-`wire-iso.cps` (#533, "Generic ISO Wire EDM") is the one
-`posting::WIRE_POSTS` entry: it serves `kind: wire_edm` machines only
+`posting::WIRE_POSTS` has four entries. `wire-iso.cps` (#533, "Generic
+ISO Wire EDM") is the first entry and the default: it serves `kind: wire_edm` machines only
 (`machine.kind`) and declares `wireEdm = true` - the engine refuses a
 wire section (`PARAM EdmCondition`) through any script without it. It
 writes only RS-274 / ISO 6983 motion and program words; every EDM code
@@ -368,6 +372,23 @@ per program and refuses by name taper, 4-axis, any `COMP` record, skims,
 run on a control; `docs/decisions/2700-g-edm-post.md` lists what is not
 confirmed. Its golden rides under `nc/g-edm/` (`g_edm_post.rs`).
 
+`agie-native.cps` ("Agie Wire EDM (AgieVision)", named in #4000) is the
+third `WIRE_POSTS` entry, never the default. It serves one machine: the
+AGIECUT Classic 2S (`agiecut-classic-2s.mch`, model `AGIECUT CLASSIC 2S`);
+every other machine is refused by name. The `.cps` holds only the
+metadata and the option `separationLengthMm` (group "AgieVision
+technology"); its `onOpen` refuses a plain one-file post. The desktop
+and the CLI write the job through `posting::agie` (`crates/app/src/posting_agie.rs`
+and `crates/post/src/agie/`): One program output to a new job directory
+of AgieVision ISO, SBR and SBL files with zero working steps. Its
+refusals say "The Agie Wire EDM job requires ...". Its old names
+"Agie native wire EDM" (#3537) and "Native wire EDM job files" (#4000)
+are hidden aliases in `posting::aliases` (`posting_aliases.rs`); no list
+shows them. Its job goldens ride under `crates/app/tests/golden/nc/agie-native/`
+and `crates/post/tests/golden/agie-setup/`; its `.cps` refusals under
+`crates/post/tests/recorded/golden/agie-native/`. The user guide is
+`docs/user-guide/agie-wire-edm.md`.
+
 `sodick-ln2w.cps` (#4045, "Sodick Wire EDM (LN2W)") is the fifth
 `WIRE_POSTS` entry, never the default of the kind; `sodick-aq600l.mch`
 names it as its post. It is a file of its own beside `sodick-wire.cps`
@@ -375,16 +396,49 @@ names it as its post. It is a file of its own beside `sodick-wire.cps`
 each cut in the order that the owner of an AQ600L gave: `G00 X Y U0. V0.`
 (one line), `Z0.`, `T91`, `T84` / `T85`, `T94` / `T89`, the `C` word, then
 `G01`. It writes no `G20` / `G21` (the control alarms on `G21`) and
-declares `programUnits = "mm"`. It writes vertical 2-axis cuts only: it
-refuses by name each taper (`WireTaper`, an angle word, a U V lean),
-4-axis and any `COMP` record. A taper (`TP` / `TN`, `G51` / `G52` `A`,
-`G50`) waits for the setup's height above the worktable and for the
-control's corner motion and lean side to be confirmed (#4075). It was
+declares `programUnits = "mm"`. A constant taper posts as the owner's
+4-axis form (#4075): `TP` / `TN` (the cut's bottom and top above the
+worktable; the post option `partBottomAboveTable` is the `TP` of the
+program's first tapered cut, a later tapered cut gets `TP` = the option +
+(its `WireBottom` - the first `WireBottom`), the section note names the
+work Z of each `TP`, a `TP` below the worktable is refused, and an
+unstated option refuses the taper), `G74`, `G01 X Y U V` on every cut (X Y
+on the part's bottom, U V top minus bottom, moved from the guide planes
+by the stream's `WireGuideLower` / `WireGuideUpper` / `WireBottom` /
+`WireTop`), `G75` before `T90`. It refuses by name the angle form
+(`G51` / `G52` `A`, `G50`: corner motion not confirmed), a two-profile
+4-axis cut, an arc in a taper, the control's wire offset in a taper and
+a taper from a second setup.
+A `COMP` record ("control" or "wear") posts the control's wire offset
+(#4076, the owner's statements): `G41` / `G42 Hnnn` on its own line
+after the pass's C word and before the lead-in, H the pass number from
+`H001`, and `G40` in the block of the lead-out `G01`. No `G29` is
+written. The law is the shared prelude helper
+`crates/post/src/post/wire_offset.rs` (`wireOffsetNew`,
+`wireOffsetRecord`, `wireOffsetMove`, `wireOffsetEnd`), which another
+wire dialect can call; the words stay in the post. The refusals, each by
+name:
+- a lead-in or a lead-out that is an arc, has no length or is shorter
+  than the offset radius;
+- a change of side while the offset is on;
+- a section that ends with the offset on;
+- a first offset pass on a condition other than `C001` (`C001` goes
+  with `H001`);
+- the `C000` approach option together with an offset;
+- a pass above `H999`.
+
+The header and the section notes read `programOffsets` (the engine sets
+it before `onOpen`), so an offset program does not say "NO WIRE OFFSET"
+and a section on the control's offset does not say that the kerf is in
+the path. A program without a `COMP` record is byte-identical to the
+wire-centre form. The post was
 not run on a control in this form;
 `docs/decisions/4045-sodick-ln2w-dialect.md` lists what is confirmed and
-what is inferred. Its goldens ride under `nc/sodick-ln2w/`
+what is inferred, and `docs/decisions/4076-ln2w-wire-offset.md` is the
+decision record of the offset. Its goldens ride under `nc/sodick-ln2w/`
 (`crates/app/tests/wire_post/sodick_aq600l.rs`); its synthetic-stream
-pins are in `crates/post/tests/sodick_ln2w/pins.rs` (test binary
+pins are in `crates/post/tests/sodick_ln2w/pins.rs` and, for the offset,
+`crates/post/tests/sodick_ln2w/offset.rs` (test binary
 `script_sodick_ln2w`).
 
 ## Adding a post to the app

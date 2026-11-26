@@ -64,6 +64,7 @@ pub mod work_offset;
 pub mod units;
 pub mod wcs_flip;
 pub mod wcs_rotate;
+pub mod wire_offset;
 
 pub use after_op::AfterOperation;
 pub use coolant::CoolantMode;
