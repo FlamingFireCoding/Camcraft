@@ -22,7 +22,7 @@ or machine configuration. Check its travel, tools and clearance before use.
 | Post choice | Script | Control | Supplied machine files |
 |---|---|---|---|
 | Fanuc | `fanuc.cps` | Fanuc milling | No control-specific file; generic `vmc.mch` and `3axis-vmc.mch` templates |
-| Haas | `haas.cps` | Haas milling | `haas-vf2.mch`, `haas-vf2ss.mch`, `haas-mini-mill.mch`, `haas-dt1.mch`, `haas-dm1.mch` |
+| Haas | `haas.cps` | Haas milling | `haas-vf2.mch`, `haas-vf2ss.mch`, `haas-vf2ssyt.mch`, `haas-mini-mill.mch`, `haas-dt1.mch`, `haas-dm1.mch` |
 | Siemens 840D | `sinumerik.cps` | Siemens Sinumerik 840D | None dedicated |
 | Siemens 810M | `sinumerik-810m.cps` | Siemens Sinumerik 810M / WinNC 810M | `emco-vmc-200.mch` (EMCO VMC-200) |
 | Heidenhain | `heidenhain.cps` | Heidenhain TNC DIN/ISO | None dedicated |
