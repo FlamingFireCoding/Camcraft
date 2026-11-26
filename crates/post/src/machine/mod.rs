@@ -51,6 +51,6 @@ pub use trunnion::{trunnion_refusals, RotarySignConvention};
 
 mod check;
 mod judge;
-pub use check::{MachineCheck, SourceLocation, REPORT_CAP};
+pub use check::{spindle_range_warning, MachineCheck, SourceLocation, REPORT_CAP, SPINDLE_FIX};
 // Shared with the app-specific plasma, waterjet, EDM and posted-lathe checks.
 pub use judge::{fine_bore_gate, move_extremes, say, slowest_axis, tap_gate};

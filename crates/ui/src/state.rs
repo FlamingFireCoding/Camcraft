@@ -3734,12 +3734,13 @@ impl State {
             CommandKind::AddTool { name, tool } => match AddTool::with_holder(&self.world, &name, tool, HolderPick::MachineDefault) {
                 Ok(command) => {
                     let number = command.number();
-                    let note = command.note();
+                    // #3792: a speed outside the machine's range is said here too.
+                    let notes: Vec<String> = command.note().into_iter().chain(command.warning()).collect();
                     self.history.execute(&self.world, command);
                     self.doc_version += 1;
-                    self.status = match note {
-                        Some(n) => format!("tool {name} added (T{number}) - {n}"),
-                        None => format!("tool {name} added (T{number})"),
+                    self.status = match notes.is_empty() {
+                        false => format!("tool {name} added (T{number}) - {}", notes.join(" - ")),
+                        true => format!("tool {name} added (T{number})"),
                     };
                 }
                 Err(err) => self.refuse(ErrorScope::Tool, format!("tool not added: {err}")),
