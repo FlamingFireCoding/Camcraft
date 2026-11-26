@@ -341,6 +341,33 @@ impl ToolBody {
 pub struct DocumentComponent {
     pub component: camcraft_tools::component::ToolComponent,
     pub geometry: camcraft_tools::component_geometry::ComponentGeometry,
+    /// #3646: the catalog facts of a multi-seat cutter body (`DC`,
+    /// `KAPR`, `APMX`, centre cutting, seat count). Only on a tool item;
+    /// a tool whose insert sits on such a body takes its whole milling
+    /// record from it.
+    pub milling: Option<camcraft_tools::milling_cutter::MillingBody>,
+    /// #3646: an insert's own tool material and cutting rows. Only on
+    /// an insert; each tool that cuts with it takes them.
+    pub running: Option<InsertRunning>,
+}
+
+impl DocumentComponent {
+    /// A row with no cutter facts and no running data.
+    #[must_use]
+    pub fn new(
+        component: camcraft_tools::component::ToolComponent,
+        geometry: camcraft_tools::component_geometry::ComponentGeometry,
+    ) -> Self {
+        Self { component, geometry, milling: None, running: None }
+    }
+}
+
+/// #3646: what an insert gives each tool that cuts with it, over the
+/// tool's own running data.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct InsertRunning {
+    pub tool_material: Option<camcraft_tools::cutting::ToolMaterial>,
+    pub cutting: Vec<camcraft_tools::cutting_rows::CuttingRow>,
 }
 
 /// #3644: the document's component table, one row for each id (the
