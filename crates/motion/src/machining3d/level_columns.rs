@@ -56,7 +56,9 @@ pub(super) fn column_hit(q: Point2, z0: f64, r: f64, clearance_z: f64, facets: &
     let mut hit: Option<f64> = None;
     for t in facets.iter().filter(|t| !far(t)) {
         for piece in clip_above(t, floor) {
-            if !(dist_seg_tri(a, b, &piece) >= limit) {
+            // A distance that is not a number is a hit: fail safe.
+            let d = dist_seg_tri(a, b, &piece);
+            if d.is_nan() || d < limit {
                 let z = piece.a.z.min(piece.b.z).min(piece.c.z);
                 hit = Some(hit.map_or(z, |h| h.min(z)));
             }
