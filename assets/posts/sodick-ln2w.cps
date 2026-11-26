@@ -27,9 +27,11 @@
 // Hnnn on its own line before the straight lead-in, H the pass number
 // from H001 (C001 always goes with H001; a later pass takes the condition
 // that the operation states), G40 on the straight lead-out move. The law
-// (lead-in at least the radius, straight lead-in and lead-out) is the
-// shared wire_offset.rs prelude helper. Without a COMP record the path is
-// the wire-centre path with the kerf in it, as before.
+// (a straight lead-in and a straight lead-out, each at least the radius
+// long) is the shared wire_offset.rs prelude helper. The header and the
+// section notes read programOffsets (the engine, before onOpen), so they
+// say which sections use the offset. Without a COMP record the path is
+// the wire-centre path with the kerf in it, and the program is as before.
 // Never written (each a named refusal or an operator's task): G20 / G21
 // (the unit is the control's setting; this post writes millimetres only),
 // G92 and G29, 4-axis (G74 / G75, U V other than
@@ -82,6 +84,7 @@ var dialect = "";          // "angle": the stream carries angle words
 var angleNext = false;     // the next move states an angle word (WireAngle)
 var controlOffset = false; // a refused COMP record refuses this section, even before SECTION
 var wireOff = wireOffsetNew(); // #4076: the control's wire offset (wire_offset.rs)
+var sectionNo = 0;         // sections ended so far: the index into programOffsets
 var fourAxis = "";         // the section's 4-axis pairing rule ("": one profile)
 var leaning = false;       // the next move states an upper guide offset (WireU / WireV)
 // A wire number the stream states but that is no finite number (the
@@ -143,11 +146,29 @@ function conditionNotes() {
   var c = conditionRow(condition);
   if (!c) return;
   var gap = has(c.gap) ? Number(c.gap).toFixed(3) + " MM" : "NOT STATED";
+  // #4076: on the control's offset the path holds no kerf, so the row's
+  // gap is not in it. The H register at the control sets the part size.
+  if (offsetMode() === "control") {
+    var eg = /^\s*EXAMPLE/i.test(String(c.notes || "")) ? "WARNING CONDITION " + condition + " IS AN EXAMPLE ROW - " : "CONDITION " + condition + " - ";
+    note(eg + "THE MACHINE FILE GAP " + gap + " IS NOT IN THE PATH - THE H REGISTER AT THE CONTROL SETS THE KERF");
+    return;
+  }
   if (/^\s*EXAMPLE/i.test(String(c.notes || ""))) {
     note("WARNING CONDITION " + condition + " IS AN EXAMPLE ROW - THE KERF USES AN EXAMPLE GAP OF " + gap + " - REPLACE IT BEFORE CUTTING");
   } else {
     note("CONDITION " + condition + " KERF GAP " + gap + " - COMPARE WITH THE CONTROL ROW");
   }
+}
+// #4076: programOffsets (the engine, before onOpen) states for each
+// section if a COMP record engages the control's offset in it:
+// "control", "wear" or "". The notes come before the COMP record, so
+// they read it here. offsetMode is the current section's entry.
+function offsetList() { return typeof programOffsets !== "undefined" && programOffsets ? programOffsets : []; }
+function offsetMode() { return offsetList()[sectionNo] || ""; }
+function offsetProgram() {
+  var l = offsetList();
+  for (var i = 0; i < l.length; i++) if (l[i]) return true;
+  return false;
 }
 // Program notes use this dialect without truncating the stated bound.
 function onComment(s) { note(commentText(s)); }
@@ -241,7 +262,8 @@ function onOpen() {
   note("WORK OFFSET SET AT THE CONTROL - NO G92 IS WRITTEN");
   note("Z0. FOLLOWS EACH MOVE TO A START POINT - SET Z0 AT THE UPPER HEAD HEIGHT ABOVE THE PART BEFORE START");
   dielectricNotes();
-  note("WIRE-CENTRE PATH - NO WIRE OFFSET G41 G42 IS USED");
+  if (offsetProgram()) note("WIRE OFFSET G41 G42 IS USED IN EACH SECTION THAT NAMES AN H REGISTER - SET EACH H REGISTER AT THE CONTROL BEFORE START - A SECTION WITHOUT ONE IS A WIRE-CENTRE PATH");
+  else note("WIRE-CENTRE PATH - NO WIRE OFFSET G41 G42 IS USED");
   note("EACH C CONDITION NAMED BELOW MUST EXIST IN THE CONTROL CONDITION TABLE BEFORE START");
   if (approach) note("C000 APPROACH CONDITION ON EACH APPROACH MOVE - C000 MUST EXIST IN THE CONTROL CONDITION TABLE");
   block(["G90"]);
@@ -372,7 +394,10 @@ function onSection() {
   sectionOk = true;
   note(opName + (opKind ? " - " + opKind : ""));
   if (setupName) note("SETUP " + setupName);
-  if (side) note("SIDE " + side.toUpperCase() + " - KERF IN THE PATH");
+  var mode = offsetMode();
+  if (mode === "control") note("WIRE OFFSET G41 G42 IN THIS SECTION - THE PATH IS THE PART CONTOUR WITHOUT THE KERF");
+  else if (mode === "wear") note("WIRE OFFSET G41 G42 IN THIS SECTION - THE H REGISTER HOLDS THE WEAR DELTA ONLY");
+  if (side) note("SIDE " + side.toUpperCase() + (mode === "control" ? " - THE CONTROL WIRE OFFSET SETS THE KERF" : " - KERF IN THE PATH"));
   // The C word selects a row of the control's own condition table; the
   // program carries no table, so the operator checks the row exists.
   note("CONDITION " + condition + " MUST EXIST IN THE CONTROL CONDITION TABLE - CHECK ITS VALUES");
@@ -566,6 +591,7 @@ function onSectionEnd() {
   else if (afterOp === "home") {
     refuse("home" + opName, who() + "asks a trip home - the Sodick LN2W wire post states no home position; set the operation to Continue");
   }
+  sectionNo++;
   inSection = false;
   sectionOk = false;
   threaded = false;

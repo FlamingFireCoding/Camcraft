@@ -148,6 +148,10 @@ A post that declares `failOnWarning = true` refuses the complete program if the 
 - `currentPosition` — `{X, Y, Z}`, live
 - `programBounds` — the XY box of the cutting records, `{minX, maxX,
   minY, maxY}` mm, or `null` (#1882); set before `onOpen`
+- `programOffsets` — one entry for each section of the stream:
+  `"control"` or `"wear"` when a `COMP` record engages that compensation
+  in it, else `""` (#4076); set before `onOpen`, so a header or section
+  note can say if the control's offset is used
 - `machine` — the `.mch` flattened: `rapidRate`, `feedRateMax`,
   `spindleMax`, `coolants[]`, `rotaries[]` (letter + stated direction
   + travel in degrees, geometry never speeds), `travel` (#1882: the
