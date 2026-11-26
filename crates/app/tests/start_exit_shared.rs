@@ -84,6 +84,8 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
             OpType::Contour5D => assert_eq!(cap, PickCapability::Ring, "the 5-axis contour takes a ring pick"),
             // #3330: the 5-axis parallel starts at a raster corner.
             OpType::Parallel5D => assert_eq!(cap, PickCapability::Raster, "the 5-axis parallel takes a raster corner"),
+            // #3329: the Deburr's chain cut first and its chain cut last.
+            OpType::Deburr => assert_eq!(cap, PickCapability::Chain, "the deburr takes an edge chain pick"),
             OpType::WireContour => assert_eq!(cap, PickCapability::Threading, "the wire takes its threading point"),
             // #3334: the pierce and the torch-off place on a closed contour.
             OpType::PlasmaProfile => assert_eq!(cap, PickCapability::Ring, "the plasma profile takes a ring pick"),
@@ -191,3 +193,7 @@ mod contour5d;
 // #3330: the 5-Axis Parallel takes a start and an exit pick.
 #[path = "start_exit_shared/parallel5d.rs"]
 mod parallel5d;
+
+// #3329: the Deburr takes a start and an exit pick.
+#[path = "start_exit_shared/deburr.rs"]
+mod deburr;
