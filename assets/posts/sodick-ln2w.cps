@@ -22,10 +22,19 @@
 // edm.flushing / edm.tank, the C condition word, then G01, G02 / G03 with
 // I J; each skim pass's flushing word (edm.skim_flushing) and C word
 // before its first move; T90 (cut the wire); M00 / M01; M02.
+// The control's wire offset (#4076, the same owner's statements of
+// 2026-11-25), only when the stream asks for it (a COMP record): G41 / G42
+// Hnnn on its own line before the straight lead-in, H the pass number
+// from H001 (C001 always goes with H001; a later pass takes the condition
+// that the operation states), G40 on the straight lead-out move. The law
+// (a straight lead-in and a straight lead-out, each at least the radius
+// long) is the shared wire_offset.rs prelude helper. The header and the
+// section notes read programOffsets (the engine, before onOpen), so they
+// say which sections use the offset. Without a COMP record the path is
+// the wire-centre path with the kerf in it, and the program is as before.
 // Never written (each a named refusal or an operator's task): G20 / G21
 // (the unit is the control's setting; this post writes millimetres only),
-// G92 and G29, the control's wire offset (G41 / G42, H - the path is the
-// wire-centre path with the kerf in it), 4-axis (G74 / G75, U V other than
+// G92 and G29, 4-axis (G74 / G75, U V other than
 // the U0. V0. on the G00), a taper (TP / TN, G51 / G52 A, G50: refused by
 // name until the setup's table height, the control's corner motion and
 // its lean side are stated and confirmed, #4075), the tank fill / drain,
@@ -73,7 +82,9 @@ var skimFlushWord = "";    // T84 / T85 from edm.skim_flushing ("": not stated)
 var taper = 0;             // the section's stated taper, degrees (0: vertical)
 var dialect = "";          // "angle": the stream carries angle words
 var angleNext = false;     // the next move states an angle word (WireAngle)
-var controlOffset = false; // a COMP record refuses this section, even before SECTION
+var controlOffset = false; // a refused COMP record refuses this section, even before SECTION
+var wireOff = wireOffsetNew(); // #4076: the control's wire offset (wire_offset.rs)
+var sectionNo = 0;         // sections ended so far: the index into programOffsets
 var fourAxis = "";         // the section's 4-axis pairing rule ("": one profile)
 var leaning = false;       // the next move states an upper guide offset (WireU / WireV)
 // A wire number the stream states but that is no finite number (the
@@ -135,11 +146,29 @@ function conditionNotes() {
   var c = conditionRow(condition);
   if (!c) return;
   var gap = has(c.gap) ? Number(c.gap).toFixed(3) + " MM" : "NOT STATED";
+  // #4076: on the control's offset the path holds no kerf, so the row's
+  // gap is not in it. The H register at the control sets the part size.
+  if (offsetMode() === "control") {
+    var eg = /^\s*EXAMPLE/i.test(String(c.notes || "")) ? "WARNING CONDITION " + condition + " IS AN EXAMPLE ROW - " : "CONDITION " + condition + " - ";
+    note(eg + "THE MACHINE FILE GAP " + gap + " IS NOT IN THE PATH - THE H REGISTER AT THE CONTROL SETS THE KERF");
+    return;
+  }
   if (/^\s*EXAMPLE/i.test(String(c.notes || ""))) {
     note("WARNING CONDITION " + condition + " IS AN EXAMPLE ROW - THE KERF USES AN EXAMPLE GAP OF " + gap + " - REPLACE IT BEFORE CUTTING");
   } else {
     note("CONDITION " + condition + " KERF GAP " + gap + " - COMPARE WITH THE CONTROL ROW");
   }
+}
+// #4076: programOffsets (the engine, before onOpen) states for each
+// section if a COMP record engages the control's offset in it:
+// "control", "wear" or "". The notes come before the COMP record, so
+// they read it here. offsetMode is the current section's entry.
+function offsetList() { return typeof programOffsets !== "undefined" && programOffsets ? programOffsets : []; }
+function offsetMode() { return offsetList()[sectionNo] || ""; }
+function offsetProgram() {
+  var l = offsetList();
+  for (var i = 0; i < l.length; i++) if (l[i]) return true;
+  return false;
 }
 // Program notes use this dialect without truncating the stated bound.
 function onComment(s) { note(commentText(s)); }
@@ -233,7 +262,8 @@ function onOpen() {
   note("WORK OFFSET SET AT THE CONTROL - NO G92 IS WRITTEN");
   note("Z0. FOLLOWS EACH MOVE TO A START POINT - SET Z0 AT THE UPPER HEAD HEIGHT ABOVE THE PART BEFORE START");
   dielectricNotes();
-  note("WIRE-CENTRE PATH - NO WIRE OFFSET G41 G42 IS USED");
+  if (offsetProgram()) note("WIRE OFFSET G41 G42 IS USED IN EACH SECTION THAT NAMES AN H REGISTER - SET EACH H REGISTER AT THE CONTROL BEFORE START - A SECTION WITHOUT ONE IS A WIRE-CENTRE PATH");
+  else note("WIRE-CENTRE PATH - NO WIRE OFFSET G41 G42 IS USED");
   note("EACH C CONDITION NAMED BELOW MUST EXIST IN THE CONTROL CONDITION TABLE BEFORE START");
   if (approach) note("C000 APPROACH CONDITION ON EACH APPROACH MOVE - C000 MUST EXIST IN THE CONTROL CONDITION TABLE");
   block(["G90"]);
@@ -274,14 +304,51 @@ function onToolChange(number, name) {
   refuse("tool" + opName, who() + "changes to tool " + number + " - a wire EDM mounts no tool (the wire is the condition's)");
 }
 
-// #1498: the wire laws judge the generated wire-centre path. No stored
-// H-register value ties a control-offset path to that judged geometry.
-// Refuse every COMP record (including wear and OFF); OFF cannot make a
+// #4076: the control's wire offset. The shared law (wire_offset.rs)
+// keeps the state; the words are written at the next move (offsetStep,
+// offsetWords). A refused record refuses the section; OFF cannot make a
 // refused section safe again. Section end resets the refusal.
-function onRadiusCompensation() {
+function onRadiusCompensation(side) {
+  var p = typeof properties !== "undefined" && properties ? properties : {};
+  var why = wireOffsetRecord(wireOff, side, p.CompensationRadius, p.CompensationType);
+  if (why === "") return;
   controlOffset = true;
   sectionOk = false;
-  refuse("offset" + opName, who() + "Sodick LN2W: control-side wire offset (G41/G42 H) is not supported - no verified H-register value is stored; post a generated wire-centre path without control or wear compensation");
+  refuse("offset" + opName, who() + why);
+}
+
+// The law's verdict on one move, before any word of it is written; null
+// refuses the section. The LN2W rules on top of the law: H001 goes with
+// C001 (the owner, #4076), so the first pass must be on C001 and the C000
+// approach option cannot cut the lead-in.
+function offsetStep(p, straight) {
+  if (!inSection || !sectionOk) return { engage: "", cancel: false, error: "" };
+  var d = wireOffsetMove(wireOff, straight, p.StartX, p.StartY, p.X, p.Y);
+  if (d.error === "" && d.engage !== "") {
+    var pass = !threaded ? 1 : skim + (skimPending ? 2 : 1);
+    if (approach) {
+      d.error = "the C000 approach condition cuts the lead-in, but the wire offset H001 goes with C001 - set the C000 approach condition off to post a wire offset";
+    } else if (pass === 1 && condition !== "C001") {
+      d.error = "the wire offset H001 always goes with condition C001 on the LN2W control, and the first pass is on " + condition + " - cut the first pass on C001";
+    } else if (pass > 999) {
+      d.error = "pass " + pass + " has no H register (H001 to H999) - refused";
+    }
+  }
+  if (d.error === "") return d;
+  refuse("offmove" + opName, who() + d.error);
+  sectionOk = false;
+  return null;
+}
+
+// The offset's own line before the lead-in (the owner's own-line form):
+// G41 / G42 and the pass's H register, after the pass's C word.
+function offsetWords(d) {
+  if (d.engage === "") return;
+  var h = "H" + ("00" + (skim + 1)).slice(-3);
+  var r = Number(wireOff.radius).toFixed(3) + " MM";
+  if (wireOff.wear) note("WIRE OFFSET " + h + " WITH CONDITION " + condition + " HOLDS THE WEAR DELTA ONLY - THE STREAM STATES " + r + " - SET " + h + " AT THE CONTROL");
+  else note("WIRE OFFSET " + h + " WITH CONDITION " + condition + " - THE PATH IS THE PART CONTOUR, NOT THE WIRE CENTRE - SET " + h + " AT THE CONTROL TO THE WIRE RADIUS PLUS THE GAP - THE STREAM STATES " + r);
+  block([d.engage === "left" ? "G41" : "G42", h]);
 }
 
 // ------------------------------------------------------------- section
@@ -327,7 +394,10 @@ function onSection() {
   sectionOk = true;
   note(opName + (opKind ? " - " + opKind : ""));
   if (setupName) note("SETUP " + setupName);
-  if (side) note("SIDE " + side.toUpperCase() + " - KERF IN THE PATH");
+  var mode = offsetMode();
+  if (mode === "control") note("WIRE OFFSET G41 G42 IN THIS SECTION - THE PATH IS THE PART CONTOUR WITHOUT THE KERF");
+  else if (mode === "wear") note("WIRE OFFSET G41 G42 IN THIS SECTION - THE H REGISTER HOLDS THE WEAR DELTA ONLY");
+  if (side) note("SIDE " + side.toUpperCase() + (mode === "control" ? " - THE CONTROL WIRE OFFSET SETS THE KERF" : " - KERF IN THE PATH"));
   // The C word selects a row of the control's own condition table; the
   // program carries no table, so the operator checks the row exists.
   note("CONDITION " + condition + " MUST EXIST IN THE CONTROL CONDITION TABLE - CHECK ITS VALUES");
@@ -460,9 +530,12 @@ function onLinear() {
   var p = properties;
   var ang = angleNext;
   angleNext = false;
+  var d = offsetStep(p, true);
+  if (d === null) return;
   if (!cutOk(p, ang)) return;
-  // No F word: the condition sets the rate.
-  block(["G01", wo("X", p.X, orgX), wo("Y", p.Y, orgY)]);
+  offsetWords(d);
+  // No F word: the condition sets the rate. G40 rides the lead-out move.
+  block([d.cancel ? "G40" : "", "G01", wo("X", p.X, orgX), wo("Y", p.Y, orgY)]);
   compOff = true;
 }
 
@@ -479,6 +552,8 @@ function onCircular() {
     sectionOk = false;
     return;
   }
+  // An arc never engages or cancels the offset (the law refuses it).
+  if (offsetStep(p, false) === null) return;
   if (!cutOk(p, ang)) return;
   // #3442: an arc whose written ends coincide is no arc block (arcFate, PRELUDE).
   var fate = arcFate(arcWord, arcIncOf(fu));  // #3474: I J K are increments from the start
@@ -502,6 +577,8 @@ function onCycle() {
 // The section's end: cut the wire (T90, or the operator at an M00), then
 // the operator's stop if the op asks one.
 function onSectionEnd() {
+  var on = wireOffsetEnd(wireOff);
+  if (on !== "" && sectionOk) refuse("offend" + opName, who() + on);
   if (threaded) {
     if (awt) block(["T90"]);
     else {
@@ -514,6 +591,7 @@ function onSectionEnd() {
   else if (afterOp === "home") {
     refuse("home" + opName, who() + "asks a trip home - the Sodick LN2W wire post states no home position; set the operation to Continue");
   }
+  sectionNo++;
   inSection = false;
   sectionOk = false;
   threaded = false;

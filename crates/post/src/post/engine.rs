@@ -157,6 +157,8 @@ pub fn run_program_with(
     let serves_sinker = s
         .words_global("serves")?
         .is_some_and(|w| w.iter().any(|k| crate::machine::Kind::from_word(k) == Some(crate::machine::Kind::SinkerEdm)));
+    // #4076: which sections engage the control's offset, before `onOpen`.
+    s.eval_src(&format!("var programOffsets = {};", super::wire_offset::sections(&records)))?;
     s.set_program(id)?;
     let tools_src = super::options::program_tools_js(&records)?;
     s.eval_src(&tools_src)?;
