@@ -90,6 +90,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         mut slot_bound,
         mut rotary_picks,
         mut prior,
+        prior_staged: _,
         verify_prior,
         mut drills_ahead,
         turned_ahead,
