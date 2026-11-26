@@ -19,9 +19,10 @@ Collected in November 2026.
 
 1. The source is the public HEIDENHAIN TNCguide portal: the English user manuals of 6 series, 15 control models and 84 NC software pages (TNC 124 to TNC7), plus the "Overview of New and Modified Software Functions" documents and some brochures. `inventory.md` lists each document.
 2. The text of each PDF was extracted with `pdftotext -layout`. Scripts searched the text. Nobody read the manuals page by page.
-3. The main sources are the "New functions" / "Changed functions" lists of each manual and the overview documents. The Q-parameter lists of the cycles come from the `CYCL DEF` example blocks.
-4. Short excerpts were read to confirm a detail. Each fact has a document ID and a PDF page (`<ID> p<N>`).
-5. A gap is marked "unsure" or "not found in the extracted text". "Not found" does not prove that a control lacks a function.
+3. The main sources are the "New functions" / "Changed functions" lists of each manual and the overview documents. The Q-parameter lists of the cycles come from the example block that starts with the cycle's own number and name (section B3 of `differences.md`).
+4. Section C assigns an entry to a control only when the manual covers that control. The DIN/ISO manual 345 940-22 is shared by the TNC 410, TNC 426 and TNC 430. Its "not TNC 410" marks were applied, so its 280 476 list counts for the TNC 426/430 only.
+5. Short excerpts were read to confirm a detail. Each fact has a document ID and a PDF page (`<ID> p<N>`).
+6. A gap is marked "unsure" or "not found in the extracted text". "Not found" does not prove that a control lacks a function.
 
 ## How complete
 
@@ -38,7 +39,7 @@ The HEIDENHAIN manuals are © HEIDENHAIN. These files hold facts about control b
 
 1. **Three dialect groups.** TNC 124 and TNC 128 are paraxial: one axis in each block, no `L`, no arcs, `R+`/`R-`. TNC 310 is contouring Klartext only. All other controls add DIN/ISO from a version on.
 2. **DIN/ISO is not on all controls.** None on TNC 310, TNC 128 and TNC 124. TNC 320 from 340 55x-04, TNC 620 from 340 56x-02, TNC 426/430 from 280 472, TNC7 only from 81762x-17.
-3. **Cycle 205 (UNIVERSAL PECKING) grew in steps.** Q379/Q253 from iTNC 340 422. Q208 and Q395 only from iTNC 60642x-04, TNC 640 34059x-04, TNC 620 81760x-01 and TNC 320 77185x-05. Cycle 200 (DRILLING) has Q395 from the same releases. The DIN/ISO post writes Q395/Q208 today, so its output is not valid on iTNC 530 340 49x software (#4094).
+3. **Cycle 205 (UNIVERSAL PECKING) grew in steps.** Q379/Q253 from iTNC 340 422. Q208 and Q395 only from iTNC 60642x-04, TNC 640 34059x-04, TNC 620 81760x-01 and TNC 320 77185x-01 (1096959-20 p9). Cycle 200 (DRILLING) has Q395 from the same releases. The TNC 426/430 gets cycle 205 only from 280 474. The TNC 410 has no cycle 205. The DIN/ISO post writes Q395/Q208 today, so its output is not valid on iTNC 530 340 49x software (#4094).
 4. **`FUNCTION DWELL` is on no iTNC 530 version.** It comes with TNC 640 34059x-07, TNC 620 81760x-04 and TNC 320 77185x-04. Use `G04 F..` (cycle 9 DWELL TIME) in DIN/ISO (#4093).
 5. **Cycle 247 (PRESETTING) changed meaning in iTNC 340 422.** Before, it set a datum value. After, it activates a row of the preset table.
 6. **PLANE** comes with iTNC 340 422, TNC 620 340 56x-02 and TNC 320 340 55x-04. PLANE AXIAL comes with iTNC 34049x-03. The TNC7 keeps cycle 19 (WORKING PLANE) only to edit old programs (from 81762x-17), and converts cycle 7 (DATUM SHIFT) into TRANS DATUM.
@@ -46,6 +47,7 @@ The HEIDENHAIN manuals are © HEIDENHAIN. These files hold facts about control b
 8. **Tool calls.** The tool name in quotes comes with TNC 426 280 462 (not TNC 410 or TNC 310). The name length went from 16 to 32 characters in TNC 640 34059x-02. FZ/FU come with iTNC 34049x-01. TNC7 81762x-19 refuses `L`/`R` in `TOOL DEF`.
 9. **Options.** On the TNC 620, cycles 201-205, 208 and 209 need option 19. Tilting needs option 8 and TCPM needs option 9. The existing `installed_options` field can carry this.
 10. **Number format.** TNC 310, TNC 410 and TNC 124 take 1 µm (3 decimals). TNC 426/430, iTNC 530, TNC 320/620/640 and TNC7 take 0.1 µm (4 decimals). TNC 640 34059x-11 changed the operator priority in Q formulas: write parentheses.
+11. **TNC 410.** The shared ISO manual 345 940-22 marks cycles 205-209, 247, 19 (G80), 32 (G62), the SL II cycles, M128 and the tilted working plane as "not TNC 410". The TNC 410 profile in `dialects.md` follows these marks.
 
 ## Related issues
 

@@ -10,7 +10,7 @@ This file is section C of `differences.md`. A script made it from the "New funct
 
 Generated from the new/changed-function lists (see the method note at the top). "[new]" and "[changed]" follow the heading of the list. The source after each bullet is the manual ID (file name in the inventory) and, for overview documents, the PDF page. "(see ... page N)" inside a bullet is the PRINTED page of that manual.
 
-Versions with no list: TNC 124, TNC 310, TNC 410 (except the 280 476 notes in the shared ISO manual), TNC 426 280 460/280 462/280 470-474, TNC 320 340 551-01/-02, TNC 620 340 56x-01 and 73498x-01, TNC 640 34059x-01, TNC 128 77184x-01, TNC7 81762x-16 (first versions or old manuals without such a section). For these, use section B and `feature-mentions.md`.
+Versions with no list: TNC 124, TNC 310, TNC 410 (the shared ISO manual 345 940-22 lists 280 476 functions for the TNC 426/430 only), TNC 426 280 460/280 462/280 470-474, TNC 320 340 551-01/-02, TNC 620 340 56x-01 and 73498x-01, TNC 640 34059x-01, TNC 128 77184x-01, TNC7 81762x-16 (first versions or old manuals without such a section). For these, use section B and `feature-mentions.md`.
 
 
 ### C.TNC 128
@@ -93,8 +93,8 @@ Versions with no list: TNC 124, TNC 310, TNC 410 (except the 280 476 notes in th
 
 **77185x-01**
 
+- [new] Cycle 205: Q208 (retraction feed rate). Cycles 200, 203, 205: Q395 (depth reference). Checked by hand (1096959-20 p9, p82)
 - [new] The character set of the fixed cycle 225 Engraving was expanded by more characters and the diameter sign see "ENGRAVING (Cycle 225, DIN/ISO: G225)", page 276 New … (1096959-20)
-- other: Fundamentals | New and changed cycle functions of software 77185x-04 N
 
 **77185x-02**
 
@@ -110,7 +110,6 @@ Versions with no list: TNC 124, TNC 310, TNC 410 (except the 280 476 notes in th
 
 - [changed] New Cycle 441 FAST PROBING. With this cycle you can set various touch probe parameters (e.g. positioning feed rate) that are globally effective for all … (1096983-23)
 - [new] New FUNCTION COUNT function for controlling a counter, see "Defining a counter", Page 349 New FUNCTION LIFTOFF function for retracting the tool from the contour … (1096950-24)
-- other: Fundamentals | New cycle functions of software 77185x-01
 
 **77185x-18**
 
@@ -120,15 +119,7 @@ Versions with no list: TNC 124, TNC 310, TNC 410 (except the 280 476 notes in th
 
 ### C.TNC 410
 
-
-**280476-xx**
-
-- [new] Tapping Cycle 209 with chip breaking (see “TAPPING WITH CHIP BREAKING (Cycle G209, not TNC 410)” on page 206) (345_940-22)
-- [new] Cycle 247(see “DATUM SETTING (Cycle G247, not TNC 410)” on page 299) (345_940-22)
-- [new] M142 (see “Erasing modal program information: M142 (not TNC 410)” on page 163) (345_940-22)
-- [new] M143 (see “Erasing the basic rotation: M143 (not TNC 410)” on page 163) (345_940-22)
-- [new] M144 (see “Compensating the machine's kinematic configuration for ACTUAL/NOMINAL positions at end of block: M144 (not TNC 410)” on page 171) (345_940-22)
-- other: Thread milling cycles 262 to 267 · Entering two miscellaneous functions M · New Cycle 440 for measuring the axial displacement of a machine Cycles · Support of …
+No new-function list for the TNC 410. The shared DIN/ISO manual 345 940-22 (TNC 410, TNC 426, TNC 430) has one list, "New features of the NC software 280 476-xx" (PDF p6). Its own model table (PDF p5) maps 280 476/280 477 to the TNC 426/430 and 286 060/286 080 to the TNC 410, so the list is not a TNC 410 version step. Several entries say "not TNC 410" (cycles 209 and 247, M142, M143, M144). The same manual marks these as "not TNC 410" in its contents (PDF p17-19): cycles 205-209, 262-267, SL II (20-28), 19 (G80), 32 (G62), 247, 60, M116, M118, M128, M136, M138, tilting. The 280 476 entries are under C.TNC 426 TNC 430.
 
 ### C.TNC 426 TNC 430
 
@@ -224,7 +215,6 @@ Versions with no list: TNC 124, TNC 310, TNC 410 (except the 280 476 notes in th
 **34049x-06**
 
 - [new] In Cycle 241 "Single-Lip Deep-Hole Drilling" it is now possible to define a dwell depth (see "SINGLE-LIP DEEP-HOLE DRILLING (Cycle 241, DIN/ISO: G241)" on page … (670388-23_SP7)
-- [changed] The approach behavior during side finishing with Cycle 24 (DIN/ISO: G124) has been changed (see "Please note while programming:" on page 203) Changed cycle … (670388-23_SP7)
 - [changed] New software option 3-D ToolComp: 3-D tool radius compensation depending on the tool’s contact angle on blocks with surface normal vectors (LN blocks) (670391-23)
 - [changed] In the Test Run mode, the working plane can now by defined manually (see "Setting a tilted working plane for the test run" on page 542) (670391-23)
 - [changed] New DR2TABLE column for definition of a compensation table for tool radius compensation depending on the tool’s contact angle (670391-23)
@@ -270,7 +260,7 @@ Versions with no list: TNC 124, TNC 310, TNC 410 (except the 280 476 notes in th
 
 **60642x-01**
 
-- [changed] New software option 3-D ToolComp: 3-D tool radius compensation 34049x-05 depending on the tool’s contact angle on blocks with surface normal vectors (LN … (737760-22)
+- [changed] New software option 3-D ToolComp: 3-D tool radius compensation depending on the tool’s contact angle on blocks with surface normal vectors (LN blocks) (737760-22)
 - [changed] Cycle 206: The TNC now monitors the thread pitch if entered in the tool table (670388-25)
 - [changed] Cycle 207: The TNC now monitors the thread pitch if entered in the tool table (670388-25)
 - [changed] Cycle 209: The TNC now monitors the thread pitch if entered in the tool table (670388-25)
@@ -385,8 +375,6 @@ Versions with no list: TNC 124, TNC 310, TNC 410 (except the 280 476 notes in th
 **81760x-01**
 
 - [new] The character set of the fixed cycle 225 Engraving was expanded by more characters and the diameter sign see "ENGRAVING (Cycle 225, DIN/ISO: G225)", page 284 New … (1096886-20)
-- [new] New and changed cycle functions of software New and changed cycle functions of software 81760x-03 New cycle 258 POLYGON STUD (software option 19)see "CIRCULAR … (1096886-22)
-- [new] Fundamentals | New and changed cycle functions of software 81760x-03 New and changed cycle functions of software 81760x-03 New Cycle 258 POLYGON STUD, (software … (1096886-24)
 - [new] Conversational languages The Additional Language software option (option 41) is no longer available. The following conversational languages are also available … (New_and_Changed_Functions__1322094_02_A_ p26)
 - [new] NC fundamentals The BLK FORM CYLINDER function allows you to define a cylindrical workpiece blank by entering the radius, length, and an optional oversize. If … (New_and_Changed_Functions__1322094_02_A_ p26)
 - [new] Touch probe cycles ( option 17) Cycle 4 MEASURING IN 3-D This cycle allows you to determine any position on the workpiece. You define the direction of approach … (New_and_Changed_Functions__1322094_02_A_ p27)
@@ -400,7 +388,7 @@ Versions with no list: TNC 124, TNC 310, TNC 410 (except the 280 476 notes in th
 - [changed] Tables When you import a tool table from the iTNC 530, the control loads all supported tool types and assigns the tool type Milling cutter,MILL to all … (New_and_Changed_Functions__1322094_02_A_ p30)
 - [changed] MOD functions In the Display settings MOD group, you select which information the control is to show in the position display of the general and additional … (New_and_Changed_Functions__1322094_02_A_ p30)
 - [changed] Machine-specific user parameters The control supports searching for language-specific names. Certain machine parameters are available only after you have … (New_and_Changed_Functions__1322094_02_A_ p31)
-- other: Fundamentals New and changed cycle functions of software · Fundamentals | New and changed cycle functions of software 81760x-04 N · 2 Software 81760x-01 | New …
+- other: Fundamentals New and changed cycle functions of software · 2 Software 81760x-01 | New software options · Active Vibration Damping (AVD) (option 146) AVD dampens …
 
 **81760x-02**
 
@@ -505,7 +493,7 @@ Versions with no list: TNC 124, TNC 310, TNC 410 (except the 280 476 notes in th
 - [changed] Error messages and help system When displaying error messages, the control sorts them first by priority and, second (within the same priority), by time. … (New_and_Changed_Functions__1322094_02_A_ p65)
 - [changed] Remote Desktop Manager (option 133) In the Remote Desktop Manager, all of the functions that you previously had to call by clicking the right mouse button … (New_and_Changed_Functions__1322094_02_A_ p65)
 - [changed] axes are programmed using one common axis and move synchronously. The OLD CYCLS soft key and the associated cycles have been removed: Cycle 1 PECKING (ISO: … (New_and_Changed_Functions__1322094-02.tx p68)
-- other: Fundamentals | New cycle functions of software 81760x-01 · New Cycle 441 FAST PROBING. With this cycle you can set various touch  · 6 Software 81760x-05 | New …
+- other: New Cycle 441 FAST PROBING. With this cycle you can set various touch  · 6 Software 81760x-05 | New software options · Batch Process Manager (option 154) This …
 
 **81760x-06**
 
@@ -681,7 +669,7 @@ Versions with no list: TNC 124, TNC 310, TNC 410 (except the 280 476 notes in th
 - [changed] Tables When you import a tool table from the iTNC 530, the control loads all supported tool types and assigns the tool type Milling cutter,MILL to all … (New_and_Changed_Functions__1322095_02_A_ p33)
 - [changed] MOD functions In the Display settings MOD group, you select which information the control is to show in the position display of the general and additional … (New_and_Changed_Functions__1322095_02_A_ p34)
 - [changed] Machine-specific user parameters The control supports searching for language-specific names. Certain machine parameters are available only after you have … (New_and_Changed_Functions__1322095_02_A_ p34)
-- other: New and changed cycle functions of software New and changed cycle func · Fundamentals New and changed cycle functions of software · Fundamentals | New and …
+- other: New and changed cycle functions of software New and changed cycle func · Fundamentals New and changed cycle functions of software · 2 Software 34059x-04 | New …
 
 **34059x-05**
 
@@ -789,7 +777,7 @@ Versions with no list: TNC 124, TNC 310, TNC 410 (except the 280 476 notes in th
 - [changed] Error messages and help system When displaying error messages, the control sorts them first by priority and, second (within the same priority), by time. … (New_and_Changed_Functions__1322095_02_A_ p76)
 - [changed] Remote Desktop Manager (option 133) In the Remote Desktop Manager, all of the functions that you previously had to call by clicking the right mouse button … (New_and_Changed_Functions__1322095_02_A_ p77)
 - [changed] (ISO: G831), and 832 THREAD EXTENDED (ISO: G832, option 50). Cycle 239 ASCERTAIN THE LOAD (ISO: G239, option 143) can adapt the maximum acceleration of the … (New_and_Changed_Functions__1322095-02.tx p89)
-- other: Fundamentals | New cycle functions of software 34059x-04 · 6 Software 34059x-08 | New software options · Global Program Settings (option 44) This option allows …
+- other: 6 Software 34059x-08 | New software options · Global Program Settings (option 44) This option allows you to define v · Batch Process Manager (option 154) This …
 
 **34059x-09**
 
