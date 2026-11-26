@@ -152,6 +152,10 @@ A script may define a top-level `declaredOptions` map so the host renders typed 
   record (feeds, plunges, arcs at the quarter points they pass, cycle
   centres) as `{minX, maxX, minY, maxY}` in mm, or `null` when nothing
   is cut. Rapids do not count.
+- `programOffsets` (global, before `onOpen`, #4076): one entry for each
+  section of the stream, `"control"` or `"wear"` when a `COMP` record
+  engages that compensation in it, else `""`. A note that is written
+  before the `COMP` record arrives reads it (`sodick-ln2w.cps`).
 - `machine.travel`: the linear axes' stated strokes, `{X, Y, Z}`, each
   `[min, max]` in mm or `null` when the machine file states none.
 
@@ -383,12 +387,38 @@ on the part's bottom, U V top minus bottom, moved from the guide planes
 by the stream's `WireGuideLower` / `WireGuideUpper` / `WireBottom` /
 `WireTop`), `G75` before `T90`. It refuses by name the angle form
 (`G51` / `G52` `A`, `G50`: corner motion not confirmed), a two-profile
-4-axis cut, an arc in a taper and a taper from a second setup. It was
+4-axis cut, an arc in a taper, the control's wire offset in a taper and
+a taper from a second setup.
+A `COMP` record ("control" or "wear") posts the control's wire offset
+(#4076, the owner's statements): `G41` / `G42 Hnnn` on its own line
+after the pass's C word and before the lead-in, H the pass number from
+`H001`, and `G40` in the block of the lead-out `G01`. No `G29` is
+written. The law is the shared prelude helper
+`crates/post/src/post/wire_offset.rs` (`wireOffsetNew`,
+`wireOffsetRecord`, `wireOffsetMove`, `wireOffsetEnd`), which another
+wire dialect can call; the words stay in the post. The refusals, each by
+name:
+- a lead-in or a lead-out that is an arc, has no length or is shorter
+  than the offset radius;
+- a change of side while the offset is on;
+- a section that ends with the offset on;
+- a first offset pass on a condition other than `C001` (`C001` goes
+  with `H001`);
+- the `C000` approach option together with an offset;
+- a pass above `H999`.
+
+The header and the section notes read `programOffsets` (the engine sets
+it before `onOpen`), so an offset program does not say "NO WIRE OFFSET"
+and a section on the control's offset does not say that the kerf is in
+the path. A program without a `COMP` record is byte-identical to the
+wire-centre form. The post was
 not run on a control in this form;
 `docs/decisions/4045-sodick-ln2w-dialect.md` lists what is confirmed and
-what is inferred. Its goldens ride under `nc/sodick-ln2w/`
+what is inferred, and `docs/decisions/4076-ln2w-wire-offset.md` is the
+decision record of the offset. Its goldens ride under `nc/sodick-ln2w/`
 (`crates/app/tests/wire_post/sodick_aq600l.rs`); its synthetic-stream
-pins are in `crates/post/tests/sodick_ln2w/pins.rs` (test binary
+pins are in `crates/post/tests/sodick_ln2w/pins.rs` and, for the offset,
+`crates/post/tests/sodick_ln2w/offset.rs` (test binary
 `script_sodick_ln2w`).
 
 ## Adding a post to the app

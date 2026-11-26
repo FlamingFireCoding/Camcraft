@@ -25,6 +25,12 @@ The law that is not dialect-specific is a shared prelude helper,
 offset logic in a shared helper that other wire dialects can call"):
 
 - a lead-in shorter than the offset radius is refused by name;
+- a lead-out shorter than the offset radius, or with no length, is refused by
+  name. The owner stated the length rule for the lead-in only. The lead-out
+  gets the same rule (review of PR #4139): on a `G40` block that is shorter
+  than the radius, the control moves the wire centre onto the contour point
+  and the kerf cuts into the part. If the owner permits a shorter lead-out,
+  only the length test of the lead-out changes;
 - the offset engages only on a straight lead-in and cancels only on a straight
   lead-out (an arc is refused by name);
 - a change of side while the offset is on is refused;
@@ -41,11 +47,18 @@ too-short lead-in or an offset left modal would cut in the wrong place.
   names `C001`.
 - Allowing the `C000` approach option with an offset. Dropped: `C000` would
   cut the lead-in with the register of `C001`. The two together are refused.
-- Changing the header line "WIRE-CENTRE PATH - NO WIRE OFFSET G41 G42 IS
-  USED". Dropped: the header is written before any `COMP` record arrives, and
-  the issue requires the wire-centre output to stay byte-identical. A section
-  with an offset writes its own comment line that says the path is the part
-  contour (or, for wear, the wire-centre path with the wear delta).
+- Keeping the header line "WIRE-CENTRE PATH - NO WIRE OFFSET G41 G42 IS
+  USED" and the section notes "KERF IN THE PATH" / "KERF GAP ... COMPARE WITH
+  THE CONTROL ROW" in an offset program. Dropped after the review of PR
+  #4139: the program stated two opposite things about the offset. The engine
+  now publishes `programOffsets` before `onOpen` (one entry for each section:
+  `"control"`, `"wear"` or `""`), as it does with `programBounds`. The post
+  writes the header and the section notes from it. A program without a `COMP`
+  record stays byte-identical. A wear section keeps its kerf notes, because
+  its path is the wire-centre path.
+- A per-program flag instead of a per-section list. Dropped: a wire-centre
+  section in a program that also has an offset section must keep its "KERF IN
+  THE PATH" note.
 - App and generator work (a Wire Contour compensation mode, a part-contour
   path, and the wire laws judging it). Not in this change: the app's wire
   stream still states compensation off, so the app goldens of the square and

@@ -3,7 +3,8 @@
 //! (`G41` / `G42 Hnnn` on its own line before the lead-in, H from the pass
 //! number, `C001` with `H001`, a later pass on the condition that the
 //! operation states, `G40` on the lead-out move) and each named refusal of
-//! the shared wire-offset law (`wire_offset.rs`).
+//! the shared wire-offset law (`wire_offset.rs`), and the header and section
+//! notes of an offset program (`programOffsets`).
 //! Provenance: synthetic streams from our CNC intermediate contract; the
 //! expected words are the statements of the owner of a Sodick AQ600L (LN2W)
 //! on #4076, 2026-11-25.
@@ -63,7 +64,20 @@ fn machine(extra: Value) -> Value {
 }
 
 fn run(records: &[Record]) -> engine::PostOutput {
-    engine::run(SCRIPT, &machine(json!({})), &cnc::serialize(records)).expect("the synthetic stream runs")
+    run_on(json!({}), records)
+}
+
+fn run_on(extra: Value, records: &[Record]) -> engine::PostOutput {
+    engine::run(SCRIPT, &machine(extra), &cnc::serialize(records)).expect("the synthetic stream runs")
+}
+
+/// A section named `name` on `C001` that states `WireSide left`.
+fn sided(name: &str, body: Vec<Record>) -> Vec<Record> {
+    let mut r = vec![param("OperationName", json!(name)), param("WireSide", json!("left"))];
+    r.extend(head("C001").into_iter().skip(1));
+    r.extend(body);
+    r.push(Record::Section { begin: false });
+    r
 }
 
 fn words(out: &engine::PostOutput) -> Vec<&str> {
@@ -193,4 +207,102 @@ fn the_approach_condition_with_a_wire_offset_is_refused_by_name() {
     let out = out.expect("the synthetic stream runs");
     refused(&out, &["C000", "wire offset"]);
     assert!(!offset_word(&out), "{}", out.program);
+}
+
+/// The lead-out that cancels the offset gets the rule of the lead-in (PR
+/// #4139 review, finding 1): on a move of no length, or one shorter than
+/// the radius, the control puts the wire centre on the contour inside the
+/// part. Each is refused by name and no `G40` block is written. A lead-out
+/// of exactly the radius posts.
+#[test]
+fn a_lead_out_shorter_than_the_wire_radius_is_refused_by_name() {
+    for (end, needles) in [((-25.0, -10.0), ["lead-out", "no length", ""]), ((-25.0, -10.01), ["lead-out", "0.01 mm", "0.165 mm"])] {
+        let mut r = head("C001");
+        r.extend([comp(Some(CompSide::Right), 0.165, false), feed(-25.0, 10.0), feed(-25.0, -10.0), comp(None, 0.0, false), feed(end.0, end.1)]);
+        r.push(Record::Section { begin: false });
+        let out = run(&r);
+        refused(&out, &needles);
+        assert!(!words(&out).iter().any(|l| l.contains("G40")), "{}", out.program);
+        assert_eq!(words(&out).iter().filter(|l| l.starts_with("G01")).count(), 2, "{}", out.program);
+    }
+    let mut r = head("C001");
+    r.extend([comp(Some(CompSide::Right), 0.165, false), feed(-25.0, 10.0), feed(-25.0, -10.0), comp(None, 0.0, false), feed(-25.0, -10.165)]);
+    r.push(Record::Section { begin: false });
+    let out = run(&r);
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert!(words(&out).contains(&"G40 G01 X-25. Y-10.165"), "{}", out.program);
+}
+
+/// The notes are true for an offset program (finding 2). The header does
+/// not say "NO WIRE OFFSET", and a section on the control's offset does
+/// not say that the kerf is in the path or that the kerf uses the row's
+/// gap. A section without a `COMP` record keeps its wire-centre notes, and
+/// a program without one keeps the old header line.
+#[test]
+fn the_notes_of_an_offset_program_state_the_offset() {
+    let table = json!({"conditions": [{"id": "C001", "gap": 0.04, "notes": ""}]});
+    let centre = vec![feed(-25.0, 10.0), feed(-22.0, 10.0)];
+    const OLD: [&str; 3] = [
+        "(WIRE-CENTRE PATH - NO WIRE OFFSET G41 G42 IS USED)",
+        "(SIDE LEFT - KERF IN THE PATH)",
+        "(CONDITION C001 KERF GAP 0.040 MM - COMPARE WITH THE CONTROL ROW)",
+    ];
+    // No COMP record: the three old lines, and no word of an H register.
+    let out = run_on(table.clone(), &sided("Punch1", centre.clone()));
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert!(OLD.iter().all(|l| out.program.lines().any(|p| p == *l)), "{}", out.program);
+    assert!(!out.program.contains("H REGISTER"), "{}", out.program);
+
+    // A wire-centre section, then a section on the control's offset.
+    let mut r = sided("Punch1", centre);
+    r.extend(sided("Punch2", pass(CompSide::Right, 0.165, false)));
+    let out = run_on(table.clone(), &r);
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    let (first, second) = out.program.split_once("(Punch2").expect("the second section's note");
+    assert!(!first.contains("NO WIRE OFFSET") && first.contains("(WIRE OFFSET G41 G42 IS USED IN EACH SECTION THAT NAMES AN H REGISTER"), "{first}");
+    assert!(OLD[1..].iter().all(|l| first.contains(l)), "{first}");
+    assert!(!second.contains("KERF IN THE PATH") && !second.contains("COMPARE WITH THE CONTROL ROW"), "{second}");
+    assert!(second.contains("(WIRE OFFSET G41 G42 IN THIS SECTION - THE PATH IS THE PART CONTOUR WITHOUT THE KERF)"), "{second}");
+    assert!(second.contains("(SIDE LEFT - THE CONTROL WIRE OFFSET SETS THE KERF)"), "{second}");
+    assert!(second.contains("(CONDITION C001 - THE MACHINE FILE GAP 0.040 MM IS NOT IN THE PATH - THE H REGISTER AT THE CONTROL SETS THE KERF)"), "{second}");
+
+    // Wear: the path is the wire-centre path, so the kerf notes stay.
+    let out = run_on(table, &sided("Punch1", pass(CompSide::Right, 0.01, true)));
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert!(!out.program.contains("NO WIRE OFFSET") && OLD[1..].iter().all(|l| out.program.contains(l)), "{}", out.program);
+    assert!(out.program.contains("(WIRE OFFSET G41 G42 IN THIS SECTION - THE H REGISTER HOLDS THE WEAR DELTA ONLY)"), "{}", out.program);
+}
+
+/// A `COMP` record that changes the side while the offset is on is refused
+/// by name (finding 4), and no word is written after it.
+#[test]
+fn a_change_of_side_while_the_offset_is_on_is_refused_by_name() {
+    let mut r = head("C001");
+    r.extend([comp(Some(CompSide::Right), 0.165, false), feed(-25.0, 10.0), comp(Some(CompSide::Left), 0.165, false)]);
+    r.extend([feed(-25.0, -10.0), comp(None, 0.0, false), feed(-22.0, 10.0), Record::Section { begin: false }]);
+    let out = run(&r);
+    refused(&out, &["changes to left while it is on", "G40"]);
+    let w = words(&out);
+    assert_eq!(w.iter().filter(|l| l.starts_with("G01")).count(), 1, "{}", out.program);
+    assert!(!w.iter().any(|l| l.contains("G41") || l.contains("G40")), "{}", out.program);
+}
+
+/// The H register is H001 to H999 (finding 4): pass 999 posts `H999`, and
+/// pass 1000 is refused by name with no register word.
+#[test]
+fn a_pass_above_h999_is_refused_by_name() {
+    let mut r = head("C001");
+    for n in 0..1000 {
+        if n > 0 {
+            r.push(param("EdmCondition", json!("C007")));
+        }
+        r.extend(pass(CompSide::Right, 0.165, false));
+    }
+    r.push(Record::Section { begin: false });
+    let out = run(&r);
+    refused(&out, &["pass 1000", "H001 to H999"]);
+    let w = words(&out);
+    assert!(w.contains(&"G42 H999"), "no H999");
+    assert_eq!(w.iter().filter(|l| l.starts_with("G42")).count(), 999);
+    assert!(!w.iter().any(|l| l.contains("H000") || l.contains("H1000")));
 }
