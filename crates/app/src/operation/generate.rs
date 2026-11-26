@@ -1572,8 +1572,19 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 None => None,
             };
             let drive = land.as_ref().map_or(&material.facets[..], |(f, _)| f.facets.as_slice());
+            // #3329: the picks choose the raster corner where the Parallel
+            // cut starts and where its last pass ends (each other pattern
+            // refuses a pick by name); an empty seam is the automatic
+            // path, byte for byte.
+            let seam = finishing3d::RasterSeam::of(&params.path_picks());
+            let seamed_ends = std::cell::Cell::new(None);
             let run = |fp: &Finish3DParams| -> Result<Toolpath, GenError> {
                 let whole = match fp.pattern {
+                _ if !seam.is_empty() => {
+                    let (t, ends) = finishing3d::finish_seamed(drive, fp, *direction_angle, &seam)?;
+                    seamed_ends.set(ends);
+                    t
+                }
                 finishing3d::FinishPattern::Waterline => {
                     finishing3d::waterline(drive, fp)?
                 }
@@ -1665,6 +1676,17 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 }
             };
             let mut path = finishing3d::center_cut_guard(tool.center_cutting, &solid, &fp, run)?;
+            // #3329: the clip of the area controls may cut the picked
+            // corner away; the finished path keeps it, or is refused.
+            if let Some(ends) = seamed_ends.get() {
+                finishing3d::raster_ends_kept(
+                    &path,
+                    ends,
+                    &seam,
+                    "the area controls clip the raster",
+                    "clear the area controls ('Do not touch', the machining boundary) or the picks",
+                )?;
+            }
             if clip.is_some() && let Some(spec) = &avoid_spec {
                 path.notes.push(format!(
                     "3D Finish keeps clear of 'Do not touch' {}; material beside these items may remain unfinished",

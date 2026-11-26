@@ -104,6 +104,9 @@ impl KindInfo {
             // #3330: the raster corner where the cut starts, and the end
             // of the last pass.
             OpType::Parallel5D => PickCapability::Raster,
+            // #3329 slice 2: the corner of the 3D Finish's Parallel raster
+            // where the cut starts, and the end of its last pass.
+            OpType::Finish3D => PickCapability::Raster,
             // #3329 slice 1: the chain cut first and the chain cut last.
             OpType::Deburr => PickCapability::Chain,
             // #3329 slice 3: the descent place of each level's first
@@ -116,7 +119,6 @@ impl KindInfo {
             | OpType::Engrave
             | OpType::Chamfer2D
             | OpType::Circular
-            | OpType::Finish3D
             | OpType::MultiAxisDeburr
             | OpType::Swarf
             | OpType::AdvancedSwarf
@@ -307,6 +309,15 @@ impl OpParams {
             // #3328: the turret's radial holes have no XY order to pick.
             if matches!(self, OpParams::Drill { cross, .. } if !cross.is_empty()) {
                 return Some(format!("{}: a {what} point is not taken on cross holes - {PICK_TURRET}; clear it on this operation", info.label));
+            }
+            // #3329: the 3D Finish reads a pick on its Parallel raster only.
+            if let OpParams::Finish3D { pattern, .. } = self
+                && *pattern != crate::finishing3d::FinishPattern::Parallel
+            {
+                return Some(format!(
+                    "{}: a {what} point is read on the Parallel pattern only, not on {pattern:?} - pick the Parallel pattern or clear the {what} point",
+                    info.label
+                ));
             }
             // #3331: a turning pick is a point of the lathe (Z, X) plane.
             if cap == PickCapability::Meridian && picks.of(role).iter().any(|p| p.z.is_none()) {

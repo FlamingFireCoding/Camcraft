@@ -71,6 +71,15 @@ pub(super) fn script_props(m: &Value, props: &mut Value) {
     if let Some(mode) = m.pointer("/tooling/tool_change").and_then(Value::as_str) {
         props["toolChangeMode"] = json!(mode);
     }
+    if let Some(tol) = m
+        .pointer("/controller/arc_tolerance")
+        .and_then(Value::as_f64)
+        .or_else(|| m.pointer("/controller/arcTolerance").and_then(Value::as_f64))
+        .or_else(|| m.get("arc_tolerance").and_then(Value::as_f64))
+        .or_else(|| m.get("arcTolerance").and_then(Value::as_f64))
+    {
+        props["arcTolerance"] = json!(tol);
+    }
     // #4143: the stated D rule ("first-edge" / "tool-number"); absent when unstated.
     if let Some(rule) = m.pointer("/tooling/d_number").and_then(Value::as_str) {
         props["dNumber"] = json!(rule);
