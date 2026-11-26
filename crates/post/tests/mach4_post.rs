@@ -335,8 +335,8 @@ ENDSECTION
     let out = engine::run(&cps, &mch, stream).expect("posts");
     assert!(out.warnings.is_empty(), "warnings: {:?}", out.warnings);
     assert!(
-        out.program.contains("(SMOOTHING NOT WRITTEN - MACH3 G64 HAS NO TOLERANCE)"),
-        "Mach4 must emit smoothing notice comment matching Mach3:\n{}",
+        out.program.contains("(SMOOTHING NOT WRITTEN - MACH4 G64 HAS NO TOLERANCE)"),
+        "Mach4 must emit smoothing notice comment using the same pattern as Mach3:\n{}",
         out.program
     );
 }

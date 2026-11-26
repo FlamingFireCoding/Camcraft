@@ -1,5 +1,9 @@
-//! Tests for Mach3 postprocessor (issue #4148):
-//! sequence-number limits, header path mode G64, and dialect conventions.
+//! Issue #4148: Mach3 sequence numbers and G64 path mode.
+//!
+//! Provenance: public Mach3 G-code and programming manual (machsupport.com);
+//! no vendor materials consulted. Original clean-room tests.
+//!
+//! Gate map: covers assets/posts/mach3.cps, camcraft_post::post::engine.
 
 use camcraft_post::post::engine;
 use serde_json::json;

@@ -501,7 +501,7 @@ function startPreamble() {
 
 function smoothOn() {
   if (!(smoothTol > 0) || smoothNamed) return;
-  note("SMOOTHING NOT WRITTEN - MACH3 G64 HAS NO TOLERANCE");
+  note("SMOOTHING NOT WRITTEN - MACH4 G64 HAS NO TOLERANCE");
   smoothNamed = true;
 }
 function smoothOff() {
