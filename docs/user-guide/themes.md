@@ -35,6 +35,9 @@ clamped to the range.
 | `selection_stroke` | Outline of a selection |
 | `viewport` | Ground of the 3D view |
 | `ribbon_ink` | Ink of a plain ribbon glyph |
+| `handle_shade` | Shadow under a move or turn handle and its readout |
+| `handle_text` | Readout text of a move or turn handle in the 3D view |
+| `pick_rim` | Rim of a picked point in the 3D view |
 
 ## Geometry (`geometry`, in points)
 

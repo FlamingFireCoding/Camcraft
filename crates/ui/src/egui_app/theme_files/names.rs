@@ -34,6 +34,9 @@ pub const FONT_CAPTION: &str = "font_caption";
 pub const FONT_ROW: &str = "font_row";
 pub const FONT_ROW_SUFFIX: &str = "font_row_suffix";
 pub const RIBBON_INK: &str = "ribbon_ink";
+pub const HANDLE_SHADE: &str = "handle_shade";
+pub const HANDLE_TEXT: &str = "handle_text";
+pub const PICK_RIM: &str = "pick_rim";
 pub const RIBBON_TAB_H: &str = "ribbon_tab_h";
 pub const RIBBON_CELL_TOP_GAP: &str = "ribbon_cell_top_gap";
 pub const RIBBON_CAPTION_GAP: &str = "ribbon_caption_gap";
@@ -71,7 +74,7 @@ pub const RIBBON_TAB_STROKE: &str = "ribbon_tab_stroke";
 pub const COLOR_NAMES: &[&str] = &[
     INK, INK_ALT, WELL, TEXT, TEXT_DIM, TEXT_FAINT, BORDER, ACCENT,
     ACCENT_HOVER, FIELD_BG, FIELD_HOVER, FIELD_ACTIVE, SELECTION_BG,
-    SELECTION_STROKE, VIEWPORT, RIBBON_INK,
+    SELECTION_STROKE, VIEWPORT, RIBBON_INK, HANDLE_SHADE, HANDLE_TEXT, PICK_RIM,
 ];
 
 /// The geometry vocabulary (every override is clamped through the

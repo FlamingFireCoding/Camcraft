@@ -32,16 +32,14 @@ use super::colour_scan::count;
 /// row names the #1120 family PR that moves it to tokens and lowers it.
 #[rustfmt::skip]
 const ALLOWED: &[(&str, usize, &str)] = &[
-    ("align_pick_viz.rs", 1, "move (#1120 viewport overlays): pick, handle and overlay inks"),
     ("egui_app/colorvision.rs", 15, "move (#1120 verdict palettes): into the token table, values unchanged; the colour-vision maths stays"),
     ("egui_app/contrast.rs", 4, "keep: contrast maths (black or white text on a fill)"),
     ("egui_app/error_text.rs", 1, "move (#1120 status inks): the red fallback of an error line"),
     ("egui_app/file_drop.rs", 3, "move (#1120 viewport overlays): pick, handle and overlay inks"),
     ("egui_app/gen_overlay.rs", 6, "move (#1120 viewport overlays): pick, handle and overlay inks"),
     ("egui_app/ground_ink.rs", 22, "move (#1120 viewport overlays): pick, handle and overlay inks"),
-    ("egui_app/move_handles.rs", 3, "move (#1120 viewport overlays): pick, handle and overlay inks"),
     ("egui_app/shell.rs", 9, "move (#1120 viewport overlays): pick, handle and overlay inks"),
-    ("egui_app/theme/tables.rs", 32, "keep: the token tables themselves"),
+    ("egui_app/theme/tables.rs", 38, "keep: the token tables themselves"),
     ("egui_app/tool_body_lathe_page.rs", 3, "move (#1120 tool drawings): tool, holder and profile previews"),
     ("egui_app/tool_body_page.rs", 4, "move (#1120 tool drawings): tool, holder and profile previews"),
     ("egui_app/tool_holder_picker.rs", 2, "move (#1120 tool drawings): tool, holder and profile previews"),
@@ -52,7 +50,6 @@ const ALLOWED: &[(&str, usize, &str)] = &[
     ("egui_app/tool_model_view.rs", 1, "move (#1120 tool drawings): tool, holder and profile previews"),
     ("egui_app/tool_preview.rs", 8, "move (#1120 tool drawings): tool, holder and profile previews"),
     ("egui_app/tool_profile_page.rs", 10, "move (#1120 tool drawings): tool, holder and profile previews"),
-    ("egui_app/turn_handles.rs", 3, "move (#1120 viewport overlays): pick, handle and overlay inks"),
     ("egui_app/viewcube.rs", 1, "move (#1120 viewport overlays): pick, handle and overlay inks"),
     ("egui_app/viewport_layout.rs", 1, "keep: the colour only measures text, it is not drawn"),
     ("egui_app/window_chrome.rs", 2, "move (#1120 window chrome): the close button hover and its ink"),
