@@ -147,20 +147,35 @@ impl ConnectionCode {
         Ok(code)
     }
 
-    /// Refuse a code built in code (not parsed) that its text form
-    /// would refuse: a size off its series, a non-finite diameter, an
-    /// HSK form outside A to F.
+    /// The canonical form of a code built in code (not parsed): the
+    /// value that its text parses to. An HSK form in lower case reads as
+    /// upper case, and a custom name loses its outer spaces. A code that
+    /// its text form refuses (a size off its series, a non-finite
+    /// diameter, an HSK form outside A to F) is refused here.
+    pub fn canonical(&self) -> Result<Self, ConnectionError> {
+        Self::parse(&self.to_string())
+    }
+
+    /// Refuse a code that [`canonical`](Self::canonical) refuses.
     pub fn check(&self) -> Result<(), ConnectionError> {
-        Self::parse(&self.to_string()).map(|_| ())
+        self.canonical().map(|_| ())
     }
 
     /// Does a child whose machine side is `child` mate with this
-    /// workpiece side? The same code mates (diameters within
-    /// [`BORE_SLACK`]); a plain bore or collet also takes a Weldon
-    /// shank of its size, a Weldon bore takes only a Weldon shank (its
-    /// screw needs the flat).
+    /// workpiece side? Both sides compare in their canonical form, and
+    /// an invalid code mates nothing. The same code mates (diameters
+    /// within [`BORE_SLACK`]); a plain bore or collet also takes a
+    /// Weldon shank of its size, a Weldon bore takes only a Weldon
+    /// shank (its screw needs the flat).
     #[must_use]
     pub fn takes(&self, child: &Self) -> bool {
+        match (self.canonical(), child.canonical()) {
+            (Ok(parent), Ok(child)) => parent.takes_canonical(&child),
+            _ => false,
+        }
+    }
+
+    fn takes_canonical(&self, child: &Self) -> bool {
         let same_d = |a: f64, b: f64| (a - b).abs() <= BORE_SLACK;
         match (self, child) {
             (Self::Weldon { d: a }, Self::Weldon { d: b })

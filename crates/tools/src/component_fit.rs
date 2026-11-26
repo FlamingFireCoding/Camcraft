@@ -24,6 +24,8 @@ pub enum FitProperty {
     Fixing,
     Hand,
     Coupling,
+    /// An insert or seat spec that its own code would refuse.
+    Code,
 }
 
 impl FitProperty {
@@ -39,6 +41,7 @@ impl FitProperty {
             Self::Fixing => "clamping and fixing",
             Self::Hand => "hand",
             Self::Coupling => "coupling",
+            Self::Code => "designation code",
         }
     }
 }
@@ -118,6 +121,14 @@ pub fn check_insert_fit(holder: &ToolComponent, port: &str, insert: &ToolCompone
             no(FitProperty::Kind, "a tool item with insert seats".into(), kind_name(holder).into())
         };
     };
+    // A component checks its specs when it is made; this guards the
+    // rule here too.
+    if let Err(e) = ins.check() {
+        return no(FitProperty::Code, "a valid ISO 1832 insert".into(), e.to_string());
+    }
+    if let Err(e) = seat.check() {
+        return no(FitProperty::Code, "a valid ISO 5608 seat".into(), e.to_string());
+    }
     if seat.shape != ins.shape {
         return no(FitProperty::Shape, seat.shape.letter().into(), ins.shape.letter().into());
     }
