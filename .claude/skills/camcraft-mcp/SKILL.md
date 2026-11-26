@@ -58,7 +58,9 @@ CamCraft exposes a Model Context Protocol (MCP) server on stdio (`camcraft-cli m
 
 ## Tool Reference
 
-The server exposes tools across three modules in `crates/app/src/mcp/` (see `crates/app/src/mcp/tools.rs:all()` or the `tools/list` protocol method for the authoritative live registry):
+The authoritative registry is `crates/app/src/mcp/tools.rs:all()` or the `tools/list` protocol method.
+
+The [generated tool reference](../../../docs/agents/mcp-tools.md) lists every tool and argument from that registry. Read it with `camcraft-cli mcp reference`. Use `camcraft-cli mcp prompt` for the compact local-model prompt. Both outputs come from `crates/app/src/mcp/catalog.rs` and the live tool table. The sections below give workflow details.
 
 ### 1. Document Lifecycle & History (`tools.rs`)
 - `open_project { "path": string }`: Load an existing `.camproj` file, replacing the current document and clearing history.
@@ -199,6 +201,7 @@ When issue #356 was originally filed, several core features were GUI-only. The f
 - **Tool library import/export (#355):** Shipped via `export_tool_library` and `import_tool_library`.
 - **Operation display names and order (#45):** Shipped via `rename_operation` and `reorder_operation`.
 - **Document units (#902):** Shipped via `set_units` and `get_job.units`; the unit controls display and the posted program, not stored dimensions.
+- **Program number and comment (#258):** Shipped via `set_program`; omitted fields keep their values, and `null` clears them. One undo step.
 - **Pocket and slot recognition (#35):** Shipped via `detect_pockets` (with `create`, it adds the Pocket or Slot that machines one).
 - **WCS from feature picks (#937):** Shipped via `set_wcs_from_features` (origin/x/y/z roles over faces, edges, vertices and walls).
 - **Part axes from picks (#557, #1329):** Shipped via `set_part_axes` (a straight edge or two points along +Y and/or +X; one axis turns in the work plane, both define the full 3D frame).
@@ -216,13 +219,9 @@ When issue #356 was originally filed, several core features were GUI-only. The f
 
 ## Known Remaining Gaps
 
-The following capabilities exist in the GUI or app command layer but do not yet have an MCP tool:
+The gaps previously listed here have shipped. No remaining gap is recorded here.
 
-1. **Face-to-Plane Alignment (`SetupAlign`, #330):**
-   - Mating a picked face (or two edges) to a G17/G18/G19 plane is on the GUI setup page. MCP has the axis picks (`set_part_axes`, in-plane or full 3D) and the three-point lay (`lay_part_on_points`); laying a face down is `lay_part_on_face`. (The WCS itself can be placed from picks with `set_wcs_from_features`.)
-2. **Persistent Program Header Metadata (#258):**
-   - Setting document/setup program numbers and comments (`crates/app/src/commands/program_entry.rs`, `post_options.rs`). The MCP `post` tool currently relies on default or dialect-inferred numbers.
-*Note:* Several remaining gaps above are tracked under dedicated milestone and feature issues (e.g. #258 program headers, #511 the UI's pocket recognition entry point). Per `AGENTS.md`, any future command PR that does not bundle an MCP tool must file a corresponding `source:agent` issue titled `MCP: <command>`, labelled `P5` and `area:mcp`.
+Per [AGENTS.md](../../../AGENTS.md), a command PR without its MCP tool must file a `source:agent` issue titled `MCP: <command>`, labelled `P5` and `area:mcp`. List such an open issue here until its tool ships. Name only the command and the issue in this section, not a shipped tool.
 
 ---
 
