@@ -700,6 +700,11 @@ function sameHole(p) {
 }
 // #3102: the top of the documented Q208 range (mm/min), the fastest retract.
 var RETRACT_FEED_MAX = 99999.999;
+// #4094: the retract feed that a cycle 205 without Q208 (340 49x level)
+// implies: the top of the range, no slower one. A fixed value, never
+// RETRACT_FEED_MAX, so the guard below still compares the ask with it
+// when the asked feed changes.
+var OLD_CYCLE_RETRACT_FEED = 99999.999;
 // #4094: Q395 = 0, the depth is to the tool tip (the stream's own Z).
 var DEPTH_REFERENCE = 0;
 function qword(n, v) {
@@ -857,7 +862,7 @@ function onCycle() {
       // #4094: the 340 49x level has no Q208/Q395. The old cycle drills to
       // the tool tip (Q395=0) and retracts at its own rate (Q208 at the top
       // of its range asks for no slower one). Any other ask is refused.
-      var implied = qn === 208 ? RETRACT_FEED_MAX : 0;
+      var implied = qn === 208 ? OLD_CYCLE_RETRACT_FEED : 0;
       if (qv !== implied) {
         cycleBad(g + " Q" + qn + "=" + qv + " cannot be written for " +
           String(machine.controllerIdentity.model) + " NC " + String(machine.controllerIdentity.nc_software) +

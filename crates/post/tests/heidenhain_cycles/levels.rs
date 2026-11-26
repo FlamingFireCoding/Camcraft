@@ -99,7 +99,9 @@ fn an_unknown_control_or_version_is_refused_by_name() {
 /// The CAM asks for no Q208 today: a script variant asks for one.
 #[test]
 fn a_q208_ask_the_340_49x_cycle_cannot_take_is_refused_by_name() {
-    let script = read("assets/posts/heidenhain.cps").replace("var RETRACT_FEED_MAX = 99999.999;", "var RETRACT_FEED_MAX = 500;");
+    let original = read("assets/posts/heidenhain.cps");
+    let script = original.replace("var RETRACT_FEED_MAX = 99999.999;", "var RETRACT_FEED_MAX = 500;");
+    assert_ne!(script, original, "the variant must change the asked retract feed");
     let out = run_on(&with_identity("iTNC 530", "340490-03"), &script);
     assert!(
         out.warnings.iter().any(|w| w.contains("G205 Q208=500 cannot be written for iTNC 530 NC 340490-03: its cycle 205 has no Q208")),

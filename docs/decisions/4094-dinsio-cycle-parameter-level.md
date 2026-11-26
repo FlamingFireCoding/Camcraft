@@ -23,7 +23,13 @@
   than the control's own retract"). Any other ask is refused by name
   ("G205 Q208=<v> cannot be written for <model> NC <nc>: its cycle 205 has
   no Q208"). The CAM does not ask for either value today, so this guard is
-  pinned with a script variant.
+  pinned with a script variant: the test changes the constant
+  `RETRACT_FEED_MAX` (the asked Q208) to 500. The guard compares the ask
+  with a second, fixed constant `OLD_CYCLE_RETRACT_FEED` (99999.999), not
+  with `RETRACT_FEED_MAX`. A first version compared the ask with
+  `RETRACT_FEED_MAX` itself, so the variant changed both sides and the
+  guard never fired (a winbuild gate found this). The test also asserts
+  that the variant changed the script, so a stale replace cannot pass.
 - **No controller identity: keep the output of today (`q208`).**
 
 **Why (no identity).**
