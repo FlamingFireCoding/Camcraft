@@ -25,6 +25,11 @@ afterModes = true; // reads PARAM AfterOperation (#110): the engine refuses a st
 floatingTapping = true; // #51: G206 requires the operation's explicit floating-holder choice
 workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
 workOffsetMax = 6;      // preset rows 1..6; more rows depend on the machine's preset table, not verified here (#931)
+// #4085: on a machine whose installation states a manual change at the
+// physical upper change position, each tool change retracts with M92 and
+// stops with M6 (manualChange below). Plain "manual" states no change
+// position, so the engine refuses it for this post by name.
+manualToolChange = ["manual-retract-top"];
 // #902: millimetres only for now - the engine refuses an inch document by
 // name. The TNC runs inch (G70), but the feed unit its inch programs and
 // cycle Q feeds take was not confirmed from the public manual this post
@@ -41,6 +46,7 @@ var sRpm = 0;
 var spindleWait = false;
 var toolWait = false;
 var tNo = 0;
+var installedTool = null;  // #4085: the tool the operator installed at the last manual change
 var coolant = "";
 var coolantAsk = "flood";  // the section's PARAM Coolant (#112), flood when unstated
 var afterAsk = "";         // the section's PARAM AfterOperation (#110), none when unstated
@@ -258,7 +264,8 @@ function progComment() { return clean(typeof program !== "undefined" ? program.c
 // legal file name); else the machine's, as before. A stated number the
 // name does not carry is the operator's comment block after the begin.
 function onOpen() {
-  var nm = (typeof machine !== "undefined" && machine.name) || "CAMCRAFT";
+  manualInstallation();
+  var nm =(typeof machine !== "undefined" && machine.name) || "CAMCRAFT";
   var said = progComment();
   if (said) pgmName = said.replace(/[^A-Za-z0-9._-]/g, "_");
   else if (progNumbered()) pgmName = String(progNo());
@@ -340,7 +347,8 @@ function onToolChange(number, name) {
 // The preamble closes over everything a raw motion line needs to be a
 // legal program. #50: the tool call is the T block, `T5 G17 S4500*`
 // (pp. 71, 218: number, spindle axis, speed; it applies the tool's
-// length) - M6 is machine-dependent (p. 392) and not written. A speed
+// length) - M6 is machine-dependent (p. 392) and not written, except as
+// the stop of a manual change (#4085, manualChange). A speed
 // change without a tool change is a T block of the speed only (p.
 // 201). G40 G90 ride the first positioning block. The old preamble
 // words are gone: G54 (datum shift), G80 (WORKING PLANE, p. 756) are
@@ -361,6 +369,58 @@ function smoothOff() {
   smoothMode = "";
 }
 
+// #4085: the manual tool change, on a machine whose installation states
+// "manual-retract-top" (the Fehlmann Picomax 55, iTNC 530): a T block
+// there only gives the T number to the PLC and does not stop. The
+// machine's programming manual changes a tool with an M92 Z+0 retract
+// and an M6 move, and its machine parameters halt the program at M06.
+// The order here is: retract (G00 G90 Z+0 M92) while the OLD tool call
+// is still in force, M6, the operator checks, M0 (the stop), then the
+// new T block. So the new tool's length is never active while the old
+// tool is in the spindle, and on the verified installation (below) the
+// retract goes up to the machine-referenced change height whatever
+// length is active. The section end has already stopped the spindle
+// (M5) and the coolant (M9). At the program's start the tool in the
+// spindle is unknown: no retract, M6, the checks and M0
+// only. A repeated tool number is no change and writes no stop.
+// #4114: M6 is the change call that the machine's manual writes. M0 after
+// it is the stop: it halts whatever the M06 machine parameter says, and on
+// the Picomax it also switches the drives off (manual p. 1-17), the same
+// stop as the Klartext post.
+// docs/decisions/4085-heidenhain-din-manual-change.md records the call.
+function manualChange() {
+  var mode = (typeof machine !== "undefined" && machine) ? machine.toolChangeMode : undefined;
+  if (mode !== "manual-retract-top" || tNo === installedTool) return;
+  if (installedTool !== null) block(["G00", "G90", "Z+0", "M92"]);
+  block(["M6"]);
+  note("CHECK DRIVES OFF BEFORE TOUCHING TOOL");
+  note("CHECK QUILL AT PHYSICAL CHANGE POSITION");
+  note("ABORT IF EITHER CHECK FAILS");
+  note("THEN INSTALL TOOL " + ni(tNo) + (toolName ? " " + toolName : ""));
+  block(["M0"]);
+  installedTool = tNo;
+}
+
+// #4114: the sequence above is safe only where the M92 Z datum is the
+// upper change position and the control halts as stated. Those are
+// machine parameters of one installation, so the post refuses each
+// "manual-retract-top" machine that is not that installation: the same
+// controller identity and machine check as the Klartext post. A script
+// error stops the post, and nothing is written.
+var MANUAL_VERIFIED = { machine: "Fehlmann Picomax 55 (iTNC 530)", model: "iTNC 530", nc: "340490-03" };
+function manualInstallation() {
+  if (typeof machine === "undefined" || !machine || machine.toolChangeMode !== "manual-retract-top") return;
+  var id = machine.controllerIdentity;
+  var v = MANUAL_VERIFIED;
+  if (!id || id.model !== v.model || id.nc_software !== v.nc || machine.model !== v.machine) {
+    var seen = id ? String(id.model) + " NC " + String(id.nc_software) : "no controller identity";
+    throw new Error("Heidenhain TNC: the manual-retract-top tool change (M92 retract, M6, M0 stop)" +
+      " is verified only on the " + v.machine + " with " + v.model + " NC " + v.nc +
+      "; the machine " + String(machine.model || machine.name || "") + " states " + seen +
+      " - choose a post that is verified for this installation");
+  }
+}
+
 function startPreamble() {
   if (sectionOpen) return;
   sectionOpen = true;
@@ -379,6 +439,7 @@ function startPreamble() {
     cycleSig = "";
   }
   if (toolWait) {
+    manualChange();
     toolNote();
     block(["T" + ni(tNo), "G17", spindleWait && sRpm > 0 ? "S" + ff(sRpm) : ""]);
     xyUnknown = true;          // #1633: the first traverse states its height again

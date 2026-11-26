@@ -48,6 +48,7 @@ pub mod machine;
 mod machine_rotary;
 mod machine_installation;
 mod machine_travel;
+mod manual_change;
 pub mod nose_tip;
 pub mod options;
 mod options_parse;
