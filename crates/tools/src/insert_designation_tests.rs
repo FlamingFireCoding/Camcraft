@@ -166,6 +166,81 @@ fn connection_codes_round_trip_and_refuse_by_name() {
     assert!(ConnectionCode::Cylindrical { d: f64::NAN }.check().is_err());
 }
 
+/// #4096 review: a spec built in code (its fields are public) is checked
+/// as its text would be, and each refusal names the position.
+#[test]
+fn directly_built_inserts_and_seats_are_refused_by_position() {
+    let good = ok("CNMG120408-PM");
+    assert_eq!(good.check(), Ok(()));
+    let at = |s: &InsertSpec| match s.check() {
+        Err(DesignationError::Position { standard: "ISO 1832", pos, name, .. }) => (pos, name),
+        other => panic!("{s:?}: {other:?}"),
+    };
+    let with = |f: &dyn Fn(&mut InsertSpec)| {
+        let mut s = good.clone();
+        f(&mut s);
+        s
+    };
+    assert_eq!(at(&with(&|s| s.size = 0)), (5, "size"));
+    assert_eq!(at(&with(&|s| s.size = 100)), (5, "size"));
+    for t in ['?', 'm', 'B', ' ', '\u{e9}'] {
+        assert_eq!(at(&with(&|s| s.tolerance = t)), (3, "tolerance class"), "{t}");
+    }
+    assert_eq!(at(&with(&|s| s.corner = Corner::Radius(0))), (7, "corner"));
+    assert_eq!(at(&with(&|s| s.corner = Corner::Radius(100))), (7, "corner"));
+    assert_eq!(at(&with(&|s| s.corner = Corner::Round)), (7, "corner"));
+    assert_eq!(at(&with(&|s| s.corner = Corner::Facet { angle: 'Q', clearance: Clearance::N })), (7, "corner"));
+    assert_eq!(at(&with(&|s| s.hand = Some(Hand::L))), (8, "hand"));
+    for tail in ["-pm", "- PM", "-P\u{e9}"] {
+        assert_eq!(at(&with(&|s| s.tail = tail.into())), (8, "suffix"), "{tail}");
+    }
+    let mut round = ok("RCMT1204M0");
+    round.corner = Corner::Radius(8);
+    assert_eq!(at(&round), (7, "corner"));
+    let Ok(h) = HolderDesignation::parse("PCLNR2525M12") else { panic!("holder") };
+    assert_eq!(h.seat.check(), Ok(()));
+    for size in [0, 100, 255] {
+        let mut seat = h.seat;
+        seat.size = size;
+        let refused = seat.check();
+        let named = matches!(
+            &refused,
+            Err(DesignationError::Position { standard: "ISO 5608", pos: 9, name: "insert size", .. })
+        );
+        assert!(named, "{size}: {refused:?}");
+    }
+}
+
+/// #4096 review: a typed code that is not in its text form normalizes
+/// to the value its text parses to. Validation, the text round trip and
+/// the fit then agree.
+#[test]
+fn typed_connection_codes_normalize_to_their_text_form() {
+    let cases = [
+        (ConnectionCode::Hsk { form: 'a', size: 63 }, ConnectionCode::Hsk { form: 'A', size: 63 }),
+        (ConnectionCode::Custom(" Shop pallet ".into()), ConnectionCode::Custom("Shop pallet".into())),
+        (ConnectionCode::Weldon { d: 12.0 }, ConnectionCode::Weldon { d: 12.0 }),
+    ];
+    for (raw, canon) in cases {
+        assert_eq!(raw.check(), Ok(()), "{raw:?}");
+        assert_eq!(raw.canonical().as_ref(), Ok(&canon));
+        assert_eq!(ConnectionCode::parse(&raw.to_string()).as_ref(), Ok(&canon));
+        assert_eq!(canon.canonical().as_ref(), Ok(&canon));
+        assert!(raw.takes(&canon) && canon.takes(&raw), "{raw:?}");
+    }
+    let bad = [
+        ConnectionCode::Hsk { form: 'z', size: 63 },
+        ConnectionCode::Custom("  ".into()),
+        ConnectionCode::Weldon { d: -1.0 },
+        ConnectionCode::Weldon { d: f64::INFINITY },
+        ConnectionCode::Er { size: 33 },
+    ];
+    for code in bad {
+        assert!(code.check().is_err() && code.canonical().is_err(), "{code:?}");
+        assert!(!code.takes(&code), "an invalid code mates nothing: {code:?}");
+    }
+}
+
 #[test]
 fn a_plain_bore_takes_a_weldon_shank_but_not_the_reverse() {
     let cyl = |d| ConnectionCode::Cylindrical { d };
