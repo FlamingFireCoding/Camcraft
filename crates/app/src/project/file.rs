@@ -197,7 +197,10 @@ use super::*;
 /// op it cannot read: the post would re-open a document whose flow
 /// band op vanished without a word.
 /// v83 (#4031): a tool may state its cutter hand (`cutter_hand`, right
-/// M3 / left M4); absent is right-hand, what every v82 file cut. An old
+/// M3 / left M4); absent is right-hand, what every v82 file cut. This
+/// step is a compatibility break: every file this build writes says
+/// v83, and a v82 reader refuses the new files (see the `BREAKING
+/// CHANGE` footer of the commit that stepped the ladder). An old
 /// reader must refuse a v83 file rather than drop a left hand and post
 /// M3 for a cutter that must reverse.
 pub const PROJECT_VERSION: u32 = 83;
