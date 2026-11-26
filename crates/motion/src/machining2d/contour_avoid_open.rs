@@ -149,14 +149,14 @@ pub fn contour_along_chain_avoid(
     if pts.len() < 2 {
         return Err(GenError::Empty("a centerline run needs at least two points".into()));
     }
-    if let Some(q) = p.links.approach.start_point {
+    if let Some(q) = p.picks.first(crate::path_picks::PickRole::Start).map(|k| k.xy) {
         return Err(GenError::Invalid(format!(
             "start point ({:.3}, {:.3}): an open chain starts at its end - a picked start is \
              taken only on closed contours yet; clear the start point",
             q.x, q.y
         )));
     }
-    if let Some(q) = p.links.approach.exit_point {
+    if let Some(q) = p.picks.first(crate::path_picks::PickRole::Exit).map(|k| k.xy) {
         return Err(GenError::Invalid(format!(
             "exit point ({:.3}, {:.3}): an open chain leaves at its end - a picked exit is \
              taken only on closed contours yet; clear the exit point",

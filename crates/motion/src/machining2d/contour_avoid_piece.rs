@@ -235,7 +235,7 @@ pub(super) fn push_open_piece(
 
         if !sink.first_entry {
             let cut_dives = if dives.0.to_bits() == z.to_bits() { dives.1.as_slice() } else { &[] };
-            ring_link(b, p, legal_cut, &[&band.plan, cut_dives, &link_leads, prior_z], e2, z, hop_z, tabbed, &mut sink.lifted);
+            ring_link(b, p, legal_cut, &[&band.plan, cut_dives, &link_leads, prior_z], e2, z, hop_z, tabbed, &mut sink.lifted, false);
             if b.at().z > lead_top + 1e-9 {
                 guard(b, p, e2, lead_top, p.entry_top(), "the dive onto clipped contour");
                 b.push(MoveKind::Plunge, Point3::new(e2.x, e2.y, lead_top), Some(p.plunge_feed));
@@ -245,7 +245,20 @@ pub(super) fn push_open_piece(
             let _ = cert_avoid;
             let step_cert = Cert::Region(step_center);
             let eng = Engage { p, center: step_center, cert: &step_cert, plan: &band.plan, m, legal: legal_entry };
-            let step = Step { arm, e2, z, prev_z: p.clearance_z, first: true, opened: false, inside: inside && !center_avoid.is_empty(), tabbed, lead_top };
+            let step = Step {
+                arm,
+                e2,
+                z,
+                prev_z: p.clearance_z,
+                first: true,
+                opened: false,
+                inside: inside && !center_avoid.is_empty(),
+                tabbed,
+                lead_top,
+                // A piece's first entry is the path's first engagement, from clearance.
+                uncut: None,
+                traverse: None,
+            };
             if let Some(d) = engage_level(b, &eng, &step, &lead, &walk, &mut sink.said) {
                 if dives.0.to_bits() != z.to_bits() {
                     *dives = (z, Vec::new());

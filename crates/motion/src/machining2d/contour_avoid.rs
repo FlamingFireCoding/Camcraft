@@ -11,7 +11,7 @@ use super::contour::{ContourParams, finish_contour, prepare_band};
 use super::contour_avoid_clip::finalize_avoid;
 use super::contour_avoid_emit::{AvoidSink, emit_band_avoid};
 use super::contour_comp;
-use super::contour_depth::{Ladder, ladder, picked_law};
+use super::contour_depth::{Ladder, ladder, ladder_picked, picked_law};
 use super::contour_entry::say;
 use super::contour_region::{contour, contour_on_bodies, contour_on_part, contour_on_picked};
 use super::contour_start;
@@ -105,7 +105,10 @@ fn contour_impl_avoid(
     let mut sink = AvoidSink::default();
     let lad = match part {
         None => Ladder::uniform(&flat, band.loops.len()),
-        Some((f, bodies, _)) => ladder(&band.plan, f, bodies, &flat, p.top_z, r, p.stock_to_leave, &mut sink.lead_notes),
+        Some((f, bodies, true)) => {
+            ladder_picked(&band.plan, f, bodies, &flat, p.top_z, r, p.stock_to_leave, &mut sink.lead_notes)
+        }
+        Some((f, bodies, false)) => ladder(&band.plan, f, bodies, &flat, p.top_z, r, p.stock_to_leave, &mut sink.lead_notes),
     };
     if let Some((f, _, true)) = part {
         picked_law(&band.plan, f, &flat, &lad, d, p.side)?;

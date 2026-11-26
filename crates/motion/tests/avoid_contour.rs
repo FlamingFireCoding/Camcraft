@@ -1,6 +1,7 @@
 //! Integration tests for 2D Contour "Do not touch" protection (#3344).
 //! Provenance: independent `camcraft-motion` tests checking `camcraft-sim::verify::avoid`.
 
+use camcraft_motion::path_picks::{PathPick, PathPicks};
 use camcraft_motion::entry::Entry3D;
 use camcraft_motion::geo2d::{Loop, Point2, Region};
 use camcraft_motion::geometry::{Point3, Triangle};
@@ -74,7 +75,9 @@ fn base_contour(side: Side, entry: Entry3D, lead: Lead, links: Links) -> Contour
         entry,
         helix_radius: 1.5,
         blend_turns: false,
+        blend_radius: None,
         links,
+        picks: PathPicks::default(),
     }
 }
 
@@ -168,7 +171,7 @@ fn contour_avoid_closed_partial_tabs_inside_whole_and_open_stay_clear() {
         cutter: stepped_cutter(),
         clearance: 1.0,
     };
-    for entry in [Entry3D::Helix, Entry3D::Ramp, Entry3D::Plunge] {
+    for entry in [Entry3D::Plunge, Entry3D::Ramp, Entry3D::Helix] {
         let p_in = base_contour(Side::Inside, entry, Lead::Linear { length: 3.0 }, Links::ROUGH3D);
         let path = contour_avoid(&bore_reg, &p_in, &bore_spec).unwrap_or_else(|e| panic!("inside {entry:?}: {e:?}"));
         assert_clean(&path, &bore_spec, "inside_bore");
@@ -221,14 +224,14 @@ fn contour_avoid_refuses_unavoidable_control_and_blocked_pick_by_name() {
         cutter: stepped_cutter(),
         clearance: 1.0,
     };
-    let mut p_ctrl = p;
+    let mut p_ctrl = p.clone();
     p_ctrl.links.approach.compensation = Compensation::Control;
     let ctrl_err = contour_avoid(&reg, &p_ctrl, &side_block).expect_err("control comp on clipped ring must refuse");
     assert!(format!("{ctrl_err:?}").contains("side lug"), "{ctrl_err:?}");
 
     // Picked start point inside keep-out must refuse naming the protected item.
     let mut p_pick = p;
-    p_pick.links.approach.start_point = Some(Point2::new(23.0, 0.0));
+    p_pick.picks.start = vec![PathPick::xy(Point2::new(23.0, 0.0))];
     let pick_err = contour_avoid(&reg, &p_pick, &side_block).expect_err("blocked start_point must refuse");
     assert!(format!("{pick_err:?}").contains("side lug"), "{pick_err:?}");
 }

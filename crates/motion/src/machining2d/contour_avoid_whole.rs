@@ -71,8 +71,8 @@ pub fn contour_whole_bodies_with_avoid(
     let mut current_region = top_region.clone();
     let mut ceiling = p.top_z;
     let mut used_fallback = false;
-    let mut pick_matched = p.links.approach.start_point.is_none();
-    let mut exit_matched = p.links.approach.exit_point.is_none();
+    let mut pick_matched = p.picks.first(crate::path_picks::PickRole::Start).map(|k| k.xy).is_none();
+    let mut exit_matched = p.picks.first(crate::path_picks::PickRole::Exit).map(|k| k.xy).is_none();
     let mut deferred_pick = None;
     let mut deferred_exit = None;
     let mut planned: Vec<Planned> = Vec::new();

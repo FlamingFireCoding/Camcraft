@@ -3,10 +3,9 @@
 
 use camcraft_sim::verify::{AVOID_PAD, AvoidSpec};
 
-use crate::cl::{MoveKind, PathBuilder};
+use crate::cl::PathBuilder;
 use crate::entry::Entry3D;
 use crate::geo2d::Point2;
-use crate::geometry::Point3;
 use crate::links::Link;
 
 use super::arcs::push_segs;
@@ -17,7 +16,8 @@ use super::contour_avoid_piece::{check_pick_clear, plan_window_avoid, push_open_
 use super::contour_comp::{self, SpanCtx};
 use super::contour_depth::Ladder;
 use super::contour_entry::{Engage, crosses, flatten, say, seam_leads, wall_arc, wall_arc_top};
-use super::contour_link::{Stay, guard, plan_links, push_stay, ring_link};
+use super::contour_link::{Stay, plan_links, push_stay, ring_entry, ring_link, tab_window_dive, wall_arc_hop};
+use super::contour_peck::uncut_floor;
 use super::contour_start;
 use super::contour_step::{Step, engage_level};
 use super::face::GenError;
@@ -125,7 +125,14 @@ pub(super) fn emit_band_avoid(
             Clip::Unclipped => {}
         }
 
-        let seated = contour_start::seat(pts, picked, tabbed, prog.is_some(), p, &legal_entry, &mut sink.lead_notes);
+        let seated = contour_start::seat(pts.clone(), picked, tabbed, prog.is_some(), p, &legal_entry, &mut sink.lead_notes);
+        // #3453 (as `contour::emit_band`): an untabbed level of a tabbed ring
+        // that shares no level starts at its first window.
+        let alone = !tabbed
+            && picked.is_none()
+            && band.room.is_none()
+            && !(0..band.loops.len()).any(|lj| lj != li && rz.iter().any(|&q| lad.walks(lj, q)));
+        let seated = super::tab_clear::level_start(seated, pts, fits.get(&li).filter(|_| alone && !tab_levels[li].is_empty()));
         let seated = if picked.is_none() && !tabbed && p.lead == Lead::None && ko_entry.contains(seated[0]) {
             match rotate_clear_start(seated.clone(), &ko_entry) {
                 Some(r) => r,
@@ -241,13 +248,14 @@ pub(super) fn emit_band_avoid(
 
             let arm = if sink.first_entry { p.entry } else { p.links.arm(p.entry) };
             let ring_to_ring = k == 0 && same_level && !sink.first_entry;
+            // #3830, #3917: a ring after another one is entered by the user's arm.
+            let ring_in = ring_entry(p, ring_to_ring && !tabbed, inside, rzi == 0, arm, hop_z);
+            let enter_ring = ring_in.is_some();
             let wall_arc_on = !inside && arm == Entry3D::Arc && k == 0 && !(ring_to_ring && p.links.pass == Link::KeepDown);
             let eng = Engage { p, center: &center_avoid, cert: &cert_avoid, plan: &band.plan, m: &m, legal: &legal_entry };
 
             if wall_arc_on && ring_to_ring && p.links.pass == Link::Clearance {
-                let cur = b.at();
-                b.push(MoveKind::Feed, Point3::new(cur.x, cur.y, hop_z), Some(p.feed));
-                b.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, p.clearance_z), None);
+                wall_arc_hop(b, p, hop_z);
             }
             let mut arced = false;
             if wall_arc_on && !tabbed && p.lead != Lead::None {
@@ -256,15 +264,29 @@ pub(super) fn emit_band_avoid(
                     arced = true;
                 }
             }
-            if !arced {
-                if ring_to_ring {
-                    let cut = if dives.0.to_bits() == z.to_bits() { dives.1.as_slice() } else { &[] };
-                    ring_link(b, p, &legal_cut, &[&band.plan, cut, &link_leads, &prior_at_z.1], e2, z, hop_z, tabbed, &mut sink.lifted);
-                } else if k == 0 {
+            let linked = !arced && ring_to_ring && {
+                let cut = if dives.0.to_bits() == z.to_bits() { dives.1.as_slice() } else { &[] };
+                ring_link(b, p, &legal_cut, &[&band.plan, cut, &link_leads, &prior_at_z.1], e2, z, hop_z, tabbed, &mut sink.lifted, enter_ring)
+            };
+            if !arced && !linked {
+                if k == 0 {
                     let prev_z = if rzi == 0 { p.clearance_z } else { rz[rzi - 1] };
+                    let arm = ring_in.as_ref().map_or(arm, |r| r.arm);
                     let opened = rzi >= 2 || (rzi == 1 && arm == p.entry);
                     let use_inside = inside && center_avoid.contains(e2);
-                    let step = Step { arm, e2, z, prev_z, first: sink.first_entry, opened, inside: use_inside, tabbed, lead_top };
+                    let step = Step {
+                        arm,
+                        e2,
+                        z,
+                        prev_z,
+                        first: sink.first_entry,
+                        opened,
+                        inside: use_inside,
+                        tabbed,
+                        lead_top,
+                        uncut: uncut_floor(p, rz, rzi),
+                        traverse: ring_in.as_ref().map(|r| r.plane),
+                    };
                     if let Some(d) = engage_level(b, &eng, &step, &lead, &walk, &mut sink.said) {
                         if dives.0.to_bits() != z.to_bits() {
                             dives = (z, Vec::new());
@@ -272,11 +294,7 @@ pub(super) fn emit_band_avoid(
                         dives.1.push(vec![d, e2]);
                     }
                 } else {
-                    let cur = b.at();
-                    b.push(MoveKind::Feed, Point3::new(cur.x, cur.y, hop_z), Some(p.feed));
-                    b.push(MoveKind::Rapid, Point3::new(e2.x, e2.y, hop_z), None);
-                    guard(b, p, e2, lead_top, p.entry_top(), "the dive past a tab");
-                    b.push(MoveKind::Plunge, Point3::new(e2.x, e2.y, lead_top), Some(p.plunge_feed));
+                    tab_window_dive(b, p, e2, hop_z, lead_top, uncut_floor(p, rz, rzi));
                 }
             }
             sink.first_entry = false;
@@ -311,7 +329,7 @@ pub(super) fn emit_band_avoid(
                     )
                     .with_ghost_moves(b.moves()));
                 }
-                contour_comp::push_span(b, &SpanCtx { prog, p }, walk_at - 1, out_at)
+                contour_comp::push_span(b, &SpanCtx { prog, p, picked }, walk_at - 1, out_at)
                     .map_err(|e| e.with_ghost_moves(b.moves()))?;
             }
             let end = poly[poly.len() - 1];
