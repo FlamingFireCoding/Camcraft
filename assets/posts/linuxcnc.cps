@@ -356,8 +356,8 @@ function joinDash(parts) {  // the non-empty parts, " - " between
 // keyword in any case ("Comments", "Messages", "Probe Logging",
 // "Logging", "Debug Messages"). A comment whose text would open with one
 // is led by "- ", so user text stays inert.
-var ACTIVE = /^\s*(MSG|DEBUG|PRINT|LOG|LOGOPEN|LOGAPPEND|LOGCLOSE|PROBEOPEN|PROBECLOSE|ABORT|AXIS|PY|PYRUN)\b/i;
-function note(s) { block(["(" + (ACTIVE.test(s) ? "- " + s : s) + ")"]); }
+var ACTIVE = /^\s*(MSG|DEBUG|PRINT|LOG|LOGOPEN|LOGAPPEND|LOGCLOSE|PROBEOPEN|PROBECLOSE|ABORT|AXIS|PY|PYRUN|PYRELOAD)\b/i;
+function note(s) { block(["(" + (ACTIVE.test(String(s === null || s === undefined ? "" : s).replace(/\s+/g, "")) ? "- " + s : s) + ")"]); }
 // Program notes use this dialect without truncating the stated bound.
 function onComment(s) { note(commentText(s)); }
 function commentParam(name, value) {
@@ -1064,7 +1064,7 @@ function onProbeResult() {
     var op = ex < 0 ? "+" : "-";
     block(["#" + (dev + i) + "=[" + mean + op + fu(Math.abs(ex)) + "]"]);
     var o = nextO();
-    block([o, "if", "[ABS[#" + (dev + i) + "] GT " + fu(p.Tolerance) + "]"]);
+    block([o, "if", "[[#<_task> EQ 1] AND [ABS[#" + (dev + i) + "] GT " + fu(p.Tolerance) + "]]"]);
     block(["(MSG, PROBE " + a.Axis + " OUT OF TOLERANCE)"]);
     block(["M2"]);
     block([o, "endif"]);
