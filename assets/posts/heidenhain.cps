@@ -700,6 +700,8 @@ function sameHole(p) {
 }
 // #3102: the top of the documented Q208 range (mm/min), the fastest retract.
 var RETRACT_FEED_MAX = 99999.999;
+// #4094: Q395 = 0, the depth is to the tool tip (the stream's own Z).
+var DEPTH_REFERENCE = 0;
 function qword(n, v) {
   // Q values may need four decimals (not integer feed rounding, which
   // would change a tap's feed/pitch relation). Numeric ranges checked below.
@@ -709,6 +711,45 @@ function qword(n, v) {
 }
 function cycleBad(why) {
   msg(coolantWho() + "Heidenhain drilling/tapping: " + why);
+}
+// #4094: the cycle 200/205 parameter level of the stated control. Q379
+// and Q253 (cycle 205) exist from iTNC 530 340 422; Q208 (cycle 205)
+// and Q395 (cycles 200, 205) only from iTNC 530 60642x-04, TNC 640
+// 34059x-04, TNC 620 81760x-01 and TNC 320 77185x-01 (iTNC 530 manual
+// 670388-25 p13; the cycle examples of the 340 49x manuals end without
+// them: docs/research/heidenhain/differences.md B2/B3, dialects.md).
+// Returns "q208" (Q379 Q253 Q208 Q395), "q379" (Q379 Q253, no Q208 or
+// Q395) or null with drillLevelWhy set. A machine with no controller
+// identity keeps "q208", the level of the TNC 640 manual this post is
+// specced from (docs/decisions/4094-dinsio-cycle-parameter-level.md).
+// The dialect resolver of #4095 replaces this table.
+var drillLevelWhy = "";
+function drillLevel() {
+  var id = typeof machine !== "undefined" && machine ? machine.controllerIdentity : null;
+  if (!id) return "q208";
+  var model = String(id.model || ""), nc = String(id.nc_software || "");
+  var m = /^(\d{5})(\d)-(\d{2})/.exec(nc);
+  var level = null;
+  if (m) {
+    var base = m[1], d = m[1] + m[2], rel = Number(m[3]);
+    if (model === "iTNC 530") {
+      if (base === "34049" || d === "340422") level = "q379";
+      else if (base === "60642") level = rel >= 4 ? "q208" : "q379";
+    } else if (model === "TNC 640") {
+      if (base === "34059") level = rel >= 4 ? "q208" : (rel <= 2 ? "q379" : null);
+    } else if (model === "TNC 620") {
+      if (base === "34056" || base === "73498") level = "q379";
+      else if (base === "81760") level = "q208";
+    } else if (model === "TNC 320") {
+      if (base === "34055") level = "q379";
+      else if (base === "77185") level = "q208";
+    }
+  }
+  if (!level) {
+    drillLevelWhy = "the cycle 200/205 parameter set of " + model + " NC " + nc +
+      " is not known to this post - refused, not posted";
+  }
+  return level;
 }
 function onCycle() {
   startPreamble();
@@ -804,8 +845,27 @@ function onCycle() {
     // the range asks for the fastest retract that the control permits.
     words.push(qword(212, 0), qword(205, p.Q), qword(258, 0), qword(259, 0),
       qword(257, p.Q), qword(256, Math.min(1, p.Q)), qword(211, dwell),
-      qword(379, 0), qword(253, feed), qword(208, RETRACT_FEED_MAX), qword(395, 0));
-  } else if (g === "G200") words.push(qword(211, dwell), qword(395, 0));
+      qword(379, 0), qword(253, feed));
+  } else if (g === "G200") words.push(qword(211, dwell));
+  if (g === "G200" || g === "G205") {
+    var level = drillLevel();
+    if (!level) { cycleBad(drillLevelWhy); return; }
+    var asked = g === "G205" ? [[208, RETRACT_FEED_MAX], [395, DEPTH_REFERENCE]] : [[395, DEPTH_REFERENCE]];
+    for (var ai = 0; ai < asked.length; ai++) {
+      var qn = asked[ai][0], qv = asked[ai][1];
+      if (level === "q208") { words.push(qword(qn, qv)); continue; }
+      // #4094: the 340 49x level has no Q208/Q395. The old cycle drills to
+      // the tool tip (Q395=0) and retracts at its own rate (Q208 at the top
+      // of its range asks for no slower one). Any other ask is refused.
+      var implied = qn === 208 ? RETRACT_FEED_MAX : 0;
+      if (qv !== implied) {
+        cycleBad(g + " Q" + qn + "=" + qv + " cannot be written for " +
+          String(machine.controllerIdentity.model) + " NC " + String(machine.controllerIdentity.nc_software) +
+          ": its cycle " + g.substring(1) + " has no Q" + qn + " - refused, not posted");
+        return;
+      }
+    }
+  }
   // #1359: checked last, so a tap's own named refusals (rpm, pitch)
   // still speak; inCycle stays set, so the hole's chain is swallowed too.
   if (spindleStopped("drilling cycle " + g)) return;
