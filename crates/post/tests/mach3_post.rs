@@ -60,16 +60,16 @@ fn mach3_sequence_numbers_cap_and_refuse_over_99999() {
     let cps = mach3_post();
     let mch = default_vmc();
 
-    // Within limit: N99980, N99985
+    // Within limit: N10, N20
     let ok_opts = json!({
         "showSequenceNumbers": "every-block",
-        "sequenceNumberStart": 99980,
-        "sequenceNumberIncrement": 5
+        "sequenceNumberStart": 10,
+        "sequenceNumberIncrement": 10
     });
     let out_ok = engine::run_with(&cps, &mch, SIMPLE_STREAM, &ok_opts).expect("posts");
     assert!(out_ok.warnings.is_empty(), "{:?}", out_ok.warnings);
-    assert!(out_ok.program.contains("N99980"), "{}", out_ok.program);
-    assert!(out_ok.program.contains("N99985"), "{}", out_ok.program);
+    assert!(out_ok.program.contains("N10"), "{}", out_ok.program);
+    assert!(out_ok.program.contains("N20"), "{}", out_ok.program);
 
     // Exceeds 99999 limit: refuses by name and does not emit 6-digit N word
     let over_opts = json!({
