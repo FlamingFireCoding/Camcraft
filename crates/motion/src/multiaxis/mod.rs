@@ -62,6 +62,7 @@ mod rotary_sheet;
 pub mod rotary_bar;
 mod rotary_ends;
 mod rotary_flow;
+mod rotary_flow_cross;
 mod rotary_flow_emit;
 mod rotary_flow_guard;
 mod rotary_flow_pass;

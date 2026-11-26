@@ -776,6 +776,7 @@ fn every_shipped_machine_mounts_and_speaks_its_declaration() {
         ("Doosan DNM 5700 + rotary table", Kind::Mill),
         ("Haas VF-2", Kind::Mill),
         ("Haas VF-2SS", Kind::Mill),
+        ("Haas VF-2SS YT", Kind::Mill),
         ("Haas Mini Mill", Kind::Mill),
         ("Haas DT-1", Kind::Mill),
         ("Haas DM-1", Kind::Mill),
