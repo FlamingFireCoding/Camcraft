@@ -1729,7 +1729,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // is where it splits.
             let chains = drive_chains.take().ok_or_else(|| unreached("deburr chains"))??;
             let (include, exclude) = chains.split_at(super::deburr_picks::picked(&src).min(chains.len()));
-            let path = finishing3d::deburr_edges(
+            // #3329: the start / exit picks order the chains; an empty
+            // seam is the automatic ride, byte for byte.
+            let seam = finishing3d::ChainSeam::of(&params.path_picks(), tool.diameter);
+            let path = finishing3d::deburr_seamed(
                 &material.facets,
                 &DeburrParams {
                     width: *width,
@@ -1747,6 +1750,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     sizing: *sizing,
                 },
                 &finishing3d::DeburrEdges { include, exclude },
+                &seam,
             )?;
             (region, path)
         }

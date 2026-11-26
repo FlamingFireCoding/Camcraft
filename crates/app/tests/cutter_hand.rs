@@ -24,7 +24,7 @@ mod thread_support;
 
 /// The posts that start a spindle M3 and never reverse it (the refusal
 /// targets, #4031), and one that reverses, for the allow side.
-const M3_ONLY: &[&str] = &["Haas", "Tormach PathPilot", "Doosan DNM", "Grbl 1.1", "grblHAL", "Makera Carvera", "Heidenhain", "Heidenhain Klartext"];
+const M3_ONLY: &[&str] = &["Tormach PathPilot", "Doosan DNM", "Grbl 1.1", "grblHAL", "Makera Carvera", "Heidenhain", "Heidenhain Klartext"];
 
 fn drill(hand: Option<&str>) -> tools::Tool {
     let t = tools::catalog().into_iter().find(|(n, _)| *n == "DR-0300").expect("catalog drill").1;
@@ -239,7 +239,7 @@ fn an_edit_to_left_hand_refuses_generation_and_post_until_the_operation_asks() {
     // The after-state door (M10.1 C) reads the same REQUEST law: the
     // tool edited to left-hand strands every operation that does not
     // ask to reverse - generation and post refuse by name, and no NC
-    // file is written, on the reversing Fanuc as much as on Haas.
+    // file is written, on the reversing Fanuc as much as on an M3-only post.
     let (world, mut h) = job(None);
     h.execute(&world, CreateOperation::new(&world, "Drill1", "Drill", SrcRef::Entity("plate".into()), drill_params()).expect("drill op"));
     h.execute(&world, GenerateOperation::new(&world, "Drill1").expect("generate right-hand drill"));
@@ -265,13 +265,14 @@ fn an_edit_to_left_hand_refuses_generation_and_post_until_the_operation_asks() {
     assert!(!path.exists(), "a refusal writes no NC file");
 
     // The M3-only posts keep their own sentence, Thread op or not.
-    h.execute(&world, SelectPost::new(&world, PostRef::Named("Haas".into())).expect("select Haas"));
+    // #1977: Haas reverses now (M4), so Tormach PathPilot is the M3-only post here.
+    h.execute(&world, SelectPost::new(&world, PostRef::Named("Tormach PathPilot".into())).expect("select Tormach"));
     let gen_err = match GenerateOperation::new(&world, "Drill1") {
         Err(e) => e.to_string(),
-        Ok(_) => panic!("generation accepted a left-hand cutter on Haas"),
+        Ok(_) => panic!("generation accepted a left-hand cutter on Tormach PathPilot"),
     };
-    assert!(gen_err.contains("left-hand cutter") && gen_err.contains("Haas"), "{gen_err}");
-    let path = output("haas");
+    assert!(gen_err.contains("left-hand cutter") && gen_err.contains("Tormach PathPilot"), "{gen_err}");
+    let path = output("tormach");
     let post_err = posting::post_setup(&world, &path).expect_err("posting refuses");
     assert!(post_err.contains("left-hand cutter") && post_err.contains("Drill1"), "{post_err}");
     assert!(!path.exists(), "a refusal writes no NC file");
