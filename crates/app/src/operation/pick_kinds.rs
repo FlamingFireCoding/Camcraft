@@ -80,6 +80,8 @@ impl KindInfo {
             // the start pick and run on to the exit pick.
             OpType::Contour | OpType::Contour5D => PickCapability::Ring,
             OpType::WireContour => PickCapability::Threading,
+            // #3326: the corner of the first row, the side of the last.
+            OpType::Face => PickCapability::Raster,
             // #3333: the orbit ring round the burn position, and the two
             // ends of the side move.
             OpType::SinkerBurn => PickCapability::Ring,
@@ -92,8 +94,7 @@ impl KindInfo {
             OpType::Threading => PickCapability::NotTaken(PICK_THREAD_LAW),
             // #3325: the end where the pass starts, and where it stops.
             OpType::Slot => PickCapability::Ends,
-            OpType::Face
-            | OpType::Pocket
+            OpType::Pocket
             | OpType::Trace
             | OpType::Adaptive2D
             | OpType::Offset2D
@@ -276,6 +277,10 @@ impl OpParams {
             let what = role.word();
             if matches!(self, OpParams::Contour { tilt: Some(_), .. }) {
                 return Some(format!("a {what} point is not taken on a tilted (3+2) contour yet - clear it or the tilt"));
+            }
+            // #3326: the Face reads a pick in the setup's XY only.
+            if matches!(self, OpParams::Face { tilt: Some(_), .. }) {
+                return Some(format!("a {what} point is not taken on a tilted (3+2) face yet - clear it or the tilt"));
             }
             // #3325: a pick is a model-frame point; the tilted slot's ends are not.
             if matches!(self, OpParams::Slot { tilt: Some(_), .. }) {
