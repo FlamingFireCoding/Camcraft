@@ -1,6 +1,8 @@
 //! The closed checks on an extracted mesh (#4122): which edges are
 //! not where a solid's edges must be. Split from `iso` along the
 //! extraction / checking seam; `iso` re-exports both counts.
+//! Provenance: `open_edges` and its 1e-9 weld moved unchanged from
+//! `iso.rs`; `unpaired_edges` is our own, from #4122.
 
 use std::collections::HashMap;
 
@@ -58,11 +60,14 @@ mod tests {
     #[test]
     fn a_facet_collapsed_at_the_weld_counts_as_unpaired() {
         let mut tris = cube(Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)).facets.to_vec();
-        let (p, q) = (Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0));
-        // Two slivers on the same corner pair: every edge count is even.
-        tris.push(Triangle::new(p, Point3::new(1.0 + 1e-12, 0.0, 0.0), q));
-        tris.push(Triangle::new(p, q, Point3::new(1.0 + 1e-12, 0.0, 0.0)));
+        // Two facets whose first two corners meet at the weld, their third
+        // corners apart: after the weld each is the edge v-v once and its
+        // long edge twice, so every edge but v-v is on exactly two facets,
+        // and v-v is on two as well. Only the corner-to-itself rule counts it.
+        let (v, w) = (Point3::new(0.5, 0.5, 0.5), Point3::new(0.5 + 1e-12, 0.5, 0.5));
+        tris.push(Triangle::new(v, w, Point3::new(0.25, 0.5, 0.5)));
+        tris.push(Triangle::new(v, w, Point3::new(0.5, 0.25, 0.5)));
         assert_eq!(open_edges(&tris), 0);
-        assert!(unpaired_edges(&tris) > 0);
+        assert_eq!(unpaired_edges(&tris), 1, "the edge from v to itself");
     }
 }
