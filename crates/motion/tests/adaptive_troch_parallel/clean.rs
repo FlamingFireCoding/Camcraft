@@ -1,10 +1,9 @@
 //! Issue #3849: 2D Adaptive (Trochoidal) clean-up passes are checked against
 //! `max_engagement` (including the 90 deg default), stepped down when needed,
 //! and surfaced with a named diagnostic when even reduced steps exceed it.
+//! A module of the `adaptive_troch_parallel` binary (no binary of its own, #3187).
 
-#[path = "common/adaptive_troch.rs"]
-mod fixtures;
-
+use super::fixtures::*;
 use camcraft_motion::cl::Toolpath;
 use camcraft_motion::geo2d::Region;
 use camcraft_motion::geometry::Point3;
@@ -13,7 +12,6 @@ use camcraft_motion::machining2d::{
     cleanup_engagement_exceeded, cleanup_engagement_note,
 };
 use camcraft_motion::quality::{QualitySpec, measure, stock_for};
-use fixtures::*;
 
 fn assert_cleanup_checked(name: &str, region: &Region, p: &PocketParams, max_engagement: f64) -> Toolpath {
     let t = AdaptiveTrochParams { max_engagement, ..AdaptiveTrochParams::default() };
