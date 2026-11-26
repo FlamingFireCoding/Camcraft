@@ -20,7 +20,9 @@ fn a_repaired_default_machine_file_is_read_again_through_the_disk_reader() {
     // A copied test executable has fresh OnceLocks and reads only the
     // assets beside it. No process-wide environment or shipped file changes.
     let root = tempfile::tempdir().expect("isolated install folder");
-    std::fs::create_dir_all(root.path().join("assets/machines")).expect("machines folder");
+    // One join per component: "assets/machines" keeps a '/' on Windows (#4120).
+    std::fs::create_dir_all(root.path().join("assets").join("machines"))
+        .expect("machines folder");
     let source = std::env::current_exe().expect("test executable");
     let exe = root
         .path()
@@ -49,7 +51,8 @@ fn check_disk_recovery() {
     let machines = exe
         .parent()
         .expect("install folder")
-        .join("assets/machines");
+        .join("assets")
+        .join("machines");
     let file = machines.join("3axis-vmc.mch");
     assert!(!file.exists(), "the default machine starts missing");
     let missing = default_machine_checked().expect_err("missing file must refuse");
