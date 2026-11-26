@@ -147,7 +147,10 @@ fn heidenhain_posts_refuse_a_tool_number_above_the_machine_tool_table() {
     assert_eq!(file["tooling"]["max_tool_number"], 254);
     let mirrored = machine::mirror(&parse_mch(PICOMAX).unwrap());
     let stream = include_str!("klartext/contour.cnc");
-    for script in ["heidenhain.cps", "heidenhain-klartext.cps"] {
+    for (script, tool_call) in [
+        ("heidenhain.cps", "T254 G17 S3500"),
+        ("heidenhain-klartext.cps", "TOOL CALL 254 Z S3500"),
+    ] {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/posts/");
         let text = std::fs::read_to_string(format!("{path}{script}")).unwrap();
         for input in [&file, &mirrored] {
@@ -159,8 +162,22 @@ fn heidenhain_posts_refuse_a_tool_number_above_the_machine_tool_table() {
                 Ok(out) => out.warnings.join("\n"),
                 Err(e) => e.to_string(),
             };
-            let at_limit = refusal(254);
-            assert!(!at_limit.contains("tool table"), "{script}: {at_limit}");
+            let at_limit = engine::run(
+                &text,
+                input,
+                &stream.replace("TOOL 2 FLAT-6", "TOOL 254 FLAT-6"),
+            )
+            .unwrap_or_else(|error| panic!("{script}: tool 254 must post: {error}"));
+            assert!(
+                at_limit.warnings.is_empty(),
+                "{script}: {:?}",
+                at_limit.warnings
+            );
+            assert!(
+                at_limit.program.contains(tool_call),
+                "{script}: missing {tool_call}: {}",
+                at_limit.program
+            );
             let over = refusal(255);
             assert!(
                 over.contains("tool number 255") && over.contains("tool table"),
