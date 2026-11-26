@@ -6,12 +6,16 @@
 //! not controller execution or ISO syntax verification.
 //!
 //! Gate map (#922): covers post::post (engine, cnc, probe_rec), post::machine,
-//! (post::machine).
+//! (post::machine), assets/posts/heidenhain.cps.
 
 use camcraft_post::cl::{CompSide, CycleKind, MoveKind};
 use camcraft_post::post::{cnc::{self, CycleRec, MoveRec, Record}, engine, probe_rec::TouchRec};
 use serde_json::{json, Value};
 use std::path::Path;
+
+// #4094: the G200/G205 parameter set of the stated control.
+#[path = "heidenhain_cycles/levels.rs"]
+mod levels;
 
 fn read(rel: &str) -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../").join(rel);
