@@ -81,7 +81,7 @@ impl UpsertDocumentComponent {
         }
         let prev = components(world);
         let mut next = prev.clone();
-        next.push(DocumentComponent { component, geometry });
+        next.push(DocumentComponent { component, geometry, library_ref: None });
         Ok(Self(Upsert::Add { prev, next }))
     }
 
@@ -121,20 +121,30 @@ pub struct EditDocumentComponent {
 }
 
 impl EditDocumentComponent {
+    /// A hand edit keeps the row's library link (#3645): the sync status
+    /// then shows that the document copy differs from the library.
     pub fn new(world: &World, component: ToolComponent, geometry: ComponentGeometry) -> Result<Self, CommandError> {
-        let id = component.id().to_owned();
+        let library_ref = ta::component(world, component.id()).and_then(|r| r.library_ref);
+        Self::with_row(world, DocumentComponent { component, geometry, library_ref })
+    }
+
+    /// Replace the held row of `row`'s id with `row` as it is, library
+    /// link included (#3645: the library sync lands through here).
+    pub(crate) fn with_row(world: &World, row: DocumentComponent) -> Result<Self, CommandError> {
+        let id = row.component.id().to_owned();
         let prev = components(world);
-        let row = DocumentComponent { component, geometry };
         let Some(at) = prev.iter().position(|r| r.component.id() == id) else {
             return Err(CommandError::Invalid(format!("the document holds no tool component '{id}'")));
         };
         if prev[at] == row {
             return Err(CommandError::Invalid(format!("the tool component '{id}' is already so")));
         }
+        // A change of the library link alone derives nothing again.
+        let content_changed = prev[at].component != row.component || prev[at].geometry != row.geometry;
         let mut next = prev.clone();
         next[at] = row;
         let mut updates = Vec::new();
-        for user in ta::users_of(world, &id) {
+        for user in ta::users_of(world, &id).into_iter().filter(|_| content_changed) {
             let links = model::find_by_name(world, &user).and_then(|e| ta::assembly_of(world, &e)).map(|a| a.0).unwrap_or_default();
             let update = ToolUpdate::new(world, &user, &links, &next).map_err(|e| {
                 CommandError::Invalid(format!("the edit of tool component '{id}' is refused: {}", said(e)))

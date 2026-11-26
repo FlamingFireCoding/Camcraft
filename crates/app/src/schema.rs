@@ -341,6 +341,18 @@ impl ToolBody {
 pub struct DocumentComponent {
     pub component: camcraft_tools::component::ToolComponent,
     pub geometry: camcraft_tools::component_geometry::ComponentGeometry,
+    /// #3645: the user library copy this row was taken from, if any.
+    /// The row itself is what the document judges and posts; the link
+    /// only lets the sync status compare it with the library.
+    pub library_ref: Option<LibraryRef>,
+}
+
+/// #3645: a document component's link to the user component library:
+/// the library id and the content hash of the copy that was taken.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryRef {
+    pub id: String,
+    pub content_hash: String,
 }
 
 /// #3644: the document's component table, one row for each id (the

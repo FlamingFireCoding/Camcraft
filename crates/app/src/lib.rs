@@ -24,6 +24,8 @@ pub mod fixture;
 pub mod fixture_profile;
 // #339 slice 6: the user fixture library file.
 pub mod fixture_library;
+// #3645: the user tool component library and its sync status.
+pub mod component_library;
 pub mod step_source;
 pub mod model_source;
 pub mod fixture_carried;

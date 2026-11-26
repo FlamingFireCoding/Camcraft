@@ -14,9 +14,12 @@
 //! Provenance: our own tests over our own format and commands.
 //!
 //! #3897: the holder list's used-by count (`used_by`). #3644: the
-//! component table and assembly commands (`assembly_cmds`).
+//! component table and assembly commands (`assembly_cmds`). #3645: the
+//! table and stacks in the project file (`component_files`), the user
+//! component library and its sync (`component_sync`).
 //! Gate map (M4.4): covers app::tool_library, app::commands (tool_import, tool_assembly),
-//! app::mcp (import_tool_library), app::script (importTools), app::tool_body, app::tool_assembly.
+//! app::mcp (import_tool_library), app::script (importTools), app::tool_body, app::tool_assembly,
+//! app::project (component_wire, assembly_wire), app::component_library, app::commands (component_sync).
 
 use camcraft_app::commands::{
     AddTool, CreateOperation, GenerateOperation, History, ImportMode, ImportReport, ImportTools, SetStock, SetToolBody,
@@ -40,6 +43,10 @@ use serde_json::{Value, json};
 mod used_by;
 #[path = "tool_library_holders/assembly_cmds.rs"]
 mod assembly_cmds;
+#[path = "tool_library_holders/component_files.rs"]
+mod component_files;
+#[path = "tool_library_holders/component_sync.rs"]
+mod component_sync;
 
 const DRAWN: &str = "Six";
 const MESH: &str = "Four";
