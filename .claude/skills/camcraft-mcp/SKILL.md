@@ -7,6 +7,17 @@ description: Guide and reference for driving CamCraft headlessly via its Model C
 
 CamCraft exposes a Model Context Protocol (MCP) server on stdio (`camcraft-cli mcp`, #128), allowing an AI agent to drive a complete CAM programming session headlessly: importing models, defining setups and stock, selecting tools, creating and editing operations, selecting geometric features, simulating/verifying, and posting NC programs.
 
+## Live MCP idle window
+
+Start `camcraft-ui --mcp-port 7777 --mcp-idle-timeout 1800` to allow
+1800 seconds without a complete request line. The default is 300 seconds.
+`CAMCRAFT_MCP_IDLE_TIMEOUT` is the environment fallback; the option wins.
+Use non-negative whole seconds that fit `u64`. Zero disables idle expiry
+for live TCP clients and authenticated UI link clients. It does not disable
+the UI link's five-second hello deadline or the line limits.
+Set the option on the app, not on `camcraft-cli mcp --connect`.
+The stdio bridge does not reconnect automatically after a drop.
+
 ## Architecture & Principles
 
 - **Transport & Protocol:** Standard JSON-RPC 2.0 over newline-delimited stdio (`initialize`, `tools/list`, `tools/call`, `ping`).
