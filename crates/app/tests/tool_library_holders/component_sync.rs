@@ -91,7 +91,7 @@ fn the_save_is_atomic_and_the_env_folder_comes_first() {
     assert_eq!(std::fs::read_to_string(&path).expect("read"), before, "the library stays as it was");
     // A built-in id is never written to the user file.
     let builtin = lib::builtins().into_iter().next().expect("a built-in");
-    assert!(store::save(&path, &[builtin.clone()]).is_err() && store::delete(&path, builtin.component.id()).is_err());
+    assert!(store::save(&path, std::slice::from_ref(&builtin)).is_err() && store::delete(&path, builtin.component.id()).is_err());
     let _ = std::fs::remove_dir_all(&dir);
 
     let abs = if cfg!(windows) { "C:\\lib" } else { "/lib" };
