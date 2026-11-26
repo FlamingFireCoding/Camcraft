@@ -375,11 +375,11 @@ pub fn tabs_taper_refusal(op: &WireContourOp) -> Option<String> {
 
 /// A stated closing overlap with what does not cut it (#3216): the
 /// overlap rides the seam lap of a vertical, one-profile contour, so a
-/// no-core burnout (#540), a 4-axis cut (#537) or a constant taper
-/// (#536) beside it is refused by name, at the command door and at
-/// generation - never cut with the overlap silently dropped, and never
-/// handed to a builder that reads one clean ring. `None` when the op
-/// states no overlap or none of those.
+/// no-core burnout (#540), a 4-axis cut (#537), a constant taper
+/// (#536) or a tangent arc lead beside it is refused by name, at the
+/// command door and at generation - never cut with the overlap silently
+/// dropped, and never handed to a builder that reads one clean ring.
+/// `None` when the op states no overlap or none of those.
 #[must_use]
 pub fn overlap_refusal(op: &WireContourOp) -> Option<String> {
     if op.overlap <= 0.0 {
@@ -400,6 +400,11 @@ pub fn overlap_refusal(op: &WireContourOp) -> Option<String> {
             "wire contour: a closing overlap is stated with a {:.3} degree taper - the tapered cut leans one clean ring, and a seam-overlapped lap is not one; set the overlap to 0 or the taper to 0",
             op.taper_deg
         ));
+    }
+    if op.lead_arc_radius.is_some() {
+        return Some(
+            "wire contour: a closing overlap is stated with a tangent arc lead - the arc lead is cut on the drawn line-and-arc path, which does not cut the ride past the seam yet; set the straight lead or clear the overlap".into(),
+        );
     }
     None
 }

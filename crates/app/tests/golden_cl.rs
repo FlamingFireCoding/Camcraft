@@ -1299,8 +1299,8 @@ fn wire_open_cutoff_matches_golden() {
         stock: Some(Region::new(vec![Loop::new(plate).unwrap()]).unwrap()),
         clearance: 1.0,
         tabs: None,
-            sharp_corners: false,
-            overlap: 0.0,
+        sharp_corners: false,
+        overlap: 0.0,
     };
     let line = vec![Point2::new(60.0, 0.0), Point2::new(60.0, 50.0)];
     let path = wire_contour(&[], &[line], &p).unwrap();
