@@ -114,12 +114,14 @@ fn empty_avoid_matches_plain_contour_paths_exactly() {
     assert_eq!(contour_along_chain_avoid(&chain, &cp_open, &empty).unwrap(), contour_along_chain(&chain, &cp_open).unwrap());
 
     let sec: &SectionAt = &|_z| Ok(Some(reg.clone()));
-    let stock_sec: &SectionAt = &|_z| Ok(Some(rect(-30.0, -30.0, 30.0, 30.0)));
+    // Stock on one side of the run only: main refuses a run with stock on both sides.
+    let stock_sec: &SectionAt = &|_z| Ok(Some(rect(-30.0, -30.0, 30.0, 20.0)));
+    let no_part: &SectionAt = &|_z| Ok(None);
     let run = vec![Point2::new(-20.0, 20.0), Point2::new(20.0, 20.0)];
     assert_eq!(contour_open_run_avoid(&run, &cp_open, sec, &empty).unwrap(), contour_open_run(&run, &cp_open, sec).unwrap());
     assert_eq!(
-        contour_open_run_sided_avoid(&run, &cp_open, Side::Outside, stock_sec, sec, &empty).unwrap(),
-        contour_open_run_sided(&run, &cp_open, Side::Outside, stock_sec, sec).unwrap()
+        contour_open_run_sided_avoid(&run, &cp_open, Side::Outside, stock_sec, no_part, &empty).unwrap(),
+        contour_open_run_sided(&run, &cp_open, Side::Outside, stock_sec, no_part).unwrap()
     );
 }
 
@@ -171,7 +173,7 @@ fn contour_avoid_closed_partial_tabs_inside_whole_and_open_stay_clear() {
         cutter: stepped_cutter(),
         clearance: 1.0,
     };
-    for entry in [Entry3D::Plunge, Entry3D::Ramp, Entry3D::Helix] {
+    for entry in [Entry3D::Helix, Entry3D::Ramp, Entry3D::Plunge] {
         let p_in = base_contour(Side::Inside, entry, Lead::Linear { length: 3.0 }, Links::ROUGH3D);
         let path = contour_avoid(&bore_reg, &p_in, &bore_spec).unwrap_or_else(|e| panic!("inside {entry:?}: {e:?}"));
         assert_clean(&path, &bore_spec, "inside_bore");
@@ -226,6 +228,8 @@ fn contour_avoid_refuses_unavoidable_control_and_blocked_pick_by_name() {
     };
     let mut p_ctrl = p.clone();
     p_ctrl.links.approach.compensation = Compensation::Control;
+    // #3891: control compensation takes only the Perpendicular lead.
+    p_ctrl.lead = Lead::Perpendicular { length: 4.0 };
     let ctrl_err = contour_avoid(&reg, &p_ctrl, &side_block).expect_err("control comp on clipped ring must refuse");
     assert!(format!("{ctrl_err:?}").contains("side lug"), "{ctrl_err:?}");
 
