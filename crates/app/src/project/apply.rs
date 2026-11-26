@@ -5,6 +5,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
     // before any entity touches the world. Anything newer than this build
     // remains refused. The chain must run its steps sequentially - a v1
     // file passes through v2's effects before v3's are applied.
+    // #3368: a tip-form file reads as the v78 file it is (file.rs).
+    file.version = super::tip_form_read_version(file.version);
     let from = file.version;
     if file.version == 1 {
         // v1 -> v2: entities gained `rotation`; v1 had translation-only
@@ -545,6 +547,25 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // procedure are optional. An older machine keeps both unstated.
         // v75 -> v76 (#1890): a Deburr width becomes the chamfer chord; the
         // old setback steps up by sqrt(2), its chord on a 90-degree edge.
+        // v76 -> v77 (#3447): a setup may state its creation `order`;
+        // absent stays absent and sorts by name, as every v76 file posted.
+        // v77 -> v78 (#2604): absent machine `reserved_tools` reserves
+        // nothing; a v77 file steps up unchanged.
+        // v79 -> v80 (#3153): absent `minimum_cone_radius` is zero, the
+        // ideal-tip Chamfer path that every v78/v79 file already stated. A
+        // v79 reader must refuse v80 rather than drop a positive band radius.
+        // v80 -> v81 (#2772): a rotary op may state its own rotation
+        // axis (`stated_axis`); absent stays absent and follows the
+        // machine, else the fit, as every v80 file read its axis. No
+        // rung between v80 and v81 rewrites an entity, so the step-up
+        // is the stamp itself.
+        // v81 -> v82 (#2826): the Rotary Flow arm arrives; no v81
+        // file names it, so nothing seats or moves - pure step-up.
+        // v82 -> v83 (#4031): a tool may state its cutter hand
+        // (`cutter_hand`, right M3 / left M4); absent is right-hand, as
+        // every v82 file cut. A v82 reader would silently drop a stated
+        // left hand and post M3 for a cutter that must reverse, so the
+        // ladder steps.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         if from < 68 {
@@ -712,7 +733,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
     crate::posting::post_set(
         world,
         &match file.post {
-            Some(PostDto::Named(name)) => crate::schema::PostRef::Named(name),
+            // #3537: a hidden alias name reads as the registry name it selects.
+            Some(PostDto::Named(name)) => crate::posting::agie::current_ref(crate::schema::PostRef::Named(name)),
             Some(PostDto::File(path)) => crate::schema::PostRef::File(path),
             None => crate::schema::PostRef::Builtin,
         },
@@ -973,6 +995,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                     nose_to_axis: sdto.nose_to_axis,
                     workholding_max_rpm: sdto.workholding_max_rpm,
                     sheet_job: sdto.sheet_job,
+                    // #3447: absent in every earlier file - name order.
+                    order: sdto.order,
                 });
             }
         }

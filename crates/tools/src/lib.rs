@@ -24,6 +24,8 @@ pub mod electrode_outline;
 pub mod holder_profile;
 // #793: the built-in BT/CAT taper holder library, drawn as spun profiles.
 pub mod holder_library;
+// #3367: the tool meridian (lines and arcs) and its convex atoms.
+pub mod meridian;
 // #93: a drawn revolved (spun) profile for milling tools and holders.
 pub mod spun;
 // #93 slice 2: a milling tool's own drawn cutter, checked against its numbers.
@@ -41,6 +43,8 @@ pub mod orientation;
 // #894: the thread mills - form constants, sanity and the pitch door.
 pub mod thread_mill;
 pub mod thread_hand;
+// #4031: a rotating cutter's hand (right M3, left M4), separate from the tap's thread hand.
+pub mod cutter_hand;
 // #1444: the undercut cutters - T-slot, keyseat, dovetail, lollipop.
 pub mod undercut;
 pub mod catalog_fields;
@@ -51,6 +55,10 @@ pub mod waterjet;
 pub mod plasma_cut;
 pub mod wire;
 pub mod tools;
+// #3368: a tapered mill's tip form (sharp, flat, ball) and its geometry.
+pub mod taper;
+// #3369: a form mill's outline, pilot bearing and router bit presets.
+pub mod form_mill;
 // #1186: the tool sanity law, said by name.
 pub mod tool_sanity;
 // #2566: machine controller tool tables (Tormach PathPilot CSV, Hurco WinMax TCM).
