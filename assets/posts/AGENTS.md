@@ -375,11 +375,15 @@ names it as its post. It is a file of its own beside `sodick-wire.cps`
 each cut in the order that the owner of an AQ600L gave: `G00 X Y U0. V0.`
 (one line), `Z0.`, `T91`, `T84` / `T85`, `T94` / `T89`, the `C` word, then
 `G01`. It writes no `G20` / `G21` (the control alarms on `G21`) and
-declares `programUnits = "mm"`. It writes vertical 2-axis cuts only: it
-refuses by name each taper (`WireTaper`, an angle word, a U V lean),
-4-axis and any `COMP` record. A taper (`TP` / `TN`, `G51` / `G52` `A`,
-`G50`) waits for the setup's height above the worktable and for the
-control's corner motion and lean side to be confirmed (#4075). It was
+declares `programUnits = "mm"`. A constant taper posts as the owner's
+4-axis form (#4075): `TP` / `TN` (the part's bottom and top above the
+worktable; the bottom is the post option `partBottomAboveTable`, and an
+unstated option refuses the taper), `G74`, `G01 X Y U V` on every cut (X Y
+on the part's bottom, U V top minus bottom, moved from the guide planes
+by the stream's `WireGuideLower` / `WireGuideUpper` / `WireBottom` /
+`WireTop`), `G75` before `T90`. It refuses by name the angle form
+(`G51` / `G52` `A`, `G50`: corner motion not confirmed), a two-profile
+4-axis cut, an arc in a taper and a taper from a second setup. It was
 not run on a control in this form;
 `docs/decisions/4045-sodick-ln2w-dialect.md` lists what is confirmed and
 what is inferred. Its goldens ride under `nc/sodick-ln2w/`
