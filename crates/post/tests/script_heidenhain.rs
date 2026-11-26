@@ -88,7 +88,8 @@ mod picomax {
     /// different identity, or a different machine model is refused by name.
     #[test]
     fn din_iso_refuses_a_manual_change_machine_it_was_not_verified_for() {
-        let cases: [(&str, fn(&mut Value)); 4] = [
+        type Edit = fn(&mut Value);
+        let cases: [(&str, Edit); 4] = [
             ("no identity", |f| {
                 f["controller"].as_object_mut().expect("controller").remove("identity");
             }),
