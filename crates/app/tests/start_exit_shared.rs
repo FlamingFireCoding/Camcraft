@@ -14,6 +14,9 @@
 //! (tools schema) and motion::finishing3d (raster_seam).
 //! Gate map (#3331): covers app::operation (generate: the Facing, Profile
 //! Rough and Profile Finish picks), app::commands (EditOperationParams).
+//! Gate map (#3329, `start_exit_shared/pocket3d.rs`): covers
+//! app::operation (generate: the 3D Pocket arm, pick_kinds), app::mcp
+//! (tools schema), motion::machining3d (level_seam, picked).
 //! Gate map (#3333, `start_exit_shared/sinker.rs`): covers
 //! motion::sinker_picks, app::operation (sinker_op, sinker_side_op).
 
@@ -58,7 +61,7 @@ fn job() -> Server {
 #[test]
 fn a_pick_on_a_kind_that_does_not_take_it_names_the_kind_and_the_reason() {
     let mut s = job();
-    for (kind, label) in [("2D Offset", "2D Offset"), ("2D Pocket", "2D Pocket"), ("3D Pocket", "3D Pocket")] {
+    for (kind, label) in [("2D Offset", "2D Offset"), ("2D Pocket", "2D Pocket"), ("Trace", "Trace")] {
         let (err, r) = call(&mut s, "add_operation", json!({ "kind": kind, "tool": "EM-1000-4FL", "name": "Op" }));
         assert!(!err, "{kind}: {r}");
         for (role, what) in [("start", "start point"), ("exit", "exit point")] {
@@ -84,6 +87,8 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
             OpType::Contour5D => assert_eq!(cap, PickCapability::Ring, "the 5-axis contour takes a ring pick"),
             // #3330: the 5-axis parallel starts at a raster corner.
             OpType::Parallel5D => assert_eq!(cap, PickCapability::Raster, "the 5-axis parallel takes a raster corner"),
+            // #3329: the 3D Pocket's descent place and the end of its last pass.
+            OpType::Pocket3D => assert_eq!(cap, PickCapability::Region, "the 3D pocket takes a region pick"),
             OpType::WireContour => assert_eq!(cap, PickCapability::Threading, "the wire takes its threading point"),
             // #3334: the pierce and the torch-off place on a closed contour.
             OpType::PlasmaProfile => assert_eq!(cap, PickCapability::Ring, "the plasma profile takes a ring pick"),
@@ -191,3 +196,7 @@ mod contour5d;
 // #3330: the 5-Axis Parallel takes a start and an exit pick.
 #[path = "start_exit_shared/parallel5d.rs"]
 mod parallel5d;
+
+// #3329: the 3D Pocket takes a start and an exit pick.
+#[path = "start_exit_shared/pocket3d.rs"]
+mod pocket3d;
