@@ -49,6 +49,7 @@ fn wire(side: WireSide, start: (f64, f64), top: f64, taper_deg: f64, skims: &[&s
         skims: skims.iter().map(|c| WireSkim { condition: (*c).into(), reverse: false }).collect(),
         sharp_corners,
         lead_arc_radius: None,
+        overlap: 0.0,
     }
 }
 
