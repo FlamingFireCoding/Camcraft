@@ -87,6 +87,8 @@ impl KindInfo {
             OpType::SinkerBurn => PickCapability::Ring,
             OpType::SinkerSideBurn => PickCapability::Ends,
             OpType::Probe => PickCapability::NotTaken(PICK_NO_PATH),
+            // #3334: the pierce and the torch-off place on a closed contour.
+            OpType::PlasmaProfile => PickCapability::Ring,
             // #3328: the first hole and the last hole of the list.
             OpType::Thread | OpType::Drill | OpType::Bore => PickCapability::HoleOrder,
             // #3331 slice 1: the pick is a point in the lathe (Z, X) plane.
@@ -94,6 +96,9 @@ impl KindInfo {
             OpType::Threading => PickCapability::NotTaken(PICK_THREAD_LAW),
             // #3325: the end where the pass starts, and where it stops.
             OpType::Slot => PickCapability::Ends,
+            // #3330: the raster corner where the cut starts, and the end
+            // of the last pass.
+            OpType::Parallel5D => PickCapability::Raster,
             OpType::Pocket
             | OpType::Trace
             | OpType::Adaptive2D
@@ -105,7 +110,6 @@ impl KindInfo {
             | OpType::Finish3D
             | OpType::Deburr
             | OpType::MultiAxisDeburr
-            | OpType::Parallel5D
             | OpType::Swarf
             | OpType::AdvancedSwarf
             | OpType::RotaryContour
@@ -122,8 +126,7 @@ impl KindInfo {
             | OpType::MultiPassTurning
             | OpType::FormTurning
             | OpType::BoringTurning
-            | OpType::PlasmaProfile
-            // #1883: the waterjet's lead picks are owed, as the plasma's.
+            // #1883: the waterjet's lead picks are owed (the plasma's: #3334).
             | OpType::WaterjetProfile
             | OpType::TrochoidalSlot
             | OpType::SlotUndercut
