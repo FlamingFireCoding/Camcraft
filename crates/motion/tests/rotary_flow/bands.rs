@@ -6,7 +6,9 @@
 //! reversed holds the cutting direction of every band, for both climb
 //! settings (PR #4018's set normalization); and a single ring guide -
 //! closed or an open arc - is refused by name, its lap family sweeps
-//! no band area.
+//! no band area; and a guide that crosses a guide that is not its
+//! neighbour in the pick is refused by name at the crossing (#4032),
+//! while a clean three-guide set on the same prism still machines.
 //!
 //! Gate map (M4.4): covers camcraft_motion::multiaxis (rotary_flow
 //! and rotary_flow_set, the #2829 laws) on this crate's own
@@ -167,6 +169,66 @@ fn a_ring_that_crosses_a_corner_chain_is_refused_by_name() {
     assert!(
         (at.x - R_ROOT).abs() < 1e-6 && at.y.abs() < 1e-6 && (at.z - 2.0).abs() < 1e-6,
         "the refusal stands at {at:?}, not at the crossing"
+    );
+}
+
+#[test]
+fn a_crossing_between_non_adjacent_guides_is_refused_by_name() {
+    // The #4032 reproduction (safety-tier review of PR #4018): an R8
+    // prism of 72 sides, Z0..Z32. Guide 3 runs down to (0, 2) and
+    // back up, so it meets guide 1 on its corner line at (8, 0, 2).
+    // The adjacent pairs 1-2 and 2-3 never meet; only the complete
+    // set law reads the crossing, and refuses it there.
+    let n = 72;
+    let d = TAU / n as f64;
+    let facets = prism(n, R_ROOT, 0.0, 32.0);
+    let g1 = vec![gp(R_ROOT, 0.0, 0.0), gp(R_ROOT, 0.0, 4.0)];
+    let g2 = vec![gp(R_ROOT, 3.0 * d, 10.0), gp(R_ROOT, 3.0 * d, 14.0)];
+    let g3 = vec![gp(R_ROOT, -d, 30.0), gp(R_ROOT, 0.0, 2.0), gp(R_ROOT, d, 30.0)];
+    let tool = ball(2.0);
+    let mut q = params(&tool, Some(0.9));
+    q.clearance = 20.0;
+    let e = rotary_flow(&[g1, g2, g3], &facets, &stated_axis(), &q, &AxisControl::default())
+        .unwrap_err();
+    let msg = format!("{e}");
+    assert!(
+        msg.contains("guide chains 1 and 3 meet or cross each other")
+            && msg.contains("(8.000, 0.000, 2.000)"),
+        "{msg}"
+    );
+    let at = e.location().expect("the refusal names its spot");
+    assert!(
+        (at.x - R_ROOT).abs() < 1e-6 && at.y.abs() < 1e-6 && (at.z - 2.0).abs() < 1e-6,
+        "the refusal stands at {at:?}, not at the crossing"
+    );
+}
+
+#[test]
+fn a_clean_three_guide_set_on_the_prism_still_machines() {
+    // Three corner-line guides that never meet, on the same prism:
+    // guides 1 and 3 share no ground, and the complete set law lets
+    // the two adjacent bands machine as before.
+    let n = 72;
+    let d = TAU / n as f64;
+    let facets = prism(n, R_ROOT, 0.0, 32.0);
+    let line = |th: f64| vec![gp(R_ROOT, th, 2.0), gp(R_ROOT, th, 30.0)];
+    let tool = ball(2.0);
+    let mut q = params(&tool, Some(0.9));
+    q.clearance = 20.0;
+    let path = rotary_flow(
+        &[line(0.0), line(3.0 * d), line(6.0 * d)],
+        &facets,
+        &stated_axis(),
+        &q,
+        &AxisControl::default(),
+    )
+    .unwrap();
+    no_gouge(&path, &facets, 1.0);
+    assert!(!landings(&path, 1.0).is_empty(), "no pass landed: {:?}", path.notes);
+    assert!(
+        path.notes.iter().any(|n| n.contains("boundary chain shared with band 1")),
+        "the notes do not state the shared boundary: {:?}",
+        path.notes
     );
 }
 
