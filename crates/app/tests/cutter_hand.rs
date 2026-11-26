@@ -20,6 +20,8 @@ use camcraft_app::world::new_world;
 use camcraft_app::{model, posting, project, tools};
 use flecs_ecs::prelude::World;
 
+mod thread_support;
+
 /// The posts that start a spindle M3 and never reverse it (the refusal
 /// targets, #4031), and one that reverses, for the allow side.
 const M3_ONLY: &[&str] = &["Haas", "Tormach PathPilot", "Doosan DNM", "Grbl 1.1", "grblHAL", "Makera Carvera", "Heidenhain", "Heidenhain Klartext"];
@@ -127,15 +129,117 @@ fn creation_refuses_a_left_hand_cutter_by_name_on_every_m3_only_post() {
 }
 
 #[test]
-fn creation_allows_a_left_hand_cutter_on_a_reversing_post() {
-    let (world, _h) = job(Some("left"));
-    let op = CreateOperation::new(&world, "Drill1", "Drill", SrcRef::Entity("plate".into()), drill_params())
-        .expect("the built-in Fanuc post reverses the spindle");
-    let _ = op;
+fn creation_refuses_a_left_hand_drill_even_on_a_reversing_post() {
+    // #4031 rework: the check is on the REQUEST, not the post. A
+    // permitted post reverses nothing on its own - a Drill never asks
+    // for M4, so even the built-in Fanuc refuses the left-hand cutter.
+    for post in ["Fanuc", "Mazak", "Haas"] {
+        let (world, _h) = job(Some("left"));
+        let mut h = History::default();
+        h.execute(&world, SelectPost::new(&world, PostRef::Named(post.into())).expect("select post"));
+        let err = match CreateOperation::new(&world, "Drill1", "Drill", SrcRef::Entity("plate".into()), drill_params()) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("{post} accepted a left-hand cutter on a Drill"),
+        };
+        assert!(err.contains("left-hand cutter") && err.contains("Drill"), "{post}: {err}");
+    }
 }
 
 #[test]
-fn an_edit_to_left_hand_refuses_generation_and_post_until_the_post_reverses() {
+fn a_thread_operation_that_asks_to_reverse_posts_m4_with_a_left_hand_cutter() {
+    // The one permitted path (#4031 rework): a Thread operation whose
+    // passes ask the spindle to reverse. The library tool's hand rides
+    // the JSON, the op's ask rides the passes - the posted program
+    // turns M4, never M3.
+    use thread_support::{MULTI, R_M8, world_with};
+
+    let mill = {
+        let t = tools::catalog().into_iter().find(|(n, _)| *n == MULTI).expect("catalog thread mill").1;
+        let mut v = project::tool_to_json(&t);
+        v["cutter_hand"] = serde_json::json!("left");
+        project::tool_from_json(&v).expect("thread mill JSON")
+    };
+    let (world, mut history) = world_with(R_M8, &[(MULTI, mill)]);
+    let mut params = thread_support::thread(R_M8, None, camcraft_app::cl::ThreadHand::Right, true);
+    if let OpParams::Thread { passes, .. } = &mut params {
+        passes.spindle_reverse = true;
+        passes.cutter_left = true;
+    }
+    let op = CreateOperation::new(&world, "Thread1", MULTI, SrcRef::Entity("disc".into()), params)
+        .expect("a Thread op that asks to reverse takes the left-hand mill");
+    history.execute(&world, op);
+    history.execute(&world, GenerateOperation::new(&world, "Thread1").expect("generate the M4 thread"));
+    let path = output("m4");
+    let posted = posting::post_setup(&world, &path).expect("the left-hand thread posts");
+    assert!(
+        posted.program.lines().any(|l| l.split_whitespace().any(|w| w == "M4")),
+        "the program must turn M4: {}",
+        posted.program
+    );
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn every_kind_without_a_reverse_request_refuses_a_left_hand_cutter_by_name() {
+    // The law is one sentence for every kind (#4031 rework): a
+    // left-hand cutter is refused unless the operation asks to reverse.
+    // The loop walks the whole catalog table - Drill, Face, Contour,
+    // Pocket, Adaptive, Bore, Circular, every multiaxis and turning
+    // kind - with a left-hand tool of an accepted family in the
+    // library, and holds the refusal by name. The Thread row also
+    // proves the open door: with the reverse ask the tool is accepted.
+    use camcraft_app::operation::{KindInfo, tool_gate};
+
+    let (world, _h) = job(Some("left"));
+    // One left-hand copy of every catalog tool, so each kind's family
+    // has a candidate in the library.
+    let mut h = History::default();
+    for (name, t) in tools::catalog() {
+        let mut v = project::tool_to_json(&t);
+        v["cutter_hand"] = serde_json::json!("left");
+        if let Ok(left) = project::tool_from_json(&v) {
+            h.execute(&world, AddTool::new(&world, name, left).expect("add catalog tool"));
+        }
+    }
+    let library: Vec<(String, tools::Tool)> = model::named_entities(&world)
+        .into_iter()
+        .filter_map(|(name, e)| model::tool_of(&world, &e).map(|t| (name, t)))
+        .filter(|(_, t)| t.kind != tools::ToolKind::FormMill && !camcraft_tools::taper::is_unread_tip(t))
+        .collect();
+    assert!(library.len() > 10, "the catalog must offer families: {library:?}");
+
+    let mut covered = 0usize;
+    for info in KindInfo::ALL {
+        if !info.mounts_tool() {
+            continue;
+        }
+        let Some((name, _)) = library.iter().find(|(_, t)| info.accepts(t.kind)) else {
+            continue;
+        };
+        covered += 1;
+        let err = tool_gate::tool_refusal(&world, info, name, false)
+            .unwrap_or_else(|| panic!("{} accepted a left-hand cutter", info.label));
+        assert!(
+            err.contains("left-hand cutter") && err.contains(info.label),
+            "{}: {err}",
+            info.label
+        );
+        if info.ty == camcraft_app::operation::OpType::Thread {
+            assert!(
+                tool_gate::tool_refusal(&world, info, name, true).is_none(),
+                "a Thread op that asks to reverse takes the left-hand mill"
+            );
+        }
+    }
+    assert!(covered > 30, "the loop must cover the catalog's kinds, got {covered}");
+}
+
+#[test]
+fn an_edit_to_left_hand_refuses_generation_and_post_until_the_operation_asks() {
+    // The after-state door (M10.1 C) reads the same REQUEST law: the
+    // tool edited to left-hand strands every operation that does not
+    // ask to reverse - generation and post refuse by name, and no NC
+    // file is written, on the reversing Fanuc as much as on Haas.
     let (world, mut h) = job(None);
     h.execute(&world, CreateOperation::new(&world, "Drill1", "Drill", SrcRef::Entity("plate".into()), drill_params()).expect("drill op"));
     h.execute(&world, GenerateOperation::new(&world, "Drill1").expect("generate right-hand drill"));
@@ -144,22 +248,30 @@ fn an_edit_to_left_hand_refuses_generation_and_post_until_the_post_reverses() {
     assert!(!posted.program.is_empty());
     let _ = std::fs::remove_file(&path);
 
-    // Edit the tool to left-hand: the op's own post is the built-in
-    // Fanuc, which reverses - the op stays honest.
+    // Edit the tool to left-hand: the Drill never asks for M4, so
+    // generation and post refuse by name - the Fanuc post's ability to
+    // reverse changes nothing.
     h.execute(&world, ChangeTool::new(&world, "Drill", drill(Some("left"))).expect("change hand"));
     assert_left(&tool(&world));
-    h.execute(&world, GenerateOperation::new(&world, "Drill1").expect("Fanuc regenerates a left-hand cutter"));
+    let gen_err = match GenerateOperation::new(&world, "Drill1") {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("generation accepted a left-hand cutter on a Drill that asks no reverse"),
+    };
+    assert!(gen_err.contains("left-hand cutter") && gen_err.contains("Drill"), "{gen_err}");
+    let path = output("fanuc");
+    let _ = std::fs::remove_file(&path);
+    let post_err = posting::post_setup(&world, &path).expect_err("posting refuses");
+    assert!(post_err.contains("left-hand cutter") && post_err.contains("Drill1"), "{post_err}");
+    assert!(!path.exists(), "a refusal writes no NC file");
 
-    // Switch the mount to an M3-only post: generation and post refuse by
-    // name, and no NC file is written.
+    // The M3-only posts keep their own sentence, Thread op or not.
     h.execute(&world, SelectPost::new(&world, PostRef::Named("Haas".into())).expect("select Haas"));
     let gen_err = match GenerateOperation::new(&world, "Drill1") {
         Err(e) => e.to_string(),
         Ok(_) => panic!("generation accepted a left-hand cutter on Haas"),
     };
-    assert!(gen_err.contains("left-hand cutter"), "{gen_err}");
+    assert!(gen_err.contains("left-hand cutter") && gen_err.contains("Haas"), "{gen_err}");
     let path = output("haas");
-    let _ = std::fs::remove_file(&path);
     let post_err = posting::post_setup(&world, &path).expect_err("posting refuses");
     assert!(post_err.contains("left-hand cutter") && post_err.contains("Drill1"), "{post_err}");
     assert!(!path.exists(), "a refusal writes no NC file");

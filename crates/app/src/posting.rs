@@ -1332,10 +1332,10 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
         edm_params::insert(&op.params, &tool, &mut records);
         // #2769: what the stock box bounds, for a post's blank definition.
         stock_shape::insert(world, setup, &mut records);
-        // #988: a left-hand-cut thread mill turns M4.
-        if let OpParams::Thread { passes, .. } = &op.params
-            && passes.spindle_reverse
-        {
+        // #988: a left-hand-cut thread mill turns M4 - and only an
+        // operation that ASKS to reverse gets the ask on the records
+        // (#4031: the request, not the post, decides).
+        if operation::tool_gate::requests_reverse(&op.params) {
             post::ask_reverse_spindle(&mut records);
         }
         setup_change::ask(&changes, name, &mut records);
