@@ -92,6 +92,7 @@ fn punch(taper_deg: f64) -> World {
     let src = SrcRef::Selection(vec![top_face(&world)]);
     let op = WireContourOp {
         lead_arc_radius: None,
+        compensation: Default::default(),
         top_z: Height::fixed(H),
         bottom_z: Height::fixed(0.0),
         condition: "C110".into(),

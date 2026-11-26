@@ -9,6 +9,7 @@
 
 use super::*;
 
+use crate::links::Compensation;
 use crate::operation::{
     WireContourOp, WireFourAxis, WirePairingRule, WireSide, WireSkim, WireSyncPair, WireTabs, WireWidening,
     FOUR_AXIS_TOLERANCE,
@@ -23,6 +24,41 @@ pub enum WireSideDto {
     Left,
     /// An open run's kerf, right of travel (#1109).
     Right,
+}
+
+/// Where the wire's offset is applied (#4134). Absent is `computer`
+/// (the wire-centre path), so every file written before it reads
+/// unchanged, and a computer cut writes no key.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum WireCompensationDto {
+    #[default]
+    Computer,
+    Control,
+    Wear,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde's skip predicate takes a reference
+fn is_computer(c: &WireCompensationDto) -> bool {
+    *c == WireCompensationDto::Computer
+}
+
+impl WireCompensationDto {
+    fn of(c: Compensation) -> Self {
+        match c {
+            Compensation::Computer => WireCompensationDto::Computer,
+            Compensation::Control => WireCompensationDto::Control,
+            Compensation::Wear => WireCompensationDto::Wear,
+        }
+    }
+
+    fn mode(self) -> Compensation {
+        match self {
+            WireCompensationDto::Computer => Compensation::Computer,
+            WireCompensationDto::Control => Compensation::Control,
+            WireCompensationDto::Wear => Compensation::Wear,
+        }
+    }
 }
 
 fn default_clearance() -> f64 {
@@ -86,6 +122,9 @@ pub struct WireContourDto {
     /// lead, so every file written before it reads unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lead_arc_radius: Option<f64>,
+    /// The wire offset's mode (#4134): `computer`, `control` or `wear`.
+    #[serde(default, skip_serializing_if = "is_computer")]
+    pub compensation: WireCompensationDto,
 }
 
 /// One skim: its condition id (stated - no default) and whether it
@@ -207,6 +246,7 @@ impl WireContourDto {
             skims: p.skims.iter().map(|s| WireSkimDto { condition: s.condition.clone(), reverse: s.reverse }).collect(),
             sharp_corners: p.sharp_corners,
             lead_arc_radius: p.lead_arc_radius,
+            compensation: WireCompensationDto::of(p.compensation),
         }
     }
 
@@ -250,6 +290,7 @@ impl WireContourDto {
             skims: self.skims.iter().map(|s| WireSkim { condition: s.condition.clone(), reverse: s.reverse }).collect(),
             sharp_corners: self.sharp_corners,
             lead_arc_radius: self.lead_arc_radius,
+            compensation: self.compensation.mode(),
         })
     }
 }
@@ -262,6 +303,7 @@ mod tests {
     fn op(tabs: Option<WireTabs>, capture: bool) -> WireContourOp {
         WireContourOp {
             lead_arc_radius: None,
+            compensation: Compensation::Computer,
             top_z: Height::fixed(12.0),
             bottom_z: Height::fixed(0.0),
             condition: "C110".into(),
@@ -333,5 +375,22 @@ mod tests {
         let text = serde_json::to_string(&WireContourDto::from_op(&arc)).unwrap();
         assert!(text.contains(r#""lead_arc_radius":0.75"#), "{text}");
         assert_eq!(serde_json::from_str::<WireContourDto>(&text).unwrap().to_params(), OpParams::WireContour(arc));
+    }
+
+    /// #4134: computer compensation writes no key (no existing file
+    /// changes), a file without it reads computer, and control and wear
+    /// round-trip by their words.
+    #[test]
+    fn the_wire_compensation_round_trips_and_is_absent_for_computer() {
+        let computer = op(None, true);
+        let text = serde_json::to_string(&WireContourDto::from_op(&computer)).unwrap();
+        assert!(!text.contains("compensation"), "{text}");
+        assert_eq!(serde_json::from_str::<WireContourDto>(&text).unwrap().to_params(), OpParams::WireContour(computer.clone()));
+        for (mode, word) in [(Compensation::Control, "control"), (Compensation::Wear, "wear")] {
+            let on = WireContourOp { compensation: mode, ..computer.clone() };
+            let text = serde_json::to_string(&WireContourDto::from_op(&on)).unwrap();
+            assert!(text.contains(&format!(r#""compensation":"{word}""#)), "{text}");
+            assert_eq!(serde_json::from_str::<WireContourDto>(&text).unwrap().to_params(), OpParams::WireContour(on));
+        }
     }
 }

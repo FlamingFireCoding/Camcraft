@@ -45,6 +45,7 @@ pub(super) fn seed_wire_contour(c: &Carried) -> OpParams {
         skims: Vec::new(),
         sharp_corners: false,
         lead_arc_radius: None,
+        compensation: Default::default(),
     })
 }
 

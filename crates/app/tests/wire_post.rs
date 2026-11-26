@@ -114,6 +114,7 @@ fn punch_doc_with(machine_text: &str, skims: Vec<WireSkim>) -> World {
     h.execute(&world, ImportModel::from_mesh("slug", slug()));
     let op = WireContourOp {
         lead_arc_radius: None,
+        compensation: Default::default(),
         top_z: Height::fixed(12.0),
         bottom_z: Height::fixed(0.0),
         condition: "C110".into(),
@@ -153,6 +154,7 @@ fn gouging_die() -> World {
     h.execute(&world, stock);
     let op = WireContourOp {
         lead_arc_radius: None,
+        compensation: Default::default(),
         top_z: Height::fixed(12.0),
         bottom_z: Height::fixed(0.0),
         condition: "C110".into(),
@@ -463,6 +465,7 @@ fn cutoff_doc(wrong: bool) -> World {
     let side = if up != wrong { WireSide::Right } else { WireSide::Left };
     let op = WireContourOp {
         lead_arc_radius: None,
+        compensation: Default::default(),
         top_z: Height::fixed(12.0),
         bottom_z: Height::fixed(0.0),
         condition: "C110".into(),
