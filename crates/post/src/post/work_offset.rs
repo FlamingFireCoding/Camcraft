@@ -122,13 +122,11 @@ pub(super) fn machine_refusal(records: &[Record], mch: &Value) -> Result<Option<
     let mut base = BTreeMap::new();
     for record in records {
         let Record::Param { name, value } = record else { continue };
-        if name == "WorkOffset" {
-            if let Some(n) = index_of(value).filter(|n| *n > max) {
-                return Ok(Some(format!(
-                    "{}uses work offset {n}, but this machine's control holds work offsets 1-{max} only (controller.work_offset_max in the machine file) - pick one of those, or state the control's real count in the machine file",
-                    who(&base)
-                )));
-            }
+        if let Some(n) = index_of(value).filter(|n| name == "WorkOffset" && *n > max) {
+            return Ok(Some(format!(
+                "{}uses work offset {n}, but this machine's control holds work offsets 1-{max} only (controller.work_offset_max in the machine file) - pick one of those, or state the control's real count in the machine file",
+                who(&base)
+            )));
         }
         base.insert(name.clone(), value.clone());
     }
