@@ -356,3 +356,4 @@ impl Command for ChangeTool {
 #[path = "tool_delete.rs"]
 mod delete;
 pub use delete::DeleteTool;
+pub(crate) use delete::ToolRecords;

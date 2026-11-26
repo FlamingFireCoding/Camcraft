@@ -43,8 +43,22 @@
   Stale by themselves.
 - `DeleteTool` now keeps the stack and restores it on undo. It moved to
   `commands/tool_delete.rs` to keep `commands/tool.rs` under 400 lines.
+- Review of #4201: the generic `DeleteEntity` (the tree's delete) lost
+  the stack on undo. Both delete paths now snapshot and land one list,
+  `ToolRecords` in `commands/tool_delete.rs`: the record, the number,
+  the body, the cutter and the stack. A new tool record goes into that
+  one list. A search found no other path that deletes a tool and
+  restores it: the tool import's replace mode uses `DeleteTool`.
 - The project loader clears the table, so no row of the previous
-  document leaks into the next one. The table and the stacks are not in
+  document leaks into the next one. `NewDocument` clears it too (review
+  of #4201), next to the units, machine and post resets. There is no
+  shared reset function: open loads a new world, and new resets the
+  singletons of the current world one by one.
+- `camcraft_app` re-exports `component`, `component_geometry` and
+  `connection_code` of `camcraft_tools`. `DocumentComponent` is public
+  and holds these types, so a caller outside `app` (the ui test of
+  `NewDocument`, and later the #3648 UI) can make a row. This adds no
+  crate dependency. The table and the stacks are not in
   the project file yet (#3645). The derived records are: the `ToolDef`
   and the drawn body save as today.
 - The turning insert of the issue's "Done means" is replaced by a
@@ -65,6 +79,8 @@ cannot pass a check that the same numbers typed by hand fail.
   Dropped for this slice: the next component edit derives the records
   again. #3648 (the UI) decides how a hand edit and a stack live
   together.
+- A ui dev-dependency on `camcraft-tools` for the `NewDocument` test.
+  Dropped: it needs a dependency decision, and the re-export is enough.
 - An upsert that refuses a held id. Dropped: the name says insert or
   update, and the update takes the edit's whole law.
 

@@ -204,6 +204,8 @@ pub use camcraft_tools::holder_library;
 pub mod tool_body;
 // #3644: the document component table and each tool's component stack.
 pub mod tool_assembly;
+// #3644: the records the table holds, for the callers outside this crate.
+pub use camcraft_tools::{component, component_geometry, connection_code};
 // #371: the editor's placement preview and picks, the sim's posed body.
 pub mod tool_body_view;
 // #369: lathe-held tool bodies (the turning tool frame).

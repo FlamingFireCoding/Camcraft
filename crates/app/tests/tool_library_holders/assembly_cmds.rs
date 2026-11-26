@@ -228,3 +228,21 @@ fn a_deleted_tool_comes_back_with_its_stack() {
     assert!(h.undo(&w));
     assert_eq!(snapshot(&w), before, "the stack, the record and the body come back");
 }
+
+#[test]
+fn review_generic_delete_undo_keeps_assembly() {
+    // #4201 review: the tree's delete runs the generic `DeleteEntity`. Its
+    // undo must bring the stack back too, or a later shared edit skips
+    // the tool.
+    let (w, mut h) = shop();
+    let before = snapshot(&w);
+    h.execute(&w, camcraft_app::commands::DeleteEntity::new(&w, B).expect("delete"));
+    assert!(model::find_by_name(&w, B).is_none());
+    assert!(h.undo(&w));
+    let e = model::find_by_name(&w, B).expect("restored");
+    assert_eq!(assembly_of(&w, &e), before.1[1].2, "generic delete undo must restore the assembly");
+    assert_eq!(snapshot(&w), before, "the stack, the record and the body come back");
+    let (c, g) = insert("CCMT09T308");
+    let edit = EditDocumentComponent::new(&w, c, g).expect("an insert both seats take");
+    assert_eq!(edit.updated_tools(), vec![A.to_owned(), B.to_owned()], "the restored tool takes shared edits");
+}
