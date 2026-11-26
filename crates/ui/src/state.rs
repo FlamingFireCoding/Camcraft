@@ -174,7 +174,7 @@ pub enum CommandKind {
     /// via `posting::post_setup`.
     PostProgramDialog,
     ExportAgieInspection(String),
-    ImportAgieDrawing,
+    ImportInspectionDrawing,
     CreateAgieInspection {
         name: String, tool: String, drawing: String,
         chain: camcraft_app::geometry::sketch_chains::ChainId, start: [f64; 2], setup: Option<String>,
@@ -3537,7 +3537,7 @@ impl State {
             CommandKind::SaveProjectFile(path) => self.save_project_path(path),
             CommandKind::OpenRecent(kind, path) => self.open_recent(kind, path),
             CommandKind::ClearRecent(kind) => self.clear_recent(kind),
-            CommandKind::ImportAgieDrawing => self.import_agie_drawing(),
+            CommandKind::ImportInspectionDrawing => self.import_inspection_drawing(),
             CommandKind::CreateAgieInspection { name, tool, drawing, chain, start, setup } => {
                 self.create_agie_inspection(name, tool, drawing, chain, start, setup);
             }
@@ -4921,7 +4921,7 @@ impl State {
                 if !posted.bundle_files.is_empty() {
                     self.post_view = None;
                     self.status = format!(
-                        "Native wire EDM job prepared in {} ({} controller files, zero working steps)",
+                        "Agie Wire EDM job prepared in {} ({} controller files, zero working steps)",
                         path.display(), posted.bundle_files.len()
                     );
                     if let Some(review) = posted.controller_review {

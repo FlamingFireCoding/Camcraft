@@ -734,7 +734,7 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         world,
         &match file.post {
             // #3537: a hidden alias name reads as the registry name it selects.
-            Some(PostDto::Named(name)) => crate::posting::agie::current_ref(crate::schema::PostRef::Named(name)),
+            Some(PostDto::Named(name)) => crate::posting::aliases::current_ref(crate::schema::PostRef::Named(name)),
             Some(PostDto::File(path)) => crate::schema::PostRef::File(path),
             None => crate::schema::PostRef::Builtin,
         },

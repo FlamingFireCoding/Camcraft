@@ -44,7 +44,7 @@ or machine configuration. Check its travel, tools and clearance before use.
 | Generic ISO Wire EDM | `wire-iso.cps` | Generic RS-274 motion; EDM words from machine codes | No control-specific pairing; fill the wire machine's EDM code templates |
 | Sodick Wire EDM (Mark 21) | `sodick-wire.cps` | Sodick Mark 21 / EX21, vertical 2-axis work | `sodick-alc400g.mch`; select the post manually and replace example technology values |
 | Sodick Wire EDM (LN2W) | `sodick-ln2w.cps` | Sodick LN2W (AQ400L / AQ600L), vertical 2-axis work; millimetres only | `sodick-aq600l.mch` (its default post); replace example technology values |
-| Native wire EDM job files | `agie-native.cps` | Agie Classic Cut 2S native job | `agiecut-classic-2s.mch` template; select the post manually |
+| Agie Wire EDM (AgieVision) | `agie-native.cps` | AgieVision ISO, SBR and SBL job files for the AGIECUT Classic 2S | `agiecut-classic-2s.mch` template; select the post manually |
 | G-EDM Wire EDM | `g-edm.cps` | G-EDM G-RBLv3, 2-axis wire | None dedicated |
 | Sinker EDM (ISO) | `sinker-iso.cps` | Generic ISO-style sinker; EDM words from machine codes | `sinker-edm.mch` template; fill its EDM code templates |
 | Load by file | `waterjet-iso.cps` | Generic ISO abrasive waterjet | None dedicated; this supplied script is not a built-in picker entry in 0.26.0 |
@@ -57,10 +57,10 @@ alone does not establish that a compatible post exists.
 A post is a `.cps` script, so you can load your own with
 **Load post (.cps)**.
 
-**Native wire EDM job:** choose **One program** and write to a new job
+**Agie Wire EDM job:** choose **One program** and write to a new job
 directory. The job includes nominal ISO geometry, a resource manifest and
 a setup script with zero erosion steps. See
-[Native wire EDM job files](@/guide/operations/operations-edm.md#native-wire-edm-job-files)
+[Agie Wire EDM (AgieVision)](@/guide/operations/operations-edm.md#agie-wire-edm-agievision)
 for supported cuts, separation settings and the checks to make on the
 control.
 
