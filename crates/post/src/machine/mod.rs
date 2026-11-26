@@ -26,6 +26,7 @@ mod waterjet;
 pub use waterjet::waterjet_refusals;
 mod rows;
 mod swing;
+pub use swing::{turns_work, work_length_refusals, WORK_LENGTHS};
 mod tooling;
 pub mod reservations;
 mod tree;

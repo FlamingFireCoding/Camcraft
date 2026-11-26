@@ -102,6 +102,7 @@ mod layout;
 mod panel_setups;
 mod machines_pane;
 mod machines_edit;
+mod machines_axis_chain;
 mod machine_wire_edm;
 mod unsaved;
 mod post_refusal;
