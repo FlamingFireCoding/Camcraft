@@ -63,7 +63,10 @@ mod picomax {
         let t2 = b.iter().position(|l| l.starts_with("T2 G17")).expect("first tool call");
         let t3 = b.iter().position(|l| l.starts_with("T3 G17")).expect("second tool call");
         // The first change: the tool in the spindle is unknown, so a stop and no move.
-        let first_stop = b[..t2].iter().rposition(|l| *l == "M6").expect("a stop before the first tool");
+        // M6, then M0: the halt does not depend on the M06 machine parameter (#4114).
+        let first_m6 = b[..t2].iter().rposition(|l| *l == "M6").expect("M6 before the first tool");
+        let first_stop = b[..t2].iter().rposition(|l| *l == "M0").expect("a stop before the first tool");
+        assert!(first_m6 < first_stop, "{b:?}");
         assert!(!b[..t2].iter().any(|l| is_motion(l)), "no move before the first tool call: {b:?}");
         assert!(b[first_stop + 1..t2].iter().all(|l| l.starts_with(';')), "{b:?}");
         // The second change: spindle off, the M92 retract under the old tool call, the stop,
@@ -71,11 +74,39 @@ mod picomax {
         let between = &b[t2..t3];
         let off = between.iter().rposition(|l| *l == "M5").expect("spindle stops");
         let retract = between.iter().position(|l| *l == "G00 G90 Z+0 M92").expect("M92 retract");
-        let stop = between.iter().rposition(|l| *l == "M6").expect("M6 stop");
-        assert!(off < retract && retract < stop, "{between:?}");
+        let m6 = between.iter().rposition(|l| *l == "M6").expect("M6");
+        let stop = between.iter().rposition(|l| *l == "M0").expect("M0 stop");
+        assert!(off < retract && retract < m6 && m6 < stop, "{between:?}");
         assert!(!between[retract + 1..].iter().any(|l| is_motion(l)), "{between:?}");
         assert!(between[stop + 1..].iter().all(|l| l.starts_with(';')), "{between:?}");
         assert_eq!(b.iter().filter(|l| **l == "M6").count(), 2, "{b:?}");
+        assert_eq!(b.iter().filter(|l| **l == "M0").count(), 2, "{b:?}");
+    }
+
+    /// The M92 retract and the stop are verified for one installation only
+    /// (#4114): a manual-retract-top machine with no controller identity, a
+    /// different identity, or a different machine model is refused by name.
+    #[test]
+    fn din_iso_refuses_a_manual_change_machine_it_was_not_verified_for() {
+        let cases: [(&str, fn(&mut Value)); 4] = [
+            ("no identity", |f| {
+                f["controller"].as_object_mut().expect("controller").remove("identity");
+            }),
+            ("other NC software", |f| f["controller"]["identity"]["nc_software"] = "340490-05".into()),
+            ("other control", |f| f["controller"]["identity"]["model"] = "TNC 426".into()),
+            ("other machine", |f| f["general"]["model"] = "Knee Mill (iTNC 530)".into()),
+        ];
+        for (what, edit) in cases {
+            let mut file: Value = serde_json::from_str(MCH).expect("JSON");
+            edit(&mut file);
+            let other = machine::mirror(&parse_mch(&file.to_string()).expect("machine"));
+            let why = engine::run(&script("heidenhain"), &other, &two_tools()).err().map(|e| e.to_string()).unwrap_or_default();
+            assert!(
+                why.contains("Heidenhain TNC: the manual-retract-top tool change")
+                    && why.contains("is verified only on the Fehlmann Picomax 55 (iTNC 530) with iTNC 530 NC 340490-03"),
+                "{what}: {why}"
+            );
+        }
     }
 
     #[test]
