@@ -245,6 +245,8 @@ fn the_ln2w_taper_part_posts_as_a_four_axis_program_with_the_table_height() {
     let _ = std::fs::remove_file(&out);
     let text = posted.map(|p| p.program).expect("the taper posts");
     golden("edm_test_taper.nc", &text);
+    // The section note names the work Z that TP stands for (PR #4171).
+    assert!(text.contains("TP 5. IS WORK Z") && text.contains("ABOVE THE WORKTABLE - THE POST OPTION STATES WORK Z"), "{text}");
     let w = words(&text);
     assert_eq!(&w[2..11], ["G00 X-35. Y0. U0. V0.", "Z0.", "T91", "T84", "T94", "C001", "TP5.", "TN25.", "G74"], "{text}");
     let cuts: Vec<&str> = w.iter().copied().filter(|l| l.starts_with("G01 ")).collect();

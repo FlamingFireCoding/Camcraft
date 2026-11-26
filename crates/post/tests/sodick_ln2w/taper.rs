@@ -31,8 +31,14 @@ fn machine() -> Value {
 /// guides stand at Z-10 and Z90 (a 100 mm span) and whose part runs from
 /// Z0 to Z20 (work Z); `drop` leaves out the named params.
 fn head(setup: &str, drop: &[&str]) -> Vec<Record> {
-    let mut r = vec![param("OperationName", json!("Punch1")), param("SetupName", json!(setup)), param("WorkOffset", json!("G54")), param("EdmCondition", json!("C001"))];
-    for (n, v) in [("WireTaper", 3.0), ("WireGuideLower", -10.0), ("WireGuideUpper", 90.0), ("WireBottom", 0.0), ("WireTop", 20.0)] {
+    head_at("Punch1", setup, drop, 0.0)
+}
+
+/// The same opening for operation `op`, with the cut's bottom at work Z
+/// `bottom` (two Wire Contour operations of one setup can state two).
+fn head_at(op: &str, setup: &str, drop: &[&str], bottom: f64) -> Vec<Record> {
+    let mut r = vec![param("OperationName", json!(op)), param("SetupName", json!(setup)), param("WorkOffset", json!("G54")), param("EdmCondition", json!("C001"))];
+    for (n, v) in [("WireTaper", 3.0), ("WireGuideLower", -10.0), ("WireGuideUpper", 90.0), ("WireBottom", bottom), ("WireTop", 20.0)] {
         if !drop.contains(&n) {
             r.push(param(n, json!(v)));
         }
@@ -145,6 +151,67 @@ fn tapers_from_two_setups_are_refused_by_name() {
     r.extend(tapered("Setup2", &[]));
     let out = run(&r, &height(5.0));
     assert!(out.warnings.iter().any(|w| w.contains("Setup2") && w.contains("Setup1") && w.contains("one table height")), "{:?}", out.warnings);
+}
+
+/// Two tapered cuts of `Setup1`, operations `First` then `Second`, with
+/// their bottoms at the two given work Z; the top of each is Z20.
+fn two_bottoms(first: f64, second: f64) -> Vec<Record> {
+    let mut r = head_at("First", "Setup1", &[], first);
+    r.extend(body());
+    r.extend(head_at("Second", "Setup1", &[], second));
+    r.extend(body());
+    r
+}
+
+/// The lines of operation `op`'s section: from its name note to its T90.
+fn section<'a>(out: &'a engine::PostOutput, op: &str) -> Vec<&'a str> {
+    let all: Vec<&str> = out.program.lines().collect();
+    let from = all.iter().position(|l| *l == format!("({op})")).unwrap_or_else(|| panic!("no section {op} in\n{}", out.program));
+    let len = all[from..].iter().position(|l| *l == "T90").unwrap_or_else(|| panic!("section {op} has no T90 in\n{}", out.program));
+    all[from..from + len].to_vec()
+}
+
+/// A section's words from its TP word on.
+fn cut<'a>(lines: &[&'a str]) -> Vec<&'a str> {
+    lines.iter().filter(|l| !l.starts_with('(')).skip_while(|l| !l.starts_with("TP")).copied().collect()
+}
+
+/// X Y are on each section's own bottom, so TP follows it (the review of
+/// PR #4171): the option states the first taper's bottom above the
+/// worktable, and a cut that starts 8 mm higher gets TP + 8. TN is the
+/// same top for the two (5 + 20). The second cut's bottom is 18 mm above
+/// the lower guide: X moves 0.05 x 18 = 0.9, and U is 0.05 x 12 = 0.6.
+/// Each section note names the work Z that its TP stands for.
+#[test]
+fn tp_follows_each_tapered_sections_own_bottom() {
+    let out = run(&two_bottoms(0.0, 8.0), &height(5.0));
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    let (first, second) = (section(&out, "First"), section(&out, "Second"));
+    assert_eq!(cut(&first), ["TP5.", "TN25.", "G74", "G01 X-24.5 Y10. U1. V0.", "G01 X-24.5 Y-10. U1. V0.", "G01 X-22. Y10. U0. V0.", "G75"], "{}", out.program);
+    assert_eq!(cut(&second), ["TP13.", "TN25.", "G74", "G01 X-24.1 Y10. U0.6 V0.", "G01 X-24.1 Y-10. U0.6 V0.", "G01 X-22. Y10. U0. V0.", "G75"], "{}", out.program);
+    assert!(first.iter().any(|l| l.contains("TP 5. IS WORK Z0. ABOVE THE WORKTABLE") && l.contains("THE POST OPTION STATES WORK Z0. AT 5.")), "{}", out.program);
+    assert!(second.iter().any(|l| l.contains("TP 13. IS WORK Z8. ABOVE THE WORKTABLE") && l.contains("THE POST OPTION STATES WORK Z0. AT 5.")), "{}", out.program);
+    // The reverse order: the option names the first cut's bottom (work Z8),
+    // and the later, lower cut gets TP - 8.
+    let out = run(&two_bottoms(8.0, 0.0), &height(8.0));
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert_eq!(cut(&section(&out, "First"))[..2], ["TP8.", "TN20."], "{}", out.program);
+    assert_eq!(cut(&section(&out, "Second"))[..2], ["TP0.", "TN20."], "{}", out.program);
+    assert!(section(&out, "Second").iter().any(|l| l.contains("TP 0. IS WORK Z0. ABOVE THE WORKTABLE") && l.contains("THE POST OPTION STATES WORK Z8. AT 8.")), "{}", out.program);
+}
+
+/// A later cut whose bottom is below the worktable by the stated option is
+/// refused by name, and no word of it is written.
+#[test]
+fn a_tapered_section_below_the_worktable_is_refused_by_name() {
+    let out = run(&two_bottoms(8.0, 0.0), &height(5.0));
+    assert!(
+        out.warnings.iter().any(|w| w.contains("Second") && w.contains("is tapered") && w.contains("below the worktable") && w.contains("work Z8.") && w.contains("partBottomAboveTable")),
+        "{:?}",
+        out.warnings
+    );
+    assert_eq!(words(&out).iter().filter(|l| l.starts_with("TP")).copied().collect::<Vec<_>>(), ["TP5."], "{}", out.program);
+    assert_eq!(words(&out).iter().filter(|l| **l == "G74" || **l == "T91").count(), 2, "{}", out.program);
 }
 
 /// What the 4-axis form does not write is refused by name: an arc, and

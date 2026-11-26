@@ -380,8 +380,11 @@ each cut in the order that the owner of an AQ600L gave: `G00 X Y U0. V0.`
 (one line), `Z0.`, `T91`, `T84` / `T85`, `T94` / `T89`, the `C` word, then
 `G01`. It writes no `G20` / `G21` (the control alarms on `G21`) and
 declares `programUnits = "mm"`. A constant taper posts as the owner's
-4-axis form (#4075): `TP` / `TN` (the part's bottom and top above the
-worktable; the bottom is the post option `partBottomAboveTable`, and an
+4-axis form (#4075): `TP` / `TN` (the cut's bottom and top above the
+worktable; the post option `partBottomAboveTable` is the `TP` of the
+program's first tapered cut, a later tapered cut gets `TP` = the option +
+(its `WireBottom` - the first `WireBottom`), the section note names the
+work Z of each `TP`, a `TP` below the worktable is refused, and an
 unstated option refuses the taper), `G74`, `G01 X Y U V` on every cut (X Y
 on the part's bottom, U V top minus bottom, moved from the guide planes
 by the stream's `WireGuideLower` / `WireGuideUpper` / `WireBottom` /

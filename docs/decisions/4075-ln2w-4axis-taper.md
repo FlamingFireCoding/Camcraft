@@ -16,7 +16,7 @@
   `WireGuideLower`, `WireGuideUpper` (the planes that U V use) and
   `WireBottom`, `WireTop` (the cut's resolved bottom and top). All are
   work Z, mm. Other wire posts ignore them.
-- `TP` = the part's bottom above the worktable. `TN` = `TP` + the cut's
+- `TP` = the cut's bottom above the worktable. `TN` = `TP` + the cut's
   height. CamCraft knows no fixture, so the user states `TP` in a new
   declared post option, `partBottomAboveTable` (mm, default -1 = not
   stated). Unstated, each taper is refused by name. The option is set
@@ -25,6 +25,17 @@
 - The option holds one height for the program. A taper from a second
   setup is refused by name ("post the tapers of each setup as their own
   program").
+- `TP` follows the section's own `WireBottom` (review of PR #4171). X Y
+  are on that plane, and two Wire Contour operations of one setup can
+  have different bottom heights. The option is tied to one work Z: the
+  `WireBottom` of the program's first tapered cut. A later tapered cut
+  gets `TP` = the option + (its `WireBottom` - the first `WireBottom`),
+  and `TN` = `TP` + its height. A `TP` below the worktable is refused by
+  name. Each section note names the work Z of its `TP` and the work Z
+  that the option states, so the operator checks the plane and not only
+  the number. Dropped: a refusal of each later taper with a different
+  bottom. It is as safe, but it refuses a legal program that the post
+  can write from the same numbers.
 - Refused by name in a taper: an arc (the 4-axis upper-arc words are not
   confirmed), the control's wire offset G41 / G42, a cut that ends with
   the wire leaning (G75 needs the wire upright), a leaning move with only

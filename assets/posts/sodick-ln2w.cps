@@ -33,11 +33,15 @@
 // say which sections use the offset. Without a COMP record the path is
 // the wire-centre path with the kerf in it, and the program is as before.
 // A constant taper (#4075, the same owner's statements of 2026-11-25, in
-// his 4-axis form): after the C word, TP (the part's bottom above the
-// worktable, the post option partBottomAboveTable) and TN (the part's top
-// above the worktable), G74, then each move as G01 X Y U V - X Y on the
-// part's bottom, U V the part's top minus its bottom - and G75 after the
-// last cut. The stream states U V at the guide planes; the post moves
+// his 4-axis form): after the C word, TP (the cut's bottom above the
+// worktable) and TN (the cut's top above the worktable), G74, then each
+// move as G01 X Y U V - X Y on the cut's bottom, U V the cut's top minus
+// its bottom - and G75 after the last cut. The post option
+// partBottomAboveTable is the TP of the program's first tapered cut: it
+// ties that cut's bottom (a work Z) to the worktable, and each later
+// tapered cut gets TP = the option + (its bottom - the first bottom), so
+// TP always names the plane that X Y are on. Each section note names
+// that work Z. The stream states U V at the guide planes; the post moves
 // them to the part's planes along the same straight wire, so CamCraft
 // decides each corner and nothing is left to the control.
 // Never written (each a named refusal or an operator's task): G20 / G21
@@ -74,7 +78,7 @@ declaredOptions = {
     type: "number",
     title: "Part bottom above the worktable (mm)",
     group: "Taper",
-    description: "TP of a tapered cut: the height of the part's bottom above the worktable (the fixture height, often 0). TN is this height plus the part's thickness. -1 means not stated: each taper is refused. One value for the program: post the tapers of each setup as their own program",
+    description: "TP of the program's first tapered cut: the height of that cut's bottom above the worktable (the fixture height when the cut starts at the part's bottom, often 0). A later tapered cut with a different bottom gets TP moved by the difference, and TN is TP plus the cut's height. Each section note names the work Z that TP stands for. -1 means not stated: each taper is refused. One value for the program: post the tapers of each setup as their own program",
     min: -1,
     max: 1000,
     default: -1,
@@ -109,10 +113,11 @@ var leanU = null, leanV = null; // that offset, mm at the upper guide
 // #4075: a taper's planes from the stream (work Z, mm): the guides that
 // U V are stated at, and the part's bottom and top that TP / TN name.
 var guideLo = null, guideHi = null, partBot = null, partTop = null;
-var tableH = null;         // the part's bottom above the worktable (the option), mm
+var tableH = null;         // the first taper's bottom above the worktable (the option), mm
 var fourOn = false;        // this section is a G74 taper
 var lastU = 0, lastV = 0;  // the last written U V words' values
 var taperSetup = null;     // the setup of the program's first taper (one table height)
+var taperBase = null;      // that taper's WireBottom (work Z, mm): the plane the option names
 // A wire number the stream states but that is no finite number (the
 // wire-iso post's #3236 guard): refused, and no cut of the section is written.
 var WIRE_NUMBERS = ["WireTaper", "WirePlane", "WireAngle", "WireU", "WireV", "WireGuideLower", "WireGuideUpper", "WireBottom", "WireTop"];
@@ -432,7 +437,7 @@ function onSection() {
   }
   if (!ok) { fourOn = false; return; }
   sectionOk = true;
-  if (fourOn && taperSetup === null) taperSetup = setupName;
+  if (fourOn && taperSetup === null) { taperSetup = setupName; taperBase = partBot; }
   note(opName + (opKind ? " - " + opKind : ""));
   if (setupName) note("SETUP " + setupName);
   var mode = offsetMode();
@@ -443,13 +448,17 @@ function onSection() {
   // program carries no table, so the operator checks the row exists.
   note("CONDITION " + condition + " MUST EXIST IN THE CONTROL CONDITION TABLE - CHECK ITS VALUES");
   conditionNotes();
-  if (fourOn) note("TAPER " + fu(Math.abs(taper)) + " DEG - 4-AXIS G74 - TP " + fu(tableH) + " IS THE PART BOTTOM ABOVE THE WORKTABLE FROM THE POST OPTION - CHECK IT ON THE MACHINE");
+  if (fourOn) note("TAPER " + fu(Math.abs(taper)) + " DEG - 4-AXIS G74 - TP " + fu(tpOf()) + " IS WORK Z" + fu(partBot) + " ABOVE THE WORKTABLE - THE POST OPTION STATES WORK Z" + fu(taperBase) + " AT " + fu(tableH) + " - CHECK IT ON THE MACHINE");
   block([wcsWord]);
 }
 
 // #4075: why a taper section cannot be written as G74 ("" when it can):
 // each plane the conversion reads, the stated table height, and one
 // table height for the program.
+// TP of this section: X Y are on its own WireBottom, so TP is that
+// plane's height above the worktable. The option states it for the
+// program's first taper; a later bottom moves TP by the difference.
+function tpOf() { return tableH + partBot - (taperBase === null ? partBot : taperBase); }
 function taperWhy() {
   var planes = [["WireGuideLower", guideLo], ["WireGuideUpper", guideHi], ["WireBottom", partBot], ["WireTop", partTop]];
   for (var i = 0; i < planes.length; i++) {
@@ -459,6 +468,7 @@ function taperWhy() {
   if (partTop - partBot <= 0.001) return "the part's top (Z" + fu(partTop) + ") is not above its bottom (Z" + fu(partBot) + ")";
   if (tableH === null) return "the part's bottom above the worktable (TP) is not stated - set the post option partBottomAboveTable (Part bottom above the worktable, mm) to the fixture height";
   if (taperSetup !== null && taperSetup !== setupName) return "the post option partBottomAboveTable states one table height for the program, and setup " + JSON.stringify(setupName) + " is tapered after setup " + JSON.stringify(taperSetup) + " - post the tapers of each setup as their own program";
+  if (tpOf() < -0.0005) return "its bottom (work Z" + fu(partBot) + ") is below the worktable: the post option partBottomAboveTable states work Z" + fu(taperBase) + " (the bottom of the program's first tapered cut) at " + fu(tableH) + " mm above the worktable - check the option and the bottom heights";
   return "";
 }
 
@@ -515,8 +525,8 @@ function startCut(p) {
   } else block([condition]);
   // #4075: the 4-axis form's planes and its start, after the condition.
   if (fourOn) {
-    block(["TP" + fu(tableH)]);
-    block(["TN" + fu(tableH + partTop - partBot)]);
+    block(["TP" + fu(tpOf())]);
+    block(["TN" + fu(tpOf() + partTop - partBot)]);
     block(["G74"]);
     lastU = 0;
     lastV = 0;

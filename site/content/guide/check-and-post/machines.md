@@ -251,12 +251,19 @@ head above the part. The post writes no `G20` or `G21`, because the
 LN2W control refuses `G21`: it posts millimetre documents only, and the
 unit setting of the control must be millimetres. The post writes
 a constant taper as a 4-axis program (#4075): after the `C` word it
-writes `TP` (the part's bottom above the worktable), `TN` (the part's
+writes `TP` (the cut's bottom above the worktable), `TN` (the cut's
 top above the worktable) and `G74`. Each cut is `G01 X Y U V`: X Y on
-the part's bottom, U V the top minus the bottom. `G75` follows the last
+the cut's bottom, U V the top minus the bottom. `G75` follows the last
 cut. CamCraft does not know the fixture height, so you set it in the
 post option **Part bottom above the worktable (mm)**. If you do not set
-it, the post refuses each taper. The option holds one height for the
+it, the post refuses each taper. The option is the `TP` of the first
+tapered cut of the program: the height of that cut's bottom above the
+worktable. A later tapered cut with a different bottom height gets a
+`TP` that is moved by the difference. Each section note names the work
+Z that its `TP` stands for (for example `TP 13. IS WORK Z8. ABOVE THE
+WORKTABLE`), so check that plane on the machine. The post refuses a
+tapered cut whose bottom is below the worktable by these numbers. The
+option holds one height for the
 program, so post the tapers of each setup as their own program. The
 post refuses a 4-axis cut with two profiles, an arc in a tapered cut,
 the angle form (`G51` / `G52` `A`) and a wire offset (G41 / G42) in a
