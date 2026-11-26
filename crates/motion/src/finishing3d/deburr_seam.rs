@@ -16,7 +16,9 @@
 //!
 //! What a pick cannot keep is refused by name before any motion, never
 //! moved: a pick farther than its reach from every chain, an exit that
-//! an open chain cannot end at (its start end), and a plunge or retract
+//! an open chain cannot end at (its start end), a start and an exit on
+//! one chain while other chains remain (the operation cannot both
+//! start and end on that chain), and a plunge or retract
 //! column at a moved chain end that comes within the tool radius of the
 //! part. The column check is exact: the distance from the column's
 //! segment to each facet (`stock_sim::dist_seg_tri`), no sampling. Each
@@ -209,6 +211,17 @@ impl ChainSeam {
             (Some((sq, sl)), Some((eq, el))) if sl.run == el.run => {
                 let k = sl.run;
                 let run = &runs[k].0;
+                // One chain cannot be cut first and last while other
+                // chains are cut between: the operation would end on
+                // another chain, a silently moved exit (#4168 review).
+                let others = runs.iter().enumerate().filter(|(j, (r, _))| *j != k && r.len() >= 2).count();
+                if others > 0 {
+                    return Err(GenError::Invalid(format!(
+                        "{}: the start point and the exit point pick one edge chain, but the Deburr cuts {others} other \
+                         edge chain(s) after the start chain - pick the exit on another chain or clear one of the two points",
+                        named(PickRole::Exit, eq)
+                    )));
+                }
                 if is_closed(k) {
                     out[k].0 = seat(run, sl, Some(el));
                 } else {

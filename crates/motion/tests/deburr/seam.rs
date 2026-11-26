@@ -195,6 +195,26 @@ fn an_impossible_pick_is_refused_by_name() {
 }
 
 #[test]
+fn same_chain_picks_with_another_chain_must_keep_the_exit_or_refuse_it() {
+    // Two boxes: two closed top rings at z 5, their tips at z 3.
+    let mut f = box_mesh(0.0, 0.0, 10.0, 6.0, 0.0, 5.0);
+    f.extend(box_mesh(20.0, 0.0, 30.0, 6.0, 0.0, 5.0));
+    // The width 2 * sqrt(2) and the tip window Z 0..4 of `params`.
+    let p = params(4.0, 0.0);
+    match ride(&f, &p, seam(Some(pick(10.5, 3.0, None)), Some(pick(5.0, -0.5, None)))) {
+        Ok(t) => assert!(near(last_feed(&t), p3(5.0, 0.0, 3.0)), "exit silently moved from (5, 0, 3) to {:?}", last_feed(&t)),
+        Err(e) => {
+            let e = e.to_string();
+            assert!(e.contains("exit point (5.000, -0.500)") && e.contains("one edge chain"), "{e}");
+        }
+    }
+    // Picks on two different chains still ride: start on one, exit on the other.
+    let t = ride(&f, &p, seam(Some(pick(10.5, 3.0, None)), Some(pick(25.0, -0.5, None)))).expect("two chains");
+    assert!(near(first_plunge(&t), p3(10.0, 3.0, 3.0)), "{:?}", first_plunge(&t));
+    assert!(near(last_feed(&t), p3(25.0, 0.0, 3.0)), "{:?}", last_feed(&t));
+}
+
+#[test]
 fn a_moved_plunge_or_retract_column_under_an_overhang_is_refused() {
     // A slab over the ring's x = 10 edge, above the window: the
     // automatic ride starts elsewhere and is not judged here.

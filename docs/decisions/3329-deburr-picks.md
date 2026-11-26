@@ -32,6 +32,10 @@ point on an edge chain. The picks order the chains before any motion
   the contour and the 5-axis slices);
 - an exit pick on an open chain nearest the end where the start pick
   starts it ("ends at its other end");
+- a start pick and an exit pick on one chain while the Deburr has other
+  chains ("pick one edge chain", PR #4168 review). That chain must be
+  cut first and last, so the operation would end on another chain: a
+  silently moved exit;
 - a plunge or retract column at a chain end that a pick moved, which
   comes within the tool radius of the part.
 
@@ -67,6 +71,13 @@ refusal names the pick that moved the end.
   the same closed chain.
 - A ball (capsule) column check from the edge point itself: it touches
   the two faces of each edge and refuses each pick.
+- Start and exit on one chain with other chains: keep both endpoints.
+  The picked chain would be cut from the start foot to a split point,
+  the other chains between, and the rest of the picked chain last, to
+  the exit foot. That adds a third moved column (the re-entry plunge at
+  the split), a split rule for open chains, and a new order law. The
+  refusal is simple and safe; the user picks the exit on another chain
+  or clears one point. A later issue can add the split if users ask.
 
 **Not in this slice.** The 3D Pocket and the 3D Finish (the other kinds
 of #3329). The UI has no Deburr start / exit rows yet: the picks are set
