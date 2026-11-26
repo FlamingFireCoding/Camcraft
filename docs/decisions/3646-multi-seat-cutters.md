@@ -2,8 +2,8 @@
 
 **What was decided.**
 - This PR is the `camcraft-tools` slice of #3646. It adds
-  `milling_cutter.rs` (with `milling_cutter_error.rs` and
-  `milling_cutter_tests.rs`). There is no new crate edge, no ECS and no
+  `milling_cutter.rs` (with `milling_cutter_error.rs`,
+  `milling_cutter_assembly.rs` and `milling_cutter_tests.rs`). There is no new crate edge, no ECS and no
   file I/O. `ComponentKind` does not change: the cutter facts are a
   separate record (`MillingBody`) next to the #3642 tool item, as the
   #3643 geometry is. #3644 decides where the document stores it.
@@ -47,12 +47,35 @@
     turns inward, else the tip radius plus the longest chord. The
     clearance behind the edges keeps the insert inside the circle that
     its edges sweep (that is what the clearance is for).
-- In an assembly (`MillingCutter::assembled`) the seat frames must put
-  the cutting point on `DC` (0.001 mm). The judged body of the holder
-  and the cutter body (the #3643 resolver) is enclosed over the tool
-  (`HolderProfile::enclose`). A body part inside the cutting depth is
-  held by the cutting cylinder while it stays inside it, and refused by
-  name when it stands outside it.
+- In an assembly (`MillingCutter::assembled`, `milling_cutter_assembly.rs`)
+  the cutter takes the assembly nodes and resolves them itself (#3643).
+  Three rules close the three classes that the #4192 review found:
+  - **One source.** The cutter keeps the body and the insert that it
+    was derived from. The assembly must mount exactly these two
+    components (full equality, not only the diameter). Another insert
+    (for example a sharp `SCMT120400` under a cutter derived from
+    `SCMT120408`) or another body is refused by name (`Mismatch`).
+    Dropped: derive again from the mounted insert inside `assembled`.
+    That hides a changed insert from the caller, who holds the old
+    cutter.
+  - **Every seat.** Each seat port of the body is placed as the
+    mounted insert is (the port frame, the mount turn, the insert's
+    cutting point). Its cutting point must be on `DC` and in the tip
+    plane (0.001 mm), and its axes, read in its own radial frame, must
+    be the mounted seat's (1e-6). Thus each seat is the mounted seat
+    turned about the spindle axis, and its insert sweeps the same
+    envelope. A seat port with no frame is refused. On a body with one
+    seat port and a seat count, the other seats are copies of that
+    port turned about the axis by definition, so the check of the one
+    port covers them. Dropped: a separate envelope for each seat. The
+    tool record has one cutter shape, so the seats must agree.
+  - **The real profile.** A body band inside the cutting depth must
+    stand inside the tool's profile at the band's lowest point: the
+    corner arc `r - rc + sqrt(rc^2 - (rc - z)^2)` below `rc`, else the
+    cutting radius. The profile widens from the tip up, so the lowest
+    point is the narrowest. This covers a bull-nose and a round-insert
+    cutter. The band part above the cutting depth is enclosed over the
+    tool (`HolderProfile::enclose`) as before.
 - The tool record takes the running data (speed, feed, materials,
   cutting rows, catalog facts, hand, holder stand-in) from a base tool
   that the caller gives. The fields of other kinds are reset to their

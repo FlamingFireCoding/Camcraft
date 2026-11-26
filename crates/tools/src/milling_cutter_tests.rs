@@ -1,7 +1,8 @@
 //! #3646: multi-seat indexable cutters resolved to the milling tool -
 //! pinned on a face mill and a shoulder end mill that share one insert,
 //! a round-insert end mill, the envelope that holds the real cutter,
-//! the assembled body, and the refusals by name.
+//! the assembled body checked against the real profile and every seat,
+//! and the refusals by name.
 
 use crate::component::{ComponentKind, CuttingItem, InsertSeat, ToolComponent};
 use crate::component_fit::FitProperty;
@@ -192,34 +193,53 @@ fn the_tool_holds_the_real_cutter() {
     }
 }
 
-/// A BT40 holder, a 4-seat face mill body (seats on Ø`seat_d`, 45 mm
-/// below its MCS; its own body a cylinder of `body_r` 40 mm long) and
-/// the insert in the first seat.
-fn assembly(seat_d: f64, body_r: f64) -> Vec<AssemblyNode> {
+/// A seat of the probe rig: its port, the diameter of its cutting
+/// point, its depth below the body MCS, and its yaw (degrees) off the
+/// radial direction.
+type Seat = (&'static str, f64, f64, f64);
+
+/// Four seats on Ø`d`, 45 mm below the body MCS, all radial.
+fn even(d: f64) -> Vec<Seat> {
+    FOUR.iter().map(|p| (*p, d, 45.0, 0.0)).collect()
+}
+
+/// A BT40 holder, a cutter body "face mill" (the seats of `holder` at
+/// `seats`, spaced evenly; its own body a cylinder of `body_r`,
+/// `body_len` long below its MCS) and the insert `ins` in the first
+/// seat.
+fn rig(holder: &str, seats: &[Seat], body_len: f64, body_r: f64, ins: &str) -> Vec<AssemblyNode> {
     let p = SpunPoint::line;
     let cyl = |len: f64, r: f64| {
         ComponentBody::new(vec![p(0.0, 0.0), p(0.0, r), p(len, r), p(len, 0.0)], -len).unwrap_or_else(|e| panic!("{e}"))
     };
-    let seats = FOUR
+    let step = 360.0 / seats.len() as f64;
+    let frames = seats
         .iter()
         .enumerate()
-        .map(|(i, port)| {
-            let (s, c) = (90.0 * i as f64).to_radians().sin_cos();
-            let f = Frame::new([0.5 * seat_d * c, 0.5 * seat_d * s, -45.0], [0.0, 0.0, 1.0], [c, s, 0.0]);
+        .map(|(i, (port, d, depth, yaw))| {
+            let (s, c) = (step * i as f64).to_radians().sin_cos();
+            let (sy, cy) = (step * i as f64 + yaw).to_radians().sin_cos();
+            let f = Frame::new([0.5 * d * c, 0.5 * d * s, -depth], [0.0, 0.0, 1.0], [cy, sy, 0.0]);
             ((*port).to_owned(), f.unwrap_or_else(|e| panic!("{e}")))
         })
         .collect();
-    let geometry = ComponentGeometry::new(seats, Some(cyl(40.0, body_r)), None).unwrap_or_else(|e| panic!("{e}"));
-    let holder = made("BT40 CYL 20", ComponentKind::AdaptiveItem { mcs: code("BT40"), csw: code("CYL 20") });
+    let geometry = ComponentGeometry::new(frames, Some(cyl(body_len, body_r)), None).unwrap_or_else(|e| panic!("{e}"));
+    let bt40 = made("BT40 CYL 20", ComponentKind::AdaptiveItem { mcs: code("BT40"), csw: code("CYL 20") });
     let held = ComponentGeometry::axial("CSW", 50.0, Some(cyl(50.0, 25.0))).unwrap_or_else(|e| panic!("{e}"));
     let on = |parent: usize, port: Option<&str>| {
         Some(Mount { parent, port: port.map(str::to_owned), z_rot_deg: 0.0, projection_mm: None })
     };
+    let ports: Vec<&str> = seats.iter().map(|s| s.0).collect();
     vec![
-        AssemblyNode { component: holder, geometry: held, mount: None },
-        AssemblyNode { component: body("face mill", "SSDCN2525M12", &FOUR), geometry, mount: on(0, None) },
-        AssemblyNode { component: insert("SCMT120408"), geometry: ComponentGeometry::default(), mount: on(1, Some("CSW1_1")) },
+        AssemblyNode { component: bt40, geometry: held, mount: None },
+        AssemblyNode { component: body("face mill", holder, &ports), geometry, mount: on(0, None) },
+        AssemblyNode { component: insert(ins), geometry: ComponentGeometry::default(), mount: on(1, Some(ports[0])) },
     ]
+}
+
+/// The 4-seat face mill rig of the SCMT12 square insert.
+fn assembly(seat_d: f64, body_r: f64) -> Vec<AssemblyNode> {
+    rig("SSDCN2525M12", &even(seat_d), 40.0, body_r, "SCMT120408")
 }
 
 /// The cutter in its assembly: the gauge length and the judged body of
@@ -229,18 +249,76 @@ fn assembly(seat_d: f64, body_r: f64) -> Vec<AssemblyNode> {
 #[test]
 fn the_assembled_face_mill_encloses_holder_and_body() {
     let c = ok(&body("face mill", "SSDCN2525M12", &FOUR), &spec(50.0, 45.0, 6.0), &insert("SCMT120408"));
-    let r = resolve(&assembly(50.0, 20.0)).unwrap_or_else(|e| panic!("{e}"));
+    let nodes = assembly(50.0, 20.0);
+    let r = resolve(&nodes).unwrap_or_else(|e| panic!("{e}"));
     assert!(near(r.gauge_len, 95.0), "{}", r.gauge_len);
     let alone = c.tool(&base()).unwrap_or_else(|e| panic!("{e}"));
-    let t = c.assembled(&base(), &r).unwrap_or_else(|e| panic!("{e}"));
+    let t = c.assembled(&base(), &nodes).unwrap_or_else(|e| panic!("{e}"));
     assert!(near(t.diameter, 62.0) && near(t.flute_len, 6.0));
     assert!(t.shank_d >= alone.shank_d && t.shank_d >= 40.0, "{t:?}");
     assert!(near(t.holder_d, 50.0) && near(t.flute_len + t.shank_len + t.holder_len, 95.0), "{t:?}");
-    let r = resolve(&assembly(50.0, 40.0)).unwrap_or_else(|e| panic!("{e}"));
-    let Err(MillingError::BodyOutside { r: br, .. }) = c.assembled(&base(), &r) else { panic!("a wide body passed") };
+    let Err(MillingError::BodyOutside { r: br, .. }) = c.assembled(&base(), &assembly(50.0, 40.0)) else {
+        panic!("a wide body passed")
+    };
     assert!(near(br, 40.0));
-    let r = resolve(&assembly(48.0, 20.0)).unwrap_or_else(|e| panic!("{e}"));
-    assert!(matches!(c.assembled(&base(), &r), Err(MillingError::SeatDiameter { .. })));
+    assert!(matches!(c.assembled(&base(), &assembly(48.0, 20.0)), Err(MillingError::SeatDiameter { .. })));
+}
+
+/// #4192 review 1: a body inside the cutting depth is checked against
+/// the tool's real profile, the corner arc included - on a bull-nose
+/// (square insert, 0.8 nose) and on a round-insert cutter. A body under
+/// the flat of the tip passes.
+#[test]
+fn a_body_outside_the_rounded_corner_is_refused() {
+    let c = ok(&body("face mill", "SSDCN2525M12", &FOUR), &spec(50.0, 90.0, 8.0), &insert("SCMT120408"));
+    // Down to the tip at r 24.8: the 0.8 corner reaches only 24.2 there.
+    let nodes = rig("SSDCN2525M12", &even(50.0), 45.0, 24.8, "SCMT120408");
+    let Err(MillingError::BodyOutside { r, cut_r, .. }) = c.assembled(&base(), &nodes) else { panic!("bull-nose body passed") };
+    assert!(near(r, 24.8) && near(cut_r, 24.2), "{r} {cut_r}");
+    let under = rig("SSDCN2525M12", &even(50.0), 45.0, 24.2, "SCMT120408");
+    assert!(c.assembled(&base(), &under).is_ok(), "a body under the flat of the tip was refused");
+    // A round insert: the Ø32 cutter with a 6 mm corner reaches r 10 at the tip.
+    let round = ok(&body("face mill", "SRDCN2525M12", &FOUR), &spec(32.0, 90.0, 4.0), &insert("RCMT1204M0"));
+    let nodes = rig("SRDCN2525M12", &even(32.0), 45.0, 15.0, "RCMT1204M0");
+    let Err(MillingError::BodyOutside { cut_r, .. }) = round.assembled(&base(), &nodes) else { panic!("round body passed") };
+    assert!(near(cut_r, 10.0), "{cut_r}");
+    let under = rig("SRDCN2525M12", &even(32.0), 45.0, 9.5, "RCMT1204M0");
+    assert!(round.assembled(&base(), &under).is_ok(), "a body under the round tip was refused");
+}
+
+/// #4192 review 2: every seat port is checked, not only the mounted
+/// one. The selected seat CSW1_1 is valid; a second seat off DC, off
+/// the tip plane or turned other than CSW1_1 is refused by port. A one
+/// port body with a seat count checks its one port.
+#[test]
+fn every_seat_is_checked_not_only_the_mounted_one() {
+    let c = ok(&body("face mill", "SSDCN2525M12", &FOUR), &spec(50.0, 90.0, 8.0), &insert("SCMT120408"));
+    for (i, edit, what) in [(1, (80.0, 45.0, 0.0), "radius"), (2, (50.0, 44.0, 0.0), "height"), (3, (50.0, 45.0, 10.0), "orientation")] {
+        let mut seats = even(50.0);
+        (seats[i].1, seats[i].2, seats[i].3) = edit;
+        let e = c.assembled(&base(), &rig("SSDCN2525M12", &seats, 40.0, 20.0, "SCMT120408"));
+        let Err(MillingError::SeatOff { port, what: w, .. }) = e else { panic!("{what}: {e:?}") };
+        assert_eq!((port.as_str(), w), (FOUR[i], what));
+    }
+    let one = MillingBody { seat_count: Some(4), ..spec(50.0, 90.0, 8.0) };
+    let c = ok(&body("face mill", "SSDCN2525M12", &["CSW1"]), &one, &insert("SCMT120408"));
+    let seat = [("CSW1", 50.0, 45.0, 0.0)];
+    let t = c.assembled(&base(), &rig("SSDCN2525M12", &seat, 40.0, 20.0, "SCMT120408"));
+    assert_eq!(t.map(|t| t.flutes), Ok(Some(4)));
+}
+
+/// #4192 review 3: the assembly must mount the insert and the body the
+/// cutter was derived from. An insert changed before assembly (a sharp
+/// SCMT120400 under a cutter derived with a 0.8 nose) and another body
+/// are refused, though both fit and cut on DC.
+#[test]
+fn an_assembly_with_other_components_is_refused() {
+    let c = ok(&body("face mill", "SSDCN2525M12", &FOUR), &spec(50.0, 90.0, 8.0), &insert("SCMT120408"));
+    let e = c.assembled(&base(), &rig("SSDCN2525M12", &even(50.0), 40.0, 20.0, "SCMT120400"));
+    assert!(matches!(&e, Err(MillingError::Mismatch { why, .. }) if why.contains("SCMT120400")), "{e:?}");
+    let other = ok(&body("other mill", "SSDCN2525M12", &FOUR), &spec(50.0, 90.0, 8.0), &insert("SCMT120408"));
+    let e = other.assembled(&base(), &assembly(50.0, 20.0));
+    assert!(matches!(&e, Err(MillingError::Mismatch { why, .. }) if why.contains("face mill")), "{e:?}");
 }
 
 #[test]

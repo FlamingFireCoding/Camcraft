@@ -11,17 +11,19 @@
 //! cutting depth its cylinder holds every cutting edge, and its shank
 //! holds the rest of the inserts above it. Each refusal names the
 //! cutter body: bad numbers, a seat that does not take the insert, a
-//! corner that does not fit, a body that stands outside the cutter.
+//! corner that does not fit, a body that stands outside the cutter, a
+//! seat that the tool does not hold, an assembly with other components.
 
 use crate::component::{ComponentKind, ToolComponent};
 use crate::component_fit::check_insert_fit;
-use crate::holder_profile::{HolderBand, HolderProfile, MAX_BODY_RADIUS};
+use crate::holder_profile::MAX_BODY_RADIUS;
 use crate::insert_codes::InsertShape;
 use crate::insert_iso1832::{Corner, InsertSpec};
 use crate::taper::TaperTip;
-use crate::tool_assembly::ResolvedAssembly;
 use crate::tools::{Tool, ToolKind};
 
+#[path = "milling_cutter_assembly.rs"]
+mod assembly;
 #[path = "milling_cutter_error.rs"]
 mod error;
 pub use error::MillingError;
@@ -78,6 +80,10 @@ pub struct MillingCutter {
     pub insert_d: f64,
     /// How high above the tip the inserts reach.
     pub insert_top: f64,
+    /// The cutter body and the shared insert this cutter was derived
+    /// from: an assembly must mount exactly these (#3646 review).
+    body: ToolComponent,
+    insert: ToolComponent,
 }
 
 /// Resolve the cutter `body` with its facts `spec` and the shared
@@ -126,6 +132,8 @@ pub fn derive(body: &ToolComponent, spec: &MillingBody, insert: &ToolComponent) 
         center_cutting: spec.center_cutting,
         insert_d: shape.insert_d,
         insert_top: shape.insert_top,
+        body: body.clone(),
+        insert: insert.clone(),
     })
 }
 
@@ -283,36 +291,5 @@ impl MillingCutter {
             Some(why) => Err(MillingError::Tool { name: self.name.clone(), why }),
             None => Ok(t),
         }
-    }
-
-    /// The tool in its spindle assembly (`crate::tool_assembly`): the
-    /// seat geometry must put the cutting point on `DC`, and the judged
-    /// body is enclosed as the laws read it. A body inside the cutting
-    /// depth is held by the cutting cylinder when it stays inside it,
-    /// and refused by name when it stands outside.
-    pub fn assembled(&self, base: &Tool, r: &ResolvedAssembly) -> Result<Tool, MillingError> {
-        let seat_d = r.cutting.diameter;
-        if !seat_d.is_finite() || (seat_d - self.dc).abs() > SEAT_TOL {
-            return Err(MillingError::SeatDiameter { name: self.name.clone(), seat_d, dc: self.dc });
-        }
-        let tool = self.tool(base)?;
-        let Some(body) = &r.body else { return Ok(tool) };
-        let (fl, cut_r) = (tool.flute_len, 0.5 * tool.diameter);
-        let mut kept: Vec<HolderBand> = Vec::new();
-        for b in body.profile.bands() {
-            let top = b.above + b.len;
-            if b.above < fl - 1e-9 && b.r > cut_r + 1e-9 {
-                return Err(MillingError::BodyOutside { name: self.name.clone(), above: b.above, r: b.r, cut_r });
-            }
-            if top > fl + 1e-9 {
-                let lo = b.above.max(fl);
-                kept.push(HolderBand { above: lo, len: top - lo, r: b.r });
-            }
-        }
-        if kept.is_empty() {
-            return Ok(tool);
-        }
-        let why = || MillingError::Tool { name: self.name.clone(), why: "its body could not be enclosed".to_owned() };
-        HolderProfile::from_bands(kept).enclose(&tool).ok_or_else(why)
     }
 }

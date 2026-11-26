@@ -2,6 +2,7 @@
 //! names the cutter body (and the seat) it is about. Our own wording.
 
 use crate::component_fit::FitError;
+use crate::tool_assembly::AssemblyError;
 
 /// Why a multi-seat milling cutter is refused.
 #[derive(Clone, Debug, PartialEq)]
@@ -31,8 +32,19 @@ pub enum MillingError {
     /// The seat geometry of the assembly puts the cutting point on a
     /// diameter other than the stated `DC`.
     SeatDiameter { name: String, seat_d: f64, dc: f64 },
-    /// A judged body stands outside the cutter inside the cutting depth.
+    /// A judged body stands outside the cutter inside the cutting depth:
+    /// `cut_r` is how far the tool reaches at the band's lowest point.
     BodyOutside { name: String, above: f64, r: f64, cut_r: f64 },
+    /// The spindle assembly is refused by the resolver (#3643); boxed,
+    /// so that every result of this module stays small.
+    Assembly { name: String, err: Box<AssemblyError> },
+    /// The assembly mounts a cutter body or an insert other than the
+    /// ones the cutter was derived from.
+    Mismatch { name: String, why: String },
+    /// A seat of the assembly is not the mounted seat turned about the
+    /// spindle axis: `what` is "frame", "radius", "height" or
+    /// "orientation".
+    SeatOff { name: String, port: String, what: &'static str, why: String },
 }
 
 impl core::fmt::Display for MillingError {
@@ -69,8 +81,13 @@ impl core::fmt::Display for MillingError {
             ),
             Self::BodyOutside { name, above, r, cut_r } => write!(
                 f,
-                "a body of the cutter '{name}' reaches {r:.3} mm from the axis at {above:.3} mm above the tip - outside the {cut_r:.3} mm cutting radius, inside the cutting depth"
+                "a body of the cutter '{name}' reaches {r:.3} mm from the axis at {above:.3} mm above the tip - outside the {cut_r:.3} mm that the tool reaches there, inside the cutting depth"
             ),
+            Self::Assembly { name, err } => write!(f, "the assembly of the cutter '{name}' is refused: {err}"),
+            Self::Mismatch { name, why } => write!(f, "the assembly does not match the cutter '{name}': {why}"),
+            Self::SeatOff { name, port, why, .. } => {
+                write!(f, "the seat {port} of the cutter '{name}' is refused: {why}")
+            }
         }
     }
 }
