@@ -181,3 +181,42 @@ fn malformed_components_are_refused_by_name() {
     broken.diameter = f64::NAN;
     assert!(matches!(solid("EM", broken, ConnectionCode::Tts), Err(ComponentError::Tool { .. })));
 }
+
+/// #4096 review: a component checks the insert and seat specs that it
+/// is given (their fields are public), names the component and the
+/// property, and stores its connections in their text form.
+#[test]
+fn components_check_their_specs_and_normalize_their_connections() {
+    let Ok(good) = InsertSpec::parse("CNMG120408") else { panic!("insert") };
+    let insert_with = |f: &dyn Fn(&mut InsertSpec)| {
+        let mut spec = good.clone();
+        f(&mut spec);
+        ToolComponent::new("i", "Bad insert", ComponentKind::CuttingItem(CuttingItem::Insert(spec)))
+    };
+    for (r, property) in [
+        (insert_with(&|s| s.size = 0), "(size)"),
+        (insert_with(&|s| s.tolerance = '?'), "(tolerance class)"),
+        (insert_with(&|s| s.corner = crate::insert_iso1832::Corner::Radius(0)), "(corner)"),
+    ] {
+        let Err(e) = r else { panic!("{property} accepted") };
+        assert!(matches!(e, ComponentError::Insert { .. }), "{e:?}");
+        let text = e.to_string();
+        assert!(text.contains("'Bad insert'") && text.contains(property), "{text}");
+    }
+    let Ok(h) = HolderDesignation::parse("PCLNR2525M12") else { panic!("holder") };
+    let mut seat = h.seat;
+    seat.size = 0;
+    let kind = ComponentKind::ToolItem { mcs: code("RECT 25x25"), seats: vec![InsertSeat { port: "CSW1".into(), spec: seat }] };
+    let Err(e) = ToolComponent::new("h", "Bad holder", kind) else { panic!("seat size 00 accepted") };
+    assert!(matches!(e, ComponentError::Seat { .. }), "{e:?}");
+    let text = e.to_string();
+    assert!(text.contains("'Bad holder'") && text.contains("'CSW1'") && text.contains("(insert size)"), "{text}");
+    // Connections are stored in their text form, so they fit their twins.
+    let hsk_a = ConnectionCode::Hsk { form: 'a', size: 63 };
+    let pallet = ConnectionCode::Custom(" Shop pallet ".into());
+    let chuck = made("HSK pallet", ComponentKind::AdaptiveItem { mcs: hsk_a.clone(), csw: pallet });
+    assert_eq!(chuck.mcs(), Some(&code("HSK-A63")));
+    assert_eq!(check_coupling_fit(&chuck, "CSW", &adaptive("Pallet adapter", "CUSTOM:Shop pallet", "ER32")), Ok(()));
+    let spindle = made("BT40 to HSK", ComponentKind::AdaptiveItem { mcs: code("BT40"), csw: hsk_a });
+    assert_eq!(check_coupling_fit(&spindle, "CSW", &adaptive("HSK holder", "HSK-A63", "ER32")), Ok(()));
+}

@@ -23,6 +23,8 @@ pub enum DesignationError {
     NonAscii { standard: &'static str, text: String },
     TooShort { standard: &'static str, text: String, len: usize, need: usize },
     Position { standard: &'static str, pos: u8, name: &'static str, found: String, expected: String },
+    /// A value built in code whose text reads back as a different value.
+    NotCanonical { standard: &'static str, text: String },
 }
 
 impl core::fmt::Display for DesignationError {
@@ -38,6 +40,9 @@ impl core::fmt::Display for DesignationError {
             ),
             Self::Position { standard, pos, name, found, expected } => {
                 write!(f, "{standard} position {pos} ({name}): '{found}' is not valid - it takes {expected}")
+            }
+            Self::NotCanonical { standard, text } => {
+                write!(f, "the {standard} value '{text}' does not read back as the same value")
             }
         }
     }
@@ -132,6 +137,10 @@ pub const IC_SERIES: [f64; 11] = [3.97, 4.76, 5.56, 6.35, 7.94, 9.525, 12.7, 15.
 /// a 6.35 mm triangle's edge works out to 10.998 mm, and its code is 11.
 const EDGE_SLACK: f64 = 0.02;
 
+/// What position 7 takes, for a refusal of a corner built in code.
+const CORNER_TAKES: &str =
+    "a radius of 00 to 99 (0.1 mm, not on shape R), a round corner (shape R only), or a facet: A D E F P Z and a clearance letter";
+
 /// One insert, as its designation code states it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct InsertSpec {
@@ -193,6 +202,47 @@ impl InsertSpec {
             return Err(pos(8, "suffix", bad.into(), "letters, digits, '-', '.' or '/'"));
         }
         Ok(Self { shape, clearance, tolerance, fixing, size, thickness, corner, hand: tail_hand(&tail), tail })
+    }
+
+    /// Refuse a spec built in code (its fields are public) that its own
+    /// text would refuse or read back as a different value: a tolerance
+    /// letter off the table or in lower case, a size off 01 to 99, a
+    /// corner the shape cannot have, a suffix character the parser
+    /// changes or refuses, a hand the suffix does not state. Each
+    /// refusal names the position. The letter enums and [`Thickness`]
+    /// hold only valid values, so they need no check.
+    pub fn check(&self) -> Result<(), DesignationError> {
+        let pos = |pos: u8, name, found: String, expected: &str| DesignationError::Position {
+            standard: STD,
+            pos,
+            name,
+            found,
+            expected: expected.to_owned(),
+        };
+        let t = self.tolerance;
+        if !(t.is_ascii_uppercase() && TOLERANCE_LETTERS.contains(t)) {
+            return Err(pos(3, "tolerance class", t.into(), TOLERANCE_LETTERS));
+        }
+        if !(1..=99).contains(&self.size) {
+            return Err(pos(5, "size", self.size.to_string(), "01 to 99"));
+        }
+        if parse_corner(self.shape, &self.corner.code()) != Some(self.corner) {
+            return Err(pos(7, "corner", format!("{:?}", self.corner), CORNER_TAKES));
+        }
+        let allowed = |c: char| c.is_ascii_uppercase() || c.is_ascii_digit() || matches!(c, '-' | '.' | '/');
+        if let Some(bad) = self.tail.chars().find(|&c| !allowed(c)) {
+            return Err(pos(8, "suffix", bad.into(), "upper-case letters, digits, '-', '.' or '/'"));
+        }
+        if self.hand != tail_hand(&self.tail) {
+            let found = self.hand.map_or_else(|| "none".to_owned(), |h| h.letter().to_string());
+            return Err(pos(8, "hand", found, "the hand that the suffix states"));
+        }
+        // The guard for the whole class: the value is the parse of its text.
+        let text = self.to_string();
+        if Self::parse(&text).as_ref() != Ok(self) {
+            return Err(DesignationError::NotCanonical { standard: STD, text });
+        }
+        Ok(())
     }
 
     /// The inscribed circle (mm): the series size whose edge, cut to

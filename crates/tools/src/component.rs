@@ -9,11 +9,14 @@
 //! this.
 //!
 //! The law: a component is checked when it is made
-//! ([`ToolComponent::new`]), and each refusal names the component.
+//! ([`ToolComponent::new`]), and each refusal names the component. The
+//! check covers the specs that it is given (an insert, a seat: their
+//! fields are public), and the connections are stored in their
+//! canonical form.
 
 use crate::connection_code::{ConnectionCode, ConnectionError};
 use crate::holder_library::BORE_SLACK;
-use crate::insert_iso1832::InsertSpec;
+use crate::insert_iso1832::{DesignationError, InsertSpec};
 use crate::insert_seat::InsertSeatSpec;
 use crate::tools::Tool;
 
@@ -60,6 +63,10 @@ pub enum ComponentError {
     Connection { name: String, side: &'static str, err: ConnectionError },
     Tool { name: String, why: String },
     ShankMismatch { name: String, shank_d: f64, mcs: String },
+    /// An insert spec that its ISO 1832 code would refuse.
+    Insert { name: String, err: DesignationError },
+    /// A seat spec that its ISO 5608 code would refuse.
+    Seat { name: String, port: String, err: DesignationError },
 }
 
 impl core::fmt::Display for ComponentError {
@@ -79,6 +86,8 @@ impl core::fmt::Display for ComponentError {
                 f,
                 "the solid tool '{name}' has a Ø{shank_d} mm shank, but its machine side says {mcs}"
             ),
+            Self::Insert { name, err } => write!(f, "the insert '{name}' is refused: {err}"),
+            Self::Seat { name, port, err } => write!(f, "the tool item '{name}' seat '{port}' is refused: {err}"),
         }
     }
 }
@@ -95,10 +104,11 @@ pub struct ToolComponent {
 
 impl ToolComponent {
     /// A checked component: a non-empty id and name, valid connection
-    /// codes, at least one seat on a tool item with unique `CSW<n>`
-    /// port names, and a sane solid tool whose shank matches its
-    /// machine side.
-    pub fn new(id: &str, name: &str, kind: ComponentKind) -> Result<Self, ComponentError> {
+    /// codes (stored in their canonical form), a valid insert spec, at
+    /// least one seat on a tool item with unique `CSW<n>` port names
+    /// and valid seat specs, and a sane solid tool whose shank matches
+    /// its machine side.
+    pub fn new(id: &str, name: &str, mut kind: ComponentKind) -> Result<Self, ComponentError> {
         let id = id.trim();
         let name = name.trim();
         if id.is_empty() {
@@ -108,17 +118,20 @@ impl ToolComponent {
             return Err(ComponentError::EmptyName { id: id.to_owned() });
         }
         let named = name.to_owned();
-        let conn = |side: &'static str, code: &ConnectionCode| {
-            code.check().map_err(|err| ComponentError::Connection { name: named.clone(), side, err })
+        let conn = |side: &'static str, code: &mut ConnectionCode| -> Result<(), ComponentError> {
+            *code = code.canonical().map_err(|err| ComponentError::Connection { name: named.clone(), side, err })?;
+            Ok(())
         };
-        match &kind {
-            ComponentKind::CuttingItem(CuttingItem::Insert(_)) => {}
+        match &mut kind {
+            ComponentKind::CuttingItem(CuttingItem::Insert(spec)) => {
+                spec.check().map_err(|err| ComponentError::Insert { name: named.clone(), err })?;
+            }
             ComponentKind::CuttingItem(CuttingItem::Solid { tool, mcs }) => {
                 conn("machine side", mcs)?;
                 if let Some(why) = tool.why_not_sane() {
                     return Err(ComponentError::Tool { name: named, why });
                 }
-                if let ConnectionCode::Cylindrical { d } | ConnectionCode::Weldon { d } = mcs
+                if let ConnectionCode::Cylindrical { d } | ConnectionCode::Weldon { d } = &*mcs
                     && (d - tool.shank_d).abs() > BORE_SLACK
                 {
                     return Err(ComponentError::ShankMismatch {
@@ -140,6 +153,8 @@ impl ToolComponent {
                     if seats[..i].iter().any(|s| s.port == seat.port) {
                         return Err(ComponentError::DuplicatePort { name: named, port: seat.port.clone() });
                     }
+                    let port = || seat.port.clone();
+                    seat.spec.check().map_err(|err| ComponentError::Seat { name: named.clone(), port: port(), err })?;
                 }
             }
             ComponentKind::AdaptiveItem { mcs, csw } => {

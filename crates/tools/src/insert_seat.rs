@@ -116,6 +116,24 @@ pub struct InsertSeatSpec {
     pub thickness: Option<Thickness>,
 }
 
+impl InsertSeatSpec {
+    /// Refuse a seat built in code (its fields are public) that its
+    /// holder code would refuse: an insert size off 01 to 99. The letter
+    /// enums, [`HolderStyle`] and [`Thickness`] hold only valid values.
+    pub fn check(&self) -> Result<(), DesignationError> {
+        if (1..=99).contains(&self.size) {
+            return Ok(());
+        }
+        Err(DesignationError::Position {
+            standard: STD,
+            pos: 9,
+            name: "insert size",
+            found: self.size.to_string(),
+            expected: "two digits, 01 to 99 (mm)".to_owned(),
+        })
+    }
+}
+
 /// A turning holder as its ISO 5608 code states it: the seat, and the
 /// rectangular shank that is its machine side.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

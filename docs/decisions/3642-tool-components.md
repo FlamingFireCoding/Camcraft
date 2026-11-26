@@ -9,6 +9,27 @@
 - `ToolComponent::new` checks a component when it is made. The fields are
   private, so a component that exists is valid. The id is a plain string;
   #3644 and #3645 decide how ids are made and stored.
+- Validation rule (#4096 review): a component checks each value that
+  it is given, also the values built in code. `InsertSpec` and
+  `InsertSeatSpec` keep their public fields (the parsers and the
+  stacked #3643 build them), and each has a `check()`. `InsertSpec::check`
+  refuses a tolerance letter off the table or in lower case, a size off
+  01 to 99, a corner that the shape cannot have, a suffix character that
+  the parser changes or refuses, and a hand that the suffix does not
+  state. Then it confirms that the value is the parse of its own text,
+  which closes the whole class. `InsertSeatSpec::check` refuses an
+  insert size off 01 to 99; its letters, its style and its thickness are
+  types that hold only valid values. `ToolComponent::new` runs both
+  checks and names the component, the seat port and the position.
+  `check_insert_fit` runs them again as a guard.
+- Connections are normalized, not refused: `ConnectionCode::canonical()`
+  is the value that the code's text parses to (`Hsk { form: 'a' }` is
+  `HSK-A63`, `Custom(" Shop pallet ")` is `CUSTOM:Shop pallet`).
+  `ToolComponent::new` stores the canonical form, and `takes` compares
+  canonical forms. An invalid code mates nothing. Thus validation, the
+  text round trip, the component and the fit agree. A strict refusal of
+  a non-canonical typed value was dropped: the parser already accepts
+  the same text in any case, so the typed value follows the same rule.
 - One `ConnectionCode` type serves both sides (ADINTMS and ADINTWS). A
   parent's workpiece side and a child's machine side then compare
   directly. The text form is our own (`BT40`, `HSK-A63`, `ER32`,
