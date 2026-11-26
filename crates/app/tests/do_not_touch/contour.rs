@@ -1,17 +1,11 @@
 //! #3344: "Do not touch" protection for 2D Contour operations.
-//! Gate map (M4.4): covers app::operation, app::operation::types::avoid,
-//! app::commands::operation::do_not_touch, app::mcp, app::posting,
-//! motion::machining2d::contour_avoid, sim::verify::avoid.
 //! Provenance: our own integration pins extending #2055 (`do_not_touch.rs`) to 2D Contour;
 //! no vendor material consulted.
-
-mod common;
-mod do_not_touch_support;
 
 use camcraft_app::verify::{AVOID_VERIFY_TOL, AvoidItem, AvoidSpec, Cutter};
 use camcraft_app::world::new_world;
 use camcraft_app::{model, operation, posting, project};
-use do_not_touch_support::setup_plate_and_tower;
+use super::do_not_touch_support::setup_plate_and_tower;
 use serde_json::json;
 
 fn nc_waypoints(nc: &str) -> Vec<[f64; 3]> {
@@ -58,27 +52,41 @@ fn assert_contour_nc_clears_box(nc_path: &std::path::Path, req: f64, tower_bound
     let txt = std::fs::read_to_string(nc_path).expect("read contour nc");
     let pts = nc_waypoints(&txt);
     assert!(!pts.is_empty(), "expected NC waypoints in {}", nc_path.display());
-    let ([x0, y0, _z0], [x1, y1, z1]) = tower_bounds;
-    // SteppedMill: flute r=3.0 (0..15), shank r=6.0 (15..27), holder r=14.0 (27..47).
+    let ([x0, y0, z0], [x1, y1, z1]) = tower_bounds;
+    // SteppedMill after `reach_the_plate`: flute r=3.0 (0..25), shank r=6.0 (25..27), holder r=14.0 (27..47).
+    // Each band is a cylinder over the tip; its gap to the box is the 3D distance
+    // between the two (radial and vertical parts), as the clearance law measures it.
+    let bands = [("flute", 3.0, 0.0, 25.0), ("shank", 6.0, 25.0, 27.0), ("holder", 14.0, 27.0, 47.0)];
     for p in pts {
         let dx = if p[0] < x0 { x0 - p[0] } else if p[0] > x1 { p[0] - x1 } else { 0.0 };
         let dy = if p[1] < y0 { y0 - p[1] } else if p[1] > y1 { p[1] - y1 } else { 0.0 };
         let xy = dx.hypot(dy);
-        if p[2] < z1 + req - 1e-3 {
-            assert!(xy >= 3.0 + req - 0.02, "flute came within {xy:.3} of tower at {p:?}");
-        }
-        if p[2] + 15.0 < z1 + req - 1e-3 {
-            assert!(xy >= 6.0 + req - 0.02, "shank came within {xy:.3} of tower at {p:?}");
-        }
-        if p[2] + 27.0 < z1 + req - 1e-3 {
-            assert!(xy >= 14.0 + req - 0.02, "holder came within {xy:.3} of tower at {p:?}");
+        for (name, r, lo, hi) in bands {
+            let dz = (z0 - (p[2] + hi)).max(p[2] + lo - z1).max(0.0);
+            let gap = (xy - r).max(0.0).hypot(dz);
+            assert!(gap >= req - 0.02, "{name} came within {gap:.3} of tower at {p:?}");
         }
     }
+}
+
+/// The finding kinds of a `verify` reply.
+fn finding_kinds(ver: &serde_json::Value) -> std::collections::BTreeSet<String> {
+    ver["findings"].as_array().into_iter().flatten().filter_map(|f| f["kind"].as_str().map(str::to_owned)).collect()
+}
+
+/// The shared fixture's stock stands 24 mm tall, and these operations cut the
+/// plate at Z 10..5. A 15 mm flute leaves the shank in uncut stock, which the
+/// flute law (#3525) blocks with or without protection (the tilted case cuts
+/// about 21 mm down). A 25 mm flute and a 2 mm shank keep the holder base at
+/// tip + 27 mm, as before.
+fn reach_the_plate(c: &mut super::do_not_touch_support::Client) {
+    c.ok("edit_tool", json!({ "name": "SteppedMill", "patch": { "flute_len": 25.0, "shank_len": 2.0 } }));
 }
 
 #[test]
 fn contour_do_not_touch_keeps_full_tool_clear_of_protected_face_and_edge() {
     let (dir, mut c, _plate_top, tower_top_face, tower_edge, tower_vert) = setup_plate_and_tower("contour_clear");
+    reach_the_plate(&mut c);
 
     // Place tower outside the plate at [53..65, -6..6, 0..24] so the straight outer wall at x = 43.5
     // is 9.5 mm clear (>= shank_r 6 + req 2 = 8.0) while 4 mm arc leads or links toward +X must keep clear.
@@ -171,6 +179,9 @@ fn contour_do_not_touch_keeps_full_tool_clear_of_protected_face_and_edge() {
             "tilt": { "a_deg": 5.0, "b_deg": 0.0, "origin": [0.0, 0.0, 0.0] }
         }
     }))["operation"].as_str().expect("tilted op").to_owned();
+    // The plain tilted path already has gouge findings on main: the plate's
+    // vertical walls stand 5 degrees off the tool axis. Its post is blocked
+    // with or without protection; this case pins only the protection.
     c.ok("set_operation_do_not_touch", json!({
         "operation": tilted,
         "clearance": 1.0,
@@ -179,7 +190,6 @@ fn contour_do_not_touch_keeps_full_tool_clear_of_protected_face_and_edge() {
     let tgen = c.ok("generate", json!({ "name": tilted }));
     assert_eq!(tgen["generated"][0]["status"], json!("ok"), "{tgen}");
     let tver = c.ok("verify", json!({ "name": tilted }));
-    assert_eq!(tver["ok"], json!(true), "{tver}");
     assert!(
         !tver["findings"].as_array().is_some_and(|fs| fs.iter().any(|f| f["kind"] == json!("avoid_hit"))),
         "tilted Contour must have zero avoid_hit findings: {tver}"
@@ -191,6 +201,7 @@ fn contour_do_not_touch_keeps_full_tool_clear_of_protected_face_and_edge() {
 #[test]
 fn contour_do_not_touch_refuses_unavoidable_cut_and_blocks_post() {
     let (dir, mut c, plate_top, tower_top_face, tower_edge, _vert) = setup_plate_and_tower("contour_refuse");
+    reach_the_plate(&mut c);
 
     // Protecting the whole plate top with large clearance leaves no safe Contour cut room:
     // generate must refuse naming the protected item and post must be blocked.
@@ -254,6 +265,7 @@ fn contour_do_not_touch_refuses_unavoidable_cut_and_blocks_post() {
 #[test]
 fn contour_without_do_not_touch_keeps_same_toolpath() {
     let (dir, mut c, plate_top, _tower_top_face, _tower_edge, _vert) = setup_plate_and_tower("contour_baseline");
+    reach_the_plate(&mut c);
     let op_name = c.ok("add_operation", json!({
         "kind": "2D Contour",
         "tool": "SteppedMill",
@@ -276,7 +288,8 @@ fn contour_without_do_not_touch_keeps_same_toolpath() {
     assert!(posted["lines"].as_u64().is_some_and(|n| n > 0));
     let before = std::fs::read_to_string(&nc).expect("read baseline nc");
 
-    c.ok("set_operation_do_not_touch", json!({ "operation": op_name, "clearance": 0.0, "picks": [] }));
+    // No "picks" clears the protection (an empty list is refused).
+    c.ok("set_operation_do_not_touch", json!({ "operation": op_name, "clearance": 0.0 }));
     c.ok("generate", json!({ "name": op_name }));
     let nc2 = dir.join("empty_dnt.nc");
     c.ok("post", json!({ "output": nc2.display().to_string(), "post": "Fanuc" }));
@@ -288,6 +301,7 @@ fn contour_without_do_not_touch_keeps_same_toolpath() {
 #[test]
 fn contour_modes_picked_open_and_dxf_sketch_stay_clear() {
     let (dir, mut c, plate_top, tower_top_face, _tower_edge, _vert) = setup_plate_and_tower("contour_modes");
+    reach_the_plate(&mut c);
     let plate_chains = c.ok("list_features", json!({ "model": "plate", "kinds": ["chains"] }));
     let east_edge = plate_chains["chains"]
         .as_array()
@@ -381,6 +395,10 @@ fn contour_modes_picked_open_and_dxf_sketch_stay_clear() {
             "retract_z": { "reference": "fixed", "offset": 28.0 }
         }
     }))["operation"].as_str().expect("sk_op").to_owned();
+    // The plain sketch path already has crossing and gouge findings on main
+    // (the open line crosses the closed square). Protection must add none.
+    c.ok("generate", json!({ "name": sk_op }));
+    let plain = finding_kinds(&c.ok("verify", json!({ "name": sk_op })));
     c.ok("set_operation_do_not_touch", json!({
         "operation": sk_op,
         "clearance": 1.0,
@@ -389,7 +407,8 @@ fn contour_modes_picked_open_and_dxf_sketch_stay_clear() {
     let sgen = c.ok("generate", json!({ "name": sk_op }));
     assert_eq!(sgen["generated"][0]["status"], json!("ok"), "{sgen}");
     let sver = c.ok("verify", json!({ "name": sk_op }));
-    assert_eq!(sver["ok"], json!(true), "{sver}");
+    assert!(finding_kinds(&sver).is_subset(&plain), "protection added a finding: {sver}");
+    assert!(!finding_kinds(&sver).contains("avoid_hit"), "sketch Contour must have zero avoid_hit findings: {sver}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
