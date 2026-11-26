@@ -61,11 +61,12 @@ pub fn stl_bytes(tris: &[Triangle]) -> Vec<u8> {
 
 /// The binary STL of `tris` as the file will hold it, and its facet
 /// count (#4182). A corner is written as `f32`, so corners closer than one
-/// `f32` step are one corner in the file: when any facet collapses there,
-/// the corners are welded at their written values (`repair::weld_at_f32`)
-/// and the result is checked again, so a file that is not a closed solid
-/// is refused by name, never written. Facets with nothing to collapse are
-/// written byte for byte as `stl_bytes` writes them.
+/// `f32` step are one corner in the file: when any facet collapses there
+/// or any two distinct corners meet, the corners are welded at their
+/// written values (`repair::weld_at_f32`) and the result is checked again,
+/// so a file that is not a closed solid is refused by name, never written.
+/// Facets whose corners all stay distinct are written byte for byte as
+/// `stl_bytes` writes them.
 pub fn file_bytes(tris: &[Triangle]) -> Result<(Vec<u8>, usize), String> {
     let welded = repair::weld_at_f32(tris).map_err(|e| format!("the mesh cannot be welded at its written corners: {e}"))?;
     let written: &[Triangle] = match &welded {

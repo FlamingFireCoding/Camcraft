@@ -208,20 +208,26 @@ fn area2(pts: &[Point3], t: [u32; 3]) -> f64 {
     n.dot(n)
 }
 
-/// Drop collapsed and zero-area triangles, then settle duplicates (the
-/// same vertex set, either winding) by edge parity (#4182): a set whose
-/// edges the rest of the mesh uses an even number of times keeps no
-/// copy (a back-to-back pair left where a closed body collapsed), any
-/// other set keeps its first copy (a stray copy on a closed solid).
-/// Keeping one of a back-to-back pair left its three edges odd, so the
-/// weld opened the closed mesh it was meant to clean. Compacts to the
-/// vertices still referenced; returns the dropped count.
-fn drop_degenerate(ix: &mut Indexed) -> usize {
+/// How `drop_degenerate` settles triangles that share one vertex set
+/// (either winding).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Duplicates {
+    /// The first copy stays (`weld`): a model's double-sided surface
+    /// keeps one side, never none.
+    KeepFirst,
+    /// By edge parity (`weld_at_f32` only, #4182): see `duplicate_sets`.
+    ByParity,
+}
+
+/// Drop collapsed and zero-area triangles, then settle duplicates as
+/// `duplicates` says. Compacts to the vertices still referenced;
+/// returns the dropped count.
+fn drop_degenerate(ix: &mut Indexed, duplicates: Duplicates) -> usize {
     let before = ix.tris.len();
     let pts = &ix.pts;
     // A NaN area (overflowing cross product) fails the keep test too.
     ix.tris.retain(|&t| t[0] != t[1] && t[1] != t[2] && t[2] != t[0] && area2(pts, t) > ZERO_AREA2);
-    let keep_one = duplicate_sets(&ix.tris);
+    let keep_one = duplicate_sets(&ix.tris, duplicates);
     if !keep_one.is_empty() {
         let mut kept: HashSet<[u32; 3]> = HashSet::with_capacity(keep_one.len());
         ix.tris.retain(|&t| match keep_one.get(&sorted(t)) {
@@ -262,14 +268,21 @@ fn sorted(t: [u32; 3]) -> [u32; 3] {
 }
 
 /// Each vertex set that two or more triangles share, and whether one copy
-/// stays: true unless the triangles outside the set use every one of its
-/// three edges an even number of times.
-fn duplicate_sets(tris: &[[u32; 3]]) -> HashMap<[u32; 3], bool> {
+/// stays. `KeepFirst`: always. `ByParity`: unless the triangles outside
+/// the set use every one of its three edges an even number of times - a
+/// back-to-back pair left where a closed body collapsed at the written
+/// corners keeps no copy, a stray copy on a closed solid keeps one.
+/// Keeping one of such a pair left its three edges odd, so the weld
+/// opened the closed mesh it was meant to check.
+fn duplicate_sets(tris: &[[u32; 3]], duplicates: Duplicates) -> HashMap<[u32; 3], bool> {
     let mut copies: HashMap<[u32; 3], u32> = HashMap::new();
     for &t in tris {
         *copies.entry(sorted(t)).or_insert(0) += 1;
     }
     copies.retain(|_, c| *c > 1);
+    if duplicates == Duplicates::KeepFirst {
+        return copies.into_keys().map(|k| (k, true)).collect();
+    }
     if copies.is_empty() {
         return HashMap::new();
     }
@@ -294,21 +307,30 @@ fn duplicate_sets(tris: &[[u32; 3]]) -> HashMap<[u32; 3], bool> {
 /// The mesh a binary STL holds (#4182): every corner as the `f32` value
 /// the file writes. Two corners closer than one `f32` step are distinct
 /// in `facets` and one corner in the file, so their facets would be
-/// written with a repeated corner. When any facet collapses there, the
-/// rounded corners are welded bit-exact (`weld` at 0): collapsed facets
-/// dropped, duplicates settled by edge parity. `None` when nothing
-/// collapses: the facets write as they are. Refusals as `weld`'s.
+/// written with a repeated corner, or two facets' corners written as one
+/// (two edges become one edge on four facets). When any facet collapses
+/// there or any two distinct corners meet, the rounded corners are welded
+/// bit-exact (as `weld` at 0): collapsed facets dropped, meeting corners
+/// one vertex, and duplicates settled by edge parity, here only: the
+/// input is a closed surface, so a duplicate set in it is two faces the
+/// rounding laid together. `weld` keeps its first copy (a part model's
+/// double-sided surface keeps one side). `None` when no two corners meet:
+/// the facets write as they are. Refusals as `weld`'s.
 pub fn weld_at_f32(facets: &[Triangle]) -> Result<Option<RepairReport>, GeoError> {
     let q = |p: Point3| Point3::new(f64::from(p.x as f32), f64::from(p.y as f32), f64::from(p.z as f32));
     let collapses = facets.iter().any(|t| {
         let (a, b, c) = (q(t.a), q(t.b), q(t.c));
         a == b || b == c || c == a
     });
-    if !collapses {
+    // Adding 0.0 folds -0.0 into 0.0: one position, one key.
+    let key = |p: Point3| [(p.x + 0.0).to_bits(), (p.y + 0.0).to_bits(), (p.z + 0.0).to_bits()];
+    let mut first: HashMap<[u64; 3], [u64; 3]> = HashMap::new();
+    let meet = facets.iter().flat_map(|t| [t.a, t.b, t.c]).any(|p| *first.entry(key(q(p))).or_insert(key(p)) != key(p));
+    if !collapses && !meet {
         return Ok(None);
     }
     let rounded = facets.iter().map(|t| Triangle::new(q(t.a), q(t.b), q(t.c))).collect();
-    weld(&Mesh::from_facets(rounded), 0.0).map(Some)
+    weld_with(&Mesh::from_facets(rounded), 0.0, Duplicates::ByParity).map(Some)
 }
 
 /// Weld vertices within `tol` of each other (bit-exact only for `tol`
@@ -319,6 +341,10 @@ pub fn weld_at_f32(facets: &[Triangle]) -> Result<Option<RepairReport>, GeoError
 /// Refusals, by name: non-finite coordinates, a negative or non-finite
 /// tolerance, coordinates beyond the weld lattice.
 pub fn weld(mesh: &Mesh, tol: f64) -> Result<RepairReport, GeoError> {
+    weld_with(mesh, tol, Duplicates::KeepFirst)
+}
+
+fn weld_with(mesh: &Mesh, tol: f64, duplicates: Duplicates) -> Result<RepairReport, GeoError> {
     if !tol.is_finite() || tol < 0.0 {
         return Err(GeoError::Invalid(format!(
             "weld tolerance must be a finite, non-negative length (got {tol})"
@@ -327,7 +353,7 @@ pub fn weld(mesh: &Mesh, tol: f64) -> Result<RepairReport, GeoError> {
     let vertices_before = index_exact(mesh)?.pts.len();
     let mut ix = if tol > 0.0 { index_within(mesh, tol)? } else { index_exact(mesh)? };
     let welded = vertices_before.saturating_sub(ix.pts.len());
-    let dropped = drop_degenerate(&mut ix);
+    let dropped = drop_degenerate(&mut ix, duplicates);
     Ok(RepairReport {
         vertices_before,
         vertices_after: ix.pts.len(),

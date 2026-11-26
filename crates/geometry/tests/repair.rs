@@ -253,7 +253,7 @@ fn garbage_meshes_error_cleanly_never_panic() {
 }
 
 /// #4182: a closed thin tetrahedron near 150 mm (one f32 step there is
-/// 15.3 um) whose last two corners stand 3 um apart.
+/// 15.3 nm) whose last two corners stand 3 nm apart.
 fn thin_tetra() -> Vec<Triangle> {
     let (p0, p1) = (Point3::new(150.0, 150.0, 150.0), Point3::new(160.0, 150.0, 150.0));
     let (x, y) = (Point3::new(155.0, 155.0, 150.0), Point3::new(155.0, 155.0, 150.0 + 3e-6));
@@ -261,20 +261,20 @@ fn thin_tetra() -> Vec<Triangle> {
 }
 
 #[test]
-fn a_back_to_back_pair_left_by_a_weld_goes_and_the_mesh_stays_closed() {
-    // #4182: welded within 5 um, two facets collapse and the other two are
-    // one facet both ways. Keeping one of them left three open edges; the
-    // closed answer is no facet at all.
-    let m = Mesh::from_facets(thin_tetra());
-    assert_eq!(open_edge_count(&m), 0);
-    let r = repair::weld(&m, 5e-6).expect("welds");
+fn a_back_to_back_pair_left_at_the_written_corners_goes_and_the_mesh_stays_closed() {
+    // #4182: at the f32 corners the file holds, two facets collapse and the
+    // other two are one facet both ways. Keeping one of them left three
+    // open edges; the closed answer is no facet at all.
+    let tris = thin_tetra();
+    assert_eq!(open_edge_count(&Mesh::from_facets(tris.clone())), 0);
+    let r = weld_at_f32(&tris).expect("welds").expect("the last two corners meet at f32");
     assert_eq!((r.triangles_after, r.dropped), (0, 4));
     assert_eq!(open_edge_count(&r.mesh), 0);
 }
 
 #[test]
 fn corners_closer_than_an_f32_step_weld_at_their_written_values() {
-    // #4182: a closed tetrahedron with edge 0-1 split 3 um from corner 0.
+    // #4182: a closed tetrahedron with edge 0-1 split 3 nm from corner 0.
     // Written as f32 the two facets on that corner collapse; welded at the
     // written values they go and the tetrahedron is closed. A mesh with
     // nothing to collapse is left as it is.
