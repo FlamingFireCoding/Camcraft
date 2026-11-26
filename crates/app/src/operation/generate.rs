@@ -1361,7 +1361,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // still reports after the closing ladder is the closing
             // report's business (the simulation view), not a silent
             // extra here.
+            // #3329: the start / exit picks seat each level's passes; no
+            // pick is the match below, move for move.
+            let seam = machining3d::LevelSeam::of(&params.path_picks());
             let generated = match &avoid_spec {
+                spec if !seam.is_empty() => {
+                    machining3d::pocket3d_picked(&material.facets, &region, air_stock, &pp, *shell, mask, spec.as_ref(), &seam)
+                }
                 spec if troch => {
                     machining3d::pocket3d_trochoidal(&material.facets, &region, &pp, *rest_rough, mask, spec.as_ref())
                 }
