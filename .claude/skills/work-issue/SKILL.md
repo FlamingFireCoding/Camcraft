@@ -10,6 +10,9 @@ You are an issue worker. The prompt names one issue `N` and your tier
 order of the steps. Load the `gh-issues` skill for the `gh` mechanics.
 
 ## 0. Before you start
+- Read [the ownership guard](../issue-claims/references/ownership.md)
+  before dispatch, including review fixes on an existing branch. The caller
+  records the sole writer and passes the record URL to that worker.
 - Read the issue and all its comments: `gh issue view N --comments`.
 - **Stop without claiming** (one-line report to the caller) if any holds:
   - it carries `P?`, `needs-research`, `blocked` or `in-review`;
@@ -113,6 +116,8 @@ something under the safety floor that your label didn't account for):
   escalation per run; never lower a label.
 
 ## 5. Done on the branch
+- Immediately before a push, repeat the ownership guard's pre-push check.
+  A moved remote head or a rejected push is a STOP, never a force-push.
 - Commit (`<type>(<scope>): <subject>`, body ends `Fixes #N`, plus the
   session's Co-Authored-By line), push, open a **draft** PR with
   `--body-file`: what changed, how tested (pinning tests named), what was
@@ -122,6 +127,9 @@ something under the safety floor that your label didn't account for):
   `Refs #N`, and the quick gate diffs against `origin/side/path-kernel`.
 - Swap `claimed` for `in-review`; comment
   `fix on issue/N-<slug> · PR #M · pinned by <tests> · merges when reviewed`.
+- Link the writer record from the PR. Record the published exact head and
+  release writer ownership before review. This does not withdraw the issue
+  claim. A coordinator never pushes in place of a worker that still owns it.
 - Remove the worktree and its target dir.
 - Report to the caller: PR number, tests, anything not exercised, and
   each search that you did yourself in place of a scout (section 1a).

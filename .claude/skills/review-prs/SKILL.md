@@ -81,6 +81,13 @@ common case on a loop tick - keep it quiet).
 
 ## 2. Dispatch exactly one PR
 
+Read [the ownership guard](../issue-claims/references/ownership.md) before
+dispatch. Check the issue writer and the PR-level review owner on GitHub.
+Record the sole reviewer, exact head and base on the PR before dispatch.
+Pass that record URL to the reviewer. A live owner means stand down and name
+it. Keep the local `.claude/pr-review.lock` and its one-review rule as well;
+it does not coordinate different checkouts or machines.
+
 Take the oldest PR needing review - **one per invocation**; the next loop tick
 takes the next. Never launch two `PR-reviewer` agents at once.
 
@@ -91,6 +98,11 @@ takes the next. Never launch two `PR-reviewer` agents at once.
 3. On its completion notification, make sure the lock is gone (delete it if
    the agent failed to) and that `../cc-pr<N>-review` is removed. Do not poll
    while it runs.
+
+The reviewer re-reads the public records and head before posting its verdict
+or changing labels. If the head moved, stop without a current-head verdict.
+On completion or failure, append a review-owner release with the result URL
+or failure reason. Do not dispatch a replacement while the old owner is live.
 
 **Build on the runner when one is online** (#1420; maintainer, 2026-11-13:
 "then that is the decision, workflow_dispatch"). The agent, not this skill,
