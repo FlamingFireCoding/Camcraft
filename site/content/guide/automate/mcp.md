@@ -107,7 +107,8 @@ Keep this app open. Use the same port in the client configuration.
 Disconnect other attached clients: the app serves one at a time. For port
 `0`, read the selected port from the app's log and replace `7777` below.
 Headless mode needs no app and does not share the open window's document
-or undo history.
+or undo history. Each headless process owns its document in memory. Save
+the project explicitly if you need to keep later edits after it exits.
 
 #### Claude Code
 
