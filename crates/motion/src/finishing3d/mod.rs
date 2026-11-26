@@ -90,6 +90,7 @@ pub(crate) mod deburr_filter;
 pub(crate) mod deburr_scan;
 pub(crate) mod deburr_size;
 mod deburr_contact;
+mod deburr_seam;
 mod drape;
 mod edge;
 mod fill;
@@ -133,7 +134,8 @@ pub use params::{
 pub use center_cut::guard as center_cut_guard;
 pub use center_cut::guard_as as center_cut_guard_as;
 pub use center_cut::guard_shaped as center_cut_guard_shaped;
-pub use deburr::{deburr, deburr_edges, DeburrParams, UnreachableEdges};
+pub use deburr::{deburr, deburr_edges, deburr_seamed, DeburrParams, UnreachableEdges};
+pub use deburr_seam::ChainSeam;
 pub use deburr_filter::DeburrEdges;
 pub use deburr_size::{BreakMode, BreakProfile, DeburrBreak};
 pub use fill::{fill_openings, Filled};
