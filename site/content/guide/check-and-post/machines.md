@@ -13,7 +13,9 @@ declared. The kind decides
 which operations the document accepts, which posts the picker lists and
 which limits the program is checked against. See [Setups](@/guide/set-up/setups.md)
 for mounting a machine and [Reading a refusal](@/guide/reference/refusals.md) for the
-messages below.
+messages below. For how the machine file differs from the post, and where
+both sit between CAD and the machine, see
+[Model to Machine](@/guide/model-to-machine.md#machine-file-and-post-what-each-one-answers).
 
 | Kind | Operation families allowed | Posts that serve it | Shipped machine files |
 |---|---|---|---|
