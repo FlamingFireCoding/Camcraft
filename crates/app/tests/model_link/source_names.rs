@@ -1,8 +1,8 @@
 //! Shared fixtures of the #3915 pins: the area suite's block at two widths,
 //! with source face records of our own, and operations that hold picks on
-//! it. A record is landed on the mesh-built block directly
-//! (`source_faces::set`): the `.sc` import is what lands one in use, and
-//! its reader has its own pins.
+//! it. The record lands through the import command
+//! (`ImportModel::source_faces`), as a `.sc` import lands it; the `.sc`
+//! reader has its own pins.
 //! Provenance: our own fixtures; no vendor material consulted.
 
 #![allow(dead_code)]
@@ -12,7 +12,7 @@ use std::sync::Arc;
 use flecs_ecs::prelude::World;
 
 use camcraft_app::commands::update_model_follow::FollowReport;
-use camcraft_app::commands::{History, UpdateModel};
+use camcraft_app::commands::{History, ImportModel, UpdateModel};
 use camcraft_app::geometry::source_faces::{FaceName, FacetRange, SourceFaces};
 use camcraft_app::geometry::{Mesh, Point3, cube};
 use camcraft_app::operation::{FeatureSel, GeoSel, SrcRef};
@@ -98,14 +98,21 @@ pub fn on_part(f: FeatureSel) -> GeoSel {
     }
 }
 
-/// Land `rec` on the live part, as the `.sc` import would.
-pub fn give_record(world: &World, rec: &Arc<SourceFaces>) {
-    let e = model::find_by_name(world, PART).expect("the part");
-    source_faces::set(world, &e, Some(rec));
-    assert!(
-        source_faces::of(world, &e).is_some(),
+/// The area suite's block world (`area_support::block_world`), with the
+/// part imported carrying `rec`, the way a `.sc` import lands its record
+/// (`ImportModel::source_faces`).
+pub fn part_world(rec: Option<Arc<SourceFaces>>) -> World {
+    let mut import = ImportModel::from_mesh(PART, block(40.0));
+    let named = rec.is_some();
+    import.source_faces = rec;
+    let world = super::area_support::world_with(Some(import), 0.0, 10.0);
+    let e = model::find_by_name(&world, PART).expect("the part");
+    assert_eq!(
+        source_faces::of(&world, &e).is_some(),
+        named,
         "the record tiles the part"
     );
+    world
 }
 
 /// An operation entity landed as it is: the follow reads picks wherever

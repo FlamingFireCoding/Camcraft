@@ -11,7 +11,7 @@ use camcraft_app::commands::History;
 use camcraft_app::world::new_world;
 use camcraft_app::{model, project, source_faces};
 
-use super::area_support::{AreaControls, block_world, op, pocket, sel};
+use super::area_support::{AreaControls, op, pocket, sel};
 use super::source_names::*;
 
 const OP: &str = "op1";
@@ -47,8 +47,7 @@ fn has_record(world: &flecs_ecs::prelude::World) -> bool {
 
 #[test]
 fn the_record_rides_the_project_file_and_picks_follow_after_it_opens() {
-    let world = block_world();
-    give_record(&world, &plain(&block(40.0)));
+    let world = part_world(Some(plain(&block(40.0))));
     land_op(
         &world,
         OP,
@@ -96,8 +95,7 @@ fn the_record_rides_the_project_file_and_picks_follow_after_it_opens() {
 
 #[test]
 fn a_record_that_does_not_read_or_tile_is_dropped_and_the_file_opens() {
-    let world = block_world();
-    give_record(&world, &plain(&block(40.0)));
+    let world = part_world(Some(plain(&block(40.0))));
     let text = saved(&world, "dropped");
     let doc: Value = serde_json::from_str(&text).expect("json");
     let six = json!([{ "name": "a" }, { "name": "b" }, { "name": "c" }, { "name": "d" }, { "name": "e" }, { "name": "f" }]);
@@ -134,7 +132,7 @@ fn a_record_that_does_not_read_or_tile_is_dropped_and_the_file_opens() {
 
 #[test]
 fn a_model_without_a_record_saves_no_key() {
-    let world = block_world();
+    let world = part_world(None);
     let mut doc: Value = serde_json::from_str(&saved(&world, "none")).expect("json");
     assert!(
         part_row(&mut doc).get("source_faces").is_none(),
@@ -142,7 +140,7 @@ fn a_model_without_a_record_saves_no_key() {
     );
 
     // An update from a file with no names drops the record, and the key.
-    give_record(&world, &plain(&block(40.0)));
+    let world = part_world(Some(plain(&block(40.0))));
     let mut h = History::default();
     reimport(&world, &mut h, block(50.0), None);
     let mut doc: Value = serde_json::from_str(&saved(&world, "dropped-by-update")).expect("json");
@@ -151,7 +149,6 @@ fn a_model_without_a_record_saves_no_key() {
 
 #[test]
 fn hostile_names_leave_a_review_line_the_project_file_accepts() {
-    let world = block_world();
     let long = "r".repeat(300);
     let list = [
         "bottom",
@@ -161,10 +158,7 @@ fn hostile_names_leave_a_review_line_the_project_file_accepts() {
         long.as_str(),
         "left",
     ];
-    give_record(
-        &world,
-        &record(&block(40.0), names(&list), [0, 1, 2, 3, 4, 5]),
-    );
+    let world = part_world(Some(record(&block(40.0), names(&list), [0, 1, 2, 3, 4, 5])));
     let picks = vec![on_part(face(&world, FRONT)), on_part(face(&world, RIGHT))];
     land_op(
         &world,

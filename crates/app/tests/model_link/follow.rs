@@ -11,7 +11,7 @@ use camcraft_app::operation::{BoundaryMode, ExtraBoundary};
 use camcraft_app::posting;
 
 use super::area_support::{
-    AreaControls, BoundaryShape, ChainSide, OpenBoundary, TOOL, block_world, op, pocket, run, sel,
+    AreaControls, BoundaryShape, ChainSide, OpenBoundary, TOOL, op, pocket, run, sel,
 };
 use super::source_names::*;
 
@@ -20,8 +20,7 @@ const OP: &str = "op1";
 /// The block with its record, and one pocket whose source picks cube
 /// face `k`.
 fn picked(k: usize) -> (flecs_ecs::prelude::World, History) {
-    let world = block_world();
-    give_record(&world, &plain(&block(40.0)));
+    let world = part_world(Some(plain(&block(40.0))));
     land_op(
         &world,
         OP,
@@ -80,8 +79,7 @@ fn a_face_pick_follows_its_name_in_the_same_undo_step() {
 
 #[test]
 fn every_pick_store_of_an_operation_follows() {
-    let world = block_world();
-    give_record(&world, &plain(&block(40.0)));
+    let world = part_world(Some(plain(&block(40.0))));
     let area = AreaControls {
         extra: vec![ExtraBoundary {
             mode: BoundaryMode::Exclude,
@@ -169,8 +167,7 @@ fn a_pick_that_cannot_follow_stays_and_is_named_in_the_report() {
         ),
     ];
     for (case, old, new, why) in cases {
-        let world = block_world();
-        give_record(&world, &old);
+        let world = part_world(Some(old));
         let before = face(&world, TOP);
         land_op(
             &world,
@@ -229,7 +226,7 @@ fn a_carried_pick_a_model_without_a_record_and_a_plain_update_behave_as_today() 
     assert!(report.is_empty() && review_of(&world, OP).is_empty());
 
     // No record on the old model: nothing follows, the phrase is today's.
-    let world = block_world();
+    let world = part_world(None);
     let front = face(&world, FRONT);
     land_op(
         &world,
@@ -261,8 +258,7 @@ fn a_carried_pick_a_model_without_a_record_and_a_plain_update_behave_as_today() 
 
 #[test]
 fn a_do_not_touch_pick_that_cannot_follow_is_refused_at_generate() {
-    let world = block_world();
-    give_record(&world, &plain(&block(40.0)));
+    let world = part_world(Some(plain(&block(40.0))));
     let area = AreaControls {
         do_not_touch: camcraft_app::operation::DoNotTouch {
             clearance: 0.0,
@@ -305,8 +301,7 @@ fn a_do_not_touch_pick_that_cannot_follow_is_refused_at_generate() {
 
 #[test]
 fn a_followed_pick_holds_the_post_until_the_operation_is_marked_reviewed() {
-    let world = block_world();
-    give_record(&world, &plain(&block(40.0)));
+    let world = part_world(Some(plain(&block(40.0))));
     let mut h = History::default();
     let create = CreateOperation::new(
         &world,
