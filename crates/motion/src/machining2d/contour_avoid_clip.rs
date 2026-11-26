@@ -21,6 +21,10 @@ const CLIP_PARAM_EPS: f64 = 1e-8;
 const MIN_PIECE_LEN: f64 = 1e-4;
 /// Sampling interval (mm) when validating arcs against a keep-out region.
 const CHECK_STEP: f64 = 0.02;
+/// How far (mm) a cut end steps back from the keep-out boundary. A clip
+/// end lies on that boundary, and `Region::contains` counts the boundary
+/// as inside, so an end left there reads as blocked.
+const END_TRIM: f64 = 1e-3;
 const MAX_SAMPLES: usize = 4096;
 
 /// Result of clipping a closed loop or open polyline against the outside of a keep-out region.
@@ -147,11 +151,33 @@ pub(super) fn clip_polyline(pts: &[Point2], ko: &Region, closed: bool) -> Clip {
             last_piece.extend_from_slice(&first[1..]);
         }
     }
+    for v in &mut pieces {
+        trim_ends(v, ko);
+    }
     pieces.retain(|v| v.len() >= 2 && poly_len(v) > MIN_PIECE_LEN);
     if pieces.is_empty() {
         Clip::AllBlocked
     } else {
         Clip::Pieces(pieces)
+    }
+}
+
+/// Step each end of `v` that touches `ko` back along its own segment by
+/// [`END_TRIM`] (never past the segment's other point).
+fn trim_ends(v: &mut [Point2], ko: &Region) {
+    let n = v.len();
+    if n < 2 || poly_len(v) <= 2.0 * END_TRIM {
+        return;
+    }
+    let step = |end: Point2, next: Point2| {
+        let d = dist(end, next);
+        if d <= END_TRIM { end } else { lerp(end, next, END_TRIM / d) }
+    };
+    if ko.contains(v[0]) {
+        v[0] = step(v[0], v[1]);
+    }
+    if ko.contains(v[n - 1]) {
+        v[n - 1] = step(v[n - 1], v[n - 2]);
     }
 }
 

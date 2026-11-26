@@ -241,10 +241,10 @@ pub(super) fn push_open_piece(
                 b.push(MoveKind::Plunge, Point3::new(e2.x, e2.y, lead_top), Some(p.plunge_feed));
             }
         } else {
-            let step_center = if inside && !center_avoid.contains(e2) { &band.center } else { center_avoid };
-            let _ = cert_avoid;
-            let step_cert = Cert::Region(step_center);
-            let eng = Engage { p, center: step_center, cert: &step_cert, plan: &band.plan, m, legal: legal_entry };
+            // The bore side's entry room is the centre region less the
+            // keep-out, never the whole centre: an entry point outside that
+            // room grazes at itself, as `emit_band_avoid` does for a ring.
+            let eng = Engage { p, center: center_avoid, cert: cert_avoid, plan: &band.plan, m, legal: legal_entry };
             let step = Step {
                 arm,
                 e2,
@@ -252,7 +252,7 @@ pub(super) fn push_open_piece(
                 prev_z: p.clearance_z,
                 first: true,
                 opened: false,
-                inside: inside && !center_avoid.is_empty(),
+                inside: inside && center_avoid.contains(e2),
                 tabbed,
                 lead_top,
                 // A piece's first entry is the path's first engagement, from clearance.
