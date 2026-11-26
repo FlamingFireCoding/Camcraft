@@ -36,6 +36,18 @@ pass direction with the picks.
   the cut, so the raster's last pass is not the exit;
 - a picked corner that the area controls clip away.
 
+**Both picks on one raster.** The Deburr slice (#4168) refuses by name
+when the start and the exit pick one chain while other chains exist. The
+3D Finish has one raster, and the start and exit are its two ends, so
+the question is the same: an exit that the start's order cannot end at.
+The rule is also the same: a refusal by name, never a moved exit. The
+raster seam keeps only the orders whose start is near the start pick and
+whose end is near the exit pick. If none is left, it refuses: "exit
+point (x, y): a raster that starts at the start point ends at ... - pick
+near that end, or clear the exit point". Both picks at one corner are
+refused in this way. Keeping both picks by a re-trace (as a closed
+Deburr chain does) would cut the raster twice, so it is not done.
+
 **The one rule for a moved corner.** The last two refusals are one rule
 (`finishing3d::raster_ends_kept`): the finished path is read again. Its
 first cut must land on the raster's first tip when a start is picked,
