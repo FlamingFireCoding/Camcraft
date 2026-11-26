@@ -6,6 +6,8 @@
 //!
 //! Gate map (#3324): covers app::operation (kinds pick capability,
 //! path_picks accessor, sane), app::mcp (tools schema, job kind list).
+//! Gate map (#3334): covers app::operation (plasma_op, the Plasma Profile
+//! picks), camcraft_motion::plasma (picks, emit).
 //! #3330: app::operation (generate, the 5-Axis Contour arm) and
 //! motion::finishing3d (ring_seam) through the application.
 //! Gate map (#3331): covers app::operation (generate: the Facing, Profile
@@ -18,6 +20,9 @@
 mod sinker;
 
 mod common;
+// #3334: the Plasma Profile's picks (the pierce and the torch off).
+#[path = "start_exit_shared/plasma.rs"]
+mod plasma;
 // #3328: the hole order of Drill, Bore and Thread under the picks.
 #[path = "start_exit_shared/hole_order.rs"]
 mod hole_order;
@@ -76,6 +81,8 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
             // #3330: the 5-axis contour seats its waterline rings at the pick.
             OpType::Contour5D => assert_eq!(cap, PickCapability::Ring, "the 5-axis contour takes a ring pick"),
             OpType::WireContour => assert_eq!(cap, PickCapability::Threading, "the wire takes its threading point"),
+            // #3334: the pierce and the torch-off place on a closed contour.
+            OpType::PlasmaProfile => assert_eq!(cap, PickCapability::Ring, "the plasma profile takes a ring pick"),
             // #3326: the Face takes the corner of its first row and the side of its last.
             OpType::Face => assert_eq!(cap, PickCapability::Raster, "the face takes a raster pick"),
             // #3328: the first hole and the last hole of the list.
