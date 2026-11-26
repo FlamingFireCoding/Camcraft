@@ -54,7 +54,7 @@ fn push_intersections(a: Point2, b: Point2, c: Point2, d: Point2, ts: &mut Vec<f
     if denom.abs() > 1e-12 * ab_len2.sqrt() * ex.hypot(ey).max(1e-9) {
         let t = (cx * ey - cy * ex) / denom;
         let u = (cx * dy - cy * dx) / denom;
-        if t > CLIP_PARAM_EPS && t < 1.0 - CLIP_PARAM_EPS && u >= -1e-7 && u <= 1.0 + 1e-7 {
+        if t > CLIP_PARAM_EPS && t < 1.0 - CLIP_PARAM_EPS && (-1e-7..=1.0 + 1e-7).contains(&u) {
             ts.push(t);
         }
         return;

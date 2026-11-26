@@ -13,7 +13,7 @@ use super::contour_avoid_emit::{AvoidSink, emit_band_avoid};
 use super::contour_comp;
 use super::contour_depth::{Ladder, ladder, ladder_picked, picked_law};
 use super::contour_entry::say;
-use super::contour_region::{contour, contour_on_bodies, contour_on_part, contour_on_picked};
+use super::contour_region::{PartRef, contour, contour_on_bodies, contour_on_part, contour_on_picked};
 use super::contour_start;
 use super::face::GenError;
 
@@ -90,7 +90,7 @@ pub fn contour_on_picked_avoid(
 fn contour_impl_avoid(
     region: &Region,
     p: &ContourParams,
-    part: Option<(&[Triangle], &[std::ops::Range<usize>], bool)>,
+    part: Option<PartRef<'_>>,
     avoid: &AvoidSpec,
 ) -> Result<Toolpath, GenError> {
     p.validate()?;

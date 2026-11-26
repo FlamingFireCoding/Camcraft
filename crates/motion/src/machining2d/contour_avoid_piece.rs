@@ -115,6 +115,10 @@ pub(super) fn rotate_clear_start(pts: Vec<Point2>, ko_entry: &Region) -> Option<
     None
 }
 
+/// One planned window of a ring: the polyline, its walk, the lead-in
+/// start, the lead-in and the lead-out.
+pub(super) type Window = (Vec<Point2>, Vec<Seg>, Point2, Vec<Seg>, Vec<Seg>);
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn plan_window_avoid(
     ring: &Ring,
@@ -126,7 +130,7 @@ pub(super) fn plan_window_avoid(
     ko_entry: &Region,
     prior_z: &[Vec<Point2>],
     sink: &mut AvoidSink,
-) -> Option<(Vec<Point2>, Vec<Seg>, Point2, Vec<Seg>, Vec<Seg>)> {
+) -> Option<Window> {
     let poly = ring.arc_between(ke.0, ke.1);
     if poly.len() < 2 {
         return None;
