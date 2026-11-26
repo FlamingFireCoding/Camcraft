@@ -33,6 +33,9 @@ mod exit_pick;
 // #3215: a meshed model's circles and fillets posted as arcs.
 #[path = "wire_post/model_arcs.rs"]
 mod model_arcs;
+// #4045: the Sodick AQ600L machine file and the LN2W post on the EDM test parts.
+#[path = "wire_post/sodick_aq600l.rs"]
+mod sodick_aq600l;
 
 use flecs_ecs::prelude::World;
 
