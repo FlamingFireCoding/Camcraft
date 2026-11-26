@@ -897,7 +897,8 @@ function onCycle() {
 }
 function dwellAtBottom(z) {
   if (pendingDwell === null || !has(z) || Math.abs(z - pendingDwell.z) > DWELL_TOL) return;
-  block(["FUNCTION DWELL TIME" + fu(pendingDwell.s)]);
+  // #4093: ISO programs always use G04 F<s> (cycle 9 DWELL TIME). FUNCTION DWELL is not confirmed for ISO.
+  block(["G04", "F" + fu(pendingDwell.s)]);
   pendingDwell = null;
 }
 // A dwell whose chain never reached its bottom is refused, never lost.
