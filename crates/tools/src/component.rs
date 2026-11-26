@@ -64,9 +64,9 @@ pub enum ComponentError {
     Tool { name: String, why: String },
     ShankMismatch { name: String, shank_d: f64, mcs: String },
     /// An insert spec that its ISO 1832 code would refuse.
-    Insert { name: String, err: DesignationError },
+    Insert { name: String, err: Box<DesignationError> },
     /// A seat spec that its ISO 5608 code would refuse.
-    Seat { name: String, port: String, err: DesignationError },
+    Seat { name: String, port: String, err: Box<DesignationError> },
 }
 
 impl core::fmt::Display for ComponentError {
@@ -124,7 +124,7 @@ impl ToolComponent {
         };
         match &mut kind {
             ComponentKind::CuttingItem(CuttingItem::Insert(spec)) => {
-                spec.check().map_err(|err| ComponentError::Insert { name: named.clone(), err })?;
+                spec.check().map_err(|err| ComponentError::Insert { name: named.clone(), err: Box::new(err) })?;
             }
             ComponentKind::CuttingItem(CuttingItem::Solid { tool, mcs }) => {
                 conn("machine side", mcs)?;
@@ -154,7 +154,7 @@ impl ToolComponent {
                         return Err(ComponentError::DuplicatePort { name: named, port: seat.port.clone() });
                     }
                     let port = || seat.port.clone();
-                    seat.spec.check().map_err(|err| ComponentError::Seat { name: named.clone(), port: port(), err })?;
+                    seat.spec.check().map_err(|err| ComponentError::Seat { name: named.clone(), port: port(), err: Box::new(err) })?;
                 }
             }
             ComponentKind::AdaptiveItem { mcs, csw } => {
