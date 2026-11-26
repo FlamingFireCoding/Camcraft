@@ -186,7 +186,7 @@ flag belongs to llama-server, not to CamCraft.
 
 Follow [Setting up an MCP client](@/guide/automate/mcp.md#setting-up-an-mcp-client)
 for installed executable paths and complete headless or attached examples
-for Claude Code, Claude Desktop, Codex and Cursor. That page also explains
+for Claude Code, Claude Desktop, Codex CLI and Cursor. That page also explains
 configuration files, quoting, restarts and connection failures.
 Other clients, such as Gemini CLI or Antigravity CLI, need local stdio MCP
 support; use their current configuration instructions with the same bridge.
