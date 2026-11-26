@@ -91,6 +91,11 @@ pub mod frame;
 pub mod tool_assembly;
 #[cfg(test)]
 mod tool_assembly_tests;
+// #3643: lathe tool assemblies - the nose centre as the tip, the
+// orientation, the turning values and the clearance bands.
+pub mod lathe_assembly;
+#[cfg(test)]
+mod lathe_assembly_tests;
 
 // #743: DXF half-profile parsing and projection into validated holder profiles.
 pub mod tool_profile_dxf;
