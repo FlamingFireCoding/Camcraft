@@ -14,10 +14,6 @@
 //! and poses and links the passes radially on the retract cylinders
 //! (`rotary_flow_emit`) - ball-center ladders, tool tips out.
 //!
-//! This first slice needs at least two chains and a ball-nose tool;
-//! empty, off-model, on-axis, reversed and degenerate picks are
-//! refused by name, never guessed past.
-//!
 //! This first slice needed a ball-nose tool and clean picks: empty,
 //! off-model, on-axis and degenerate picks are refused by name,
 //! never guessed past, and a chain wound against its pair is walked
@@ -30,8 +26,9 @@
 //! once; a single chain machines the full revolution as its own
 //! next lap, unless it turns at one station and one radius - a ring
 //! whose lap sweeps no band area, refused by name; and a set that
-//! cannot tile - chains that meet or cross, bands that double back -
-//! is refused by name (`rotary_flow_set`).
+//! cannot tile - any two chains that meet or cross (#4032), bands
+//! that double back - is refused by name (`rotary_flow_set`,
+//! `rotary_flow_cross`).
 //!
 //! Provenance: cylindrical unwrapping and iso-parametric flow-line
 //! CAM on developed rotary surfaces from published 4-axis machining
@@ -46,6 +43,7 @@ use crate::tools::{Tool, ToolKind};
 
 use super::axis::Axis;
 use super::retip::radial_at;
+use super::rotary_flow_cross::refuse_crossed_set;
 use super::rotary_flow_emit::Emitter;
 use super::rotary_flow_guard::prove_path;
 use super::rotary_flow_pass::{boxes_of, flow_pass};
@@ -197,6 +195,10 @@ pub fn rotary_flow(
     // chain that turns at one axial station and one radius - a
     // ring, closed or open - sweeps no band when turned a lap:
     // refused by name before a pass is generated (PR #4018).
+    // The #4032 complete-set law: two guides that are NOT neighbours
+    // in the pick never meet or cross - the band loop below reads
+    // only the adjacent pairs. Refused by name before a band is cut.
+    refuse_crossed_set(&clean, eps2)?;
     let lap = clean.len() == 1;
     if lap {
         refuse_ring_lap(&tracks[0], cell)?;
