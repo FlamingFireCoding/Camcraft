@@ -81,20 +81,21 @@ pub fn extract_at(f: &SdfField, step: f64) -> Result<Vec<Triangle>, StockError> 
     extract_with(f, step, IsoMethod::default())
 }
 
-/// Extract at `step` by `method`. A dual mesh that is not closed (a
-/// surface reaching the grid's pad, a fold no quad ring closes) is never
-/// returned: the marching mesh of the same samples stands in, logged.
+/// Extract at `step` by `method`. A dual mesh with an edge not on exactly
+/// two facets (a surface reaching the grid's pad, a fold no quad ring
+/// closes, flat fins on one edge: #4122) is never returned: the marching
+/// mesh of the same samples stands in, logged.
 pub fn extract_with(f: &SdfField, step: f64, method: IsoMethod) -> Result<Vec<Triangle>, StockError> {
     let g = sample(f, step)?;
     match method {
         IsoMethod::Marching => Ok(marching(&g)),
         IsoMethod::Dual => {
             let tris = super::dual::contour(&g);
-            let open = open_edges(&tris);
-            if open == 0 {
+            let unpaired = unpaired_edges(&tris);
+            if unpaired == 0 {
                 Ok(tris)
             } else {
-                tracing::warn!("iso-surface: the dual mesh has {open} open edges - marching tetrahedra stands in");
+                tracing::warn!("iso-surface: the dual mesh has {unpaired} edges not on two facets - marching tetrahedra stands in");
                 Ok(marching(&g))
             }
         }
@@ -242,6 +243,22 @@ fn tet(out: &mut Vec<Triangle>, p: [Point3; 4], v: [f64; 4]) {
 /// shared edge from the same two samples, so shared points are equal).
 #[must_use]
 pub fn open_edges(tris: &[Triangle]) -> usize {
+    edge_uses(tris).values().filter(|&&c| c % 2 == 1).count()
+}
+
+/// Edges not on exactly two triangles, after the same weld as
+/// [`open_edges`] (#4122): zero when every edge has two facets, as a
+/// solid's must. An edge on four or six facets (fins, two solids on one
+/// edge) passes `open_edges` and counts here. A triangle whose corners
+/// meet at the weld leaves an edge from a corner to itself, which counts
+/// however many facets it is on.
+#[must_use]
+pub fn unpaired_edges(tris: &[Triangle]) -> usize {
+    edge_uses(tris).iter().filter(|&(&(a, b), &c)| a == b || c != 2).count()
+}
+
+/// Each edge's facet count, its corners welded on the 1e-9 lattice.
+fn edge_uses(tris: &[Triangle]) -> HashMap<([i64; 3], [i64; 3]), u32> {
     let key = |p: Point3| [(p.x * 1e9).round() as i64, (p.y * 1e9).round() as i64, (p.z * 1e9).round() as i64];
     let mut count: HashMap<([i64; 3], [i64; 3]), u32> = HashMap::new();
     for t in tris {
@@ -251,7 +268,7 @@ pub fn open_edges(tris: &[Triangle]) -> usize {
             *count.entry(e).or_insert(0) += 1;
         }
     }
-    count.values().filter(|&&c| c % 2 == 1).count()
+    count
 }
 
 #[cfg(test)]
@@ -279,6 +296,28 @@ mod tests {
         // the tetrahedral split, so within 5% of 480.
         assert!(v > 0.0, "outward-facing: {v}");
         assert!((v - 480.0).abs() < 0.05 * 480.0, "volume {v} vs 480");
+    }
+
+    #[test]
+    fn two_cubes_on_one_edge_pass_open_edges_and_count_as_unpaired() {
+        // #4122: the shared edge is on four facets, an even count.
+        let a = cube(Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0));
+        let b = cube(Point3::new(1.0, 1.0, 0.0), Point3::new(2.0, 2.0, 1.0));
+        assert_eq!(unpaired_edges(&a.facets), 0, "one cube is a solid");
+        let both: Vec<Triangle> = a.facets.iter().chain(b.facets.iter()).copied().collect();
+        assert_eq!(open_edges(&both), 0);
+        assert_eq!(unpaired_edges(&both), 1, "the shared edge");
+    }
+
+    #[test]
+    fn a_facet_collapsed_at_the_weld_counts_as_unpaired() {
+        let mut tris = cube(Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)).facets.to_vec();
+        let (p, q) = (Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0));
+        // Two slivers on the same corner pair: every edge count is even.
+        tris.push(Triangle::new(p, Point3::new(1.0 + 1e-12, 0.0, 0.0), q));
+        tris.push(Triangle::new(p, q, Point3::new(1.0 + 1e-12, 0.0, 0.0)));
+        assert_eq!(open_edges(&tris), 0);
+        assert!(unpaired_edges(&tris) > 0);
     }
 
     #[test]

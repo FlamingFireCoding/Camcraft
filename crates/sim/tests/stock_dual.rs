@@ -12,7 +12,7 @@
 
 use camcraft_sim::cl::{Move, MoveKind};
 use camcraft_sim::geometry::{cube, Point3, Triangle};
-use camcraft_sim::stock_sim::iso::{extract, extract_with, open_edges, IsoMethod};
+use camcraft_sim::stock_sim::iso::{extract, extract_with, open_edges, unpaired_edges, IsoMethod};
 use camcraft_sim::stock_sim::{dist_seg_tri, SdfField, SdfTool, FIELD_BAND};
 
 const CELL: f64 = 1.0;
@@ -97,6 +97,9 @@ fn a_body_under_one_cell_never_panics_and_never_opens() {
     for method in [IsoMethod::Dual, IsoMethod::Marching] {
         if let Ok(tris) = extract_with(&f, CELL, method) {
             assert_eq!(open_edges(&tris), 0, "{method:?}: closed or empty");
+            // #4122: closed is not enough; the dual mesh here was three
+            // flat fins on one edge, volume 0, with no odd edge.
+            assert_eq!(unpaired_edges(&tris), 0, "{method:?}: every edge on two facets");
             assert!(tris.iter().all(|t| t.a.is_finite() && t.b.is_finite() && t.c.is_finite()));
         }
     }
