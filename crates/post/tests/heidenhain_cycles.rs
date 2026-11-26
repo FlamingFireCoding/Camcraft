@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use std::path::Path;
 
 // #4094: the G200/G205 parameter set of the stated control.
+#[path = "heidenhain_cycles/levels.rs"]
 mod levels;
 
 fn read(rel: &str) -> String {
