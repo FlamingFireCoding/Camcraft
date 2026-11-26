@@ -156,6 +156,8 @@ pub const MACHINES: &[(&str, AssetFile)] = &[
     // #1976: public Haas specifications; configurations and sources in docs/decisions/1976-haas-machines.md.
     ("Haas VF-2", AssetFile("haas-vf2.mch")),
     ("Haas VF-2SS", AssetFile("haas-vf2ss.mch")),
+    // #3682: extended Y-axis VF-2SS YT (508 mm Y travel); sources in docs/decisions/3682-haas-vf2ss-yt.md.
+    ("Haas VF-2SS YT", AssetFile("haas-vf2ssyt.mch")),
     ("Haas Mini Mill", AssetFile("haas-mini-mill.mch")),
     ("Haas DT-1", AssetFile("haas-dt1.mch")),
     ("Haas DM-1", AssetFile("haas-dm1.mch")),
@@ -418,6 +420,7 @@ fn embedded(kind: &str, file: &str) -> Option<&'static str> {
         ("machines", "doosan-dnm.mch") => Some(include_str!("../../../assets/machines/doosan-dnm.mch")),
         ("machines", "haas-vf2.mch") => Some(include_str!("../../../assets/machines/haas-vf2.mch")),
         ("machines", "haas-vf2ss.mch") => Some(include_str!("../../../assets/machines/haas-vf2ss.mch")),
+        ("machines", "haas-vf2ssyt.mch") => Some(include_str!("../../../assets/machines/haas-vf2ssyt.mch")),
         ("machines", "haas-mini-mill.mch") => Some(include_str!("../../../assets/machines/haas-mini-mill.mch")),
         ("machines", "haas-dt1.mch") => Some(include_str!("../../../assets/machines/haas-dt1.mch")),
         ("machines", "haas-dm1.mch") => Some(include_str!("../../../assets/machines/haas-dm1.mch")),
