@@ -21,3 +21,7 @@ post_suite!("sodick-ln2w.cps");
 // The post's own words on synthetic wire streams (start order, taper, skims, refusals).
 #[path = "sodick_ln2w/pins.rs"]
 mod pins;
+
+// The control-side wire offset (#4076): G41 / G42 H, G40 on the lead-out.
+#[path = "sodick_ln2w/offset.rs"]
+mod offset;
