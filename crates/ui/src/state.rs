@@ -4609,7 +4609,8 @@ impl State {
                     let (coarse, budget, hole) = (command.coarse_mm, command.facet_budget, command.hole);
                     match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_file_tolerance(command.file_tolerance).with_hole(hole).with_budget(budget).with_step_source(command.step_source).with_source(command.source).with_source_faces(command.source_faces)) {
                         Ok(upd) => {
-                            let summary = upd.changes().describe();
+                            // #3915: with the picks that followed SolidCraft names.
+                            let summary = upd.summary();
                             self.history.execute(&self.world, upd);
                             self.doc_version += 1;
                             self.note_recent_model(file.as_deref());
