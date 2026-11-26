@@ -174,7 +174,7 @@ pub enum CommandKind {
     /// via `posting::post_setup`.
     PostProgramDialog,
     ExportAgieInspection(String),
-    ImportAgieDrawing,
+    ImportInspectionDrawing,
     CreateAgieInspection {
         name: String, tool: String, drawing: String,
         chain: camcraft_app::geometry::sketch_chains::ChainId, start: [f64; 2], setup: Option<String>,
@@ -3537,7 +3537,7 @@ impl State {
             CommandKind::SaveProjectFile(path) => self.save_project_path(path),
             CommandKind::OpenRecent(kind, path) => self.open_recent(kind, path),
             CommandKind::ClearRecent(kind) => self.clear_recent(kind),
-            CommandKind::ImportAgieDrawing => self.import_agie_drawing(),
+            CommandKind::ImportInspectionDrawing => self.import_inspection_drawing(),
             CommandKind::CreateAgieInspection { name, tool, drawing, chain, start, setup } => {
                 self.create_agie_inspection(name, tool, drawing, chain, start, setup);
             }
@@ -3734,12 +3734,13 @@ impl State {
             CommandKind::AddTool { name, tool } => match AddTool::with_holder(&self.world, &name, tool, HolderPick::MachineDefault) {
                 Ok(command) => {
                     let number = command.number();
-                    let note = command.note();
+                    // #3792: a speed outside the machine's range is said here too.
+                    let notes: Vec<String> = command.note().into_iter().chain(command.warning()).collect();
                     self.history.execute(&self.world, command);
                     self.doc_version += 1;
-                    self.status = match note {
-                        Some(n) => format!("tool {name} added (T{number}) - {n}"),
-                        None => format!("tool {name} added (T{number})"),
+                    self.status = match notes.is_empty() {
+                        false => format!("tool {name} added (T{number}) - {}", notes.join(" - ")),
+                        true => format!("tool {name} added (T{number})"),
                     };
                 }
                 Err(err) => self.refuse(ErrorScope::Tool, format!("tool not added: {err}")),
@@ -4920,7 +4921,7 @@ impl State {
                 if !posted.bundle_files.is_empty() {
                     self.post_view = None;
                     self.status = format!(
-                        "Native wire EDM job prepared in {} ({} controller files, zero working steps)",
+                        "Agie Wire EDM job prepared in {} ({} controller files, zero working steps)",
                         path.display(), posted.bundle_files.len()
                     );
                     if let Some(review) = posted.controller_review {

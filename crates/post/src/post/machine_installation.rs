@@ -19,6 +19,7 @@ pub(super) fn checked_input(m: &Value) -> Result<Cow<'_, Value>, String> {
         installation::identity(m)?;
         installation::tool_change(m)?;
         installation::max_tool_number(m)?;
+        installation::d_number(m)?;
     }
     Ok(Cow::Borrowed(m))
 }
@@ -45,6 +46,9 @@ pub(super) fn mirror(m: &Machine, out: &mut Map<String, Value>) {
     }
     if let Some(n) = m.max_tool_number {
         out.entry("tooling").or_insert_with(|| json!({}))["max_tool_number"] = json!(n);
+    }
+    if let Some(rule) = m.d_number {
+        out.entry("tooling").or_insert_with(|| json!({}))["d_number"] = json!(rule.word());
     }
 }
 
@@ -74,5 +78,9 @@ pub(super) fn script_props(m: &Value, props: &mut Value) {
     // #4087: absent when unstated; the posts keep their own limit then.
     if let Some(n) = m.pointer("/tooling/max_tool_number").and_then(Value::as_u64) {
         props["toolNumberMax"] = json!(n);
+    }
+    // #4143: the stated D rule ("first-edge" / "tool-number"); absent when unstated.
+    if let Some(rule) = m.pointer("/tooling/d_number").and_then(Value::as_str) {
+        props["dNumber"] = json!(rule);
     }
 }

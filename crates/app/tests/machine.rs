@@ -28,6 +28,15 @@ use camcraft_app::stock::StockShape;
 use camcraft_app::tools::catalog;
 use camcraft_app::world::new_world;
 
+// #2756: the file editor's axis chain and its rows, in this suite's
+// directory (#3187).
+#[path = "machine/axis_support.rs"]
+mod axis_support;
+#[path = "machine/axis_chain.rs"]
+mod axis_chain;
+#[path = "machine/axis_rows.rs"]
+mod axis_rows;
+
 fn catalog_tool(name: &str) -> camcraft_app::tools::Tool {
     catalog()
         .into_iter()
@@ -767,6 +776,7 @@ fn every_shipped_machine_mounts_and_speaks_its_declaration() {
         ("Doosan DNM 5700 + rotary table", Kind::Mill),
         ("Haas VF-2", Kind::Mill),
         ("Haas VF-2SS", Kind::Mill),
+        ("Haas VF-2SS YT", Kind::Mill),
         ("Haas Mini Mill", Kind::Mill),
         ("Haas DT-1", Kind::Mill),
         ("Haas DM-1", Kind::Mill),

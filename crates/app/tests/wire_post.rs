@@ -326,9 +326,11 @@ fn skim(id: &str, reverse: bool) -> WireSkim {
 }
 
 fn post_text(world: &World) -> String {
-    let out = std::env::temp_dir().join(format!("camcraft-wire-skims-{}.nc", std::process::id()));
+    // #4159: one directory for each call. Tests run in parallel threads of one
+    // process, and Windows refuses a write to a file that another thread holds.
+    let dir = tempfile::tempdir().expect("a temp folder");
+    let out = dir.path().join("camcraft-wire-skims.nc");
     let posted = posting::post_script(world, &out, cps(WIRE)).expect("the wire program posts");
-    let _ = std::fs::remove_file(&out);
     posted.program
 }
 

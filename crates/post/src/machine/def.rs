@@ -269,6 +269,9 @@ pub struct Machine {
     /// control's tool table holds. `None` when the file states none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tool_number: Option<u32>,
+    /// `tooling.d_number` (#4143): how the control numbers the tool call's D word.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub d_number: Option<super::DNumberRule>,
     /// Explicit `controller.rtcp` capability flag (#1962); `None` infers from tilt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub controller_rtcp: Option<bool>,
