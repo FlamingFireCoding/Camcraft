@@ -19,6 +19,8 @@ use super::types::{OpParams, OpType};
 pub enum PickCapability {
     /// A point on a closed ring: the ring is re-sequenced to start there
     /// (the 2D contour). Snaps to a wall. Takes a start and an exit.
+    /// The Sinker Burn's ring is its orbit (#3333): the pick is an angle
+    /// round the burn position.
     Ring,
     /// A point inside the region: the descent place of the first pass
     /// and the end of the last pass. Snaps to a point in the region.
@@ -78,6 +80,12 @@ impl KindInfo {
             // the start pick and run on to the exit pick.
             OpType::Contour | OpType::Contour5D => PickCapability::Ring,
             OpType::WireContour => PickCapability::Threading,
+            // #3326: the corner of the first row, the side of the last.
+            OpType::Face => PickCapability::Raster,
+            // #3333: the orbit ring round the burn position, and the two
+            // ends of the side move.
+            OpType::SinkerBurn => PickCapability::Ring,
+            OpType::SinkerSideBurn => PickCapability::Ends,
             OpType::Probe => PickCapability::NotTaken(PICK_NO_PATH),
             // #3334: the pierce and the torch-off place on a closed contour.
             OpType::PlasmaProfile => PickCapability::Ring,
@@ -88,8 +96,7 @@ impl KindInfo {
             OpType::Threading => PickCapability::NotTaken(PICK_THREAD_LAW),
             // #3325: the end where the pass starts, and where it stops.
             OpType::Slot => PickCapability::Ends,
-            OpType::Face
-            | OpType::Pocket
+            OpType::Pocket
             | OpType::Trace
             | OpType::Adaptive2D
             | OpType::Offset2D
@@ -120,8 +127,6 @@ impl KindInfo {
             // #1883: the waterjet's lead picks are owed (the plasma's: #3334).
             | OpType::WaterjetProfile
             | OpType::TrochoidalSlot
-            | OpType::SinkerBurn
-            | OpType::SinkerSideBurn
             | OpType::SlotUndercut
             // #2826: the flow band's own start and exit ride its
             // picked chains' own ends, the planner's choice.
@@ -274,6 +279,10 @@ impl OpParams {
             if matches!(self, OpParams::Contour { tilt: Some(_), .. }) {
                 return Some(format!("a {what} point is not taken on a tilted (3+2) contour yet - clear it or the tilt"));
             }
+            // #3326: the Face reads a pick in the setup's XY only.
+            if matches!(self, OpParams::Face { tilt: Some(_), .. }) {
+                return Some(format!("a {what} point is not taken on a tilted (3+2) face yet - clear it or the tilt"));
+            }
             // #3325: a pick is a model-frame point; the tilted slot's ends are not.
             if matches!(self, OpParams::Slot { tilt: Some(_), .. }) {
                 return Some(format!("a {what} point is not taken on a tilted (3+2) slot yet - clear it or the tilt"));
@@ -299,6 +308,9 @@ impl OpParams {
         }
         match self {
             OpParams::WireContour(w) => wire_exit_refusal(w),
+            // #3333: a pick that the sinker's orbit or side move cannot hold.
+            OpParams::SinkerBurn(p) => p.orbit_ends().err(),
+            OpParams::SinkerSideBurn(p) => p.side_ends().err(),
             _ => self.hole_order().err(),
         }
     }
