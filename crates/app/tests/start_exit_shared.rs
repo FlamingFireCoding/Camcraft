@@ -16,6 +16,8 @@
 //! Rough and Profile Finish picks), app::commands (EditOperationParams).
 //! Gate map (#3333, `start_exit_shared/sinker.rs`): covers
 //! motion::sinker_picks, app::operation (sinker_op, sinker_side_op).
+//! #3329 (`start_exit_shared/finish3d.rs`): app::operation (generate,
+//! the 3D Finish arm; pick_kinds) and motion::finishing3d (finish_seam).
 
 // #3333: the sinker kinds' orbit picks and side-move picks.
 #[path = "start_exit_shared/sinker.rs"]
@@ -84,6 +86,8 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
             OpType::Contour5D => assert_eq!(cap, PickCapability::Ring, "the 5-axis contour takes a ring pick"),
             // #3330: the 5-axis parallel starts at a raster corner.
             OpType::Parallel5D => assert_eq!(cap, PickCapability::Raster, "the 5-axis parallel takes a raster corner"),
+            // #3329: the 3D Finish starts at a corner of its Parallel raster.
+            OpType::Finish3D => assert_eq!(cap, PickCapability::Raster, "the 3D finish takes a raster corner"),
             OpType::WireContour => assert_eq!(cap, PickCapability::Threading, "the wire takes its threading point"),
             // #3334: the pierce and the torch-off place on a closed contour.
             OpType::PlasmaProfile => assert_eq!(cap, PickCapability::Ring, "the plasma profile takes a ring pick"),
@@ -191,3 +195,7 @@ mod contour5d;
 // #3330: the 5-Axis Parallel takes a start and an exit pick.
 #[path = "start_exit_shared/parallel5d.rs"]
 mod parallel5d;
+
+// #3329: the 3D Finish takes a start and an exit pick on its Parallel raster.
+#[path = "start_exit_shared/finish3d.rs"]
+mod finish3d;
