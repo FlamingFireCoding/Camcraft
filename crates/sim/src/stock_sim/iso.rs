@@ -24,9 +24,11 @@
 //!   sample (an absent body has no surface to extract), or a degenerate
 //!   cell is an `Err` by name - never a mesh with holes in it.
 
-use std::collections::HashMap;
-
 use crate::geometry::{Point3, Triangle};
+
+#[path = "iso_edges.rs"]
+mod edges;
+pub use edges::{open_edges, unpaired_edges};
 
 use super::field::SdfField;
 use super::kernel::StockError;
@@ -81,20 +83,21 @@ pub fn extract_at(f: &SdfField, step: f64) -> Result<Vec<Triangle>, StockError> 
     extract_with(f, step, IsoMethod::default())
 }
 
-/// Extract at `step` by `method`. A dual mesh that is not closed (a
-/// surface reaching the grid's pad, a fold no quad ring closes) is never
-/// returned: the marching mesh of the same samples stands in, logged.
+/// Extract at `step` by `method`. A dual mesh with an edge not on exactly
+/// two facets (a surface reaching the grid's pad, a fold no quad ring
+/// closes, flat fins on one edge: #4122) is never returned: the marching
+/// mesh of the same samples stands in, logged.
 pub fn extract_with(f: &SdfField, step: f64, method: IsoMethod) -> Result<Vec<Triangle>, StockError> {
     let g = sample(f, step)?;
     match method {
         IsoMethod::Marching => Ok(marching(&g)),
         IsoMethod::Dual => {
             let tris = super::dual::contour(&g);
-            let open = open_edges(&tris);
-            if open == 0 {
+            let unpaired = unpaired_edges(&tris);
+            if unpaired == 0 {
                 Ok(tris)
             } else {
-                tracing::warn!("iso-surface: the dual mesh has {open} open edges - marching tetrahedra stands in");
+                tracing::warn!("iso-surface: the dual mesh has {unpaired} edges not on two facets - marching tetrahedra stands in");
                 Ok(marching(&g))
             }
         }
@@ -257,23 +260,6 @@ fn tet(out: &mut Vec<Triangle>, p: [Point3; 4], v: [f64; 4]) {
         }
         _ => {}
     }
-}
-
-/// Edges used by an odd number of triangles: zero on a closed surface.
-/// Vertices are welded on the 1e-9 lattice (`extract` interpolates each
-/// shared edge from the same two samples, so shared points are equal).
-#[must_use]
-pub fn open_edges(tris: &[Triangle]) -> usize {
-    let key = |p: Point3| [(p.x * 1e9).round() as i64, (p.y * 1e9).round() as i64, (p.z * 1e9).round() as i64];
-    let mut count: HashMap<([i64; 3], [i64; 3]), u32> = HashMap::new();
-    for t in tris {
-        for (a, b) in [(t.a, t.b), (t.b, t.c), (t.c, t.a)] {
-            let (ka, kb) = (key(a), key(b));
-            let e = if ka <= kb { (ka, kb) } else { (kb, ka) };
-            *count.entry(e).or_insert(0) += 1;
-        }
-    }
-    count.values().filter(|&&c| c % 2 == 1).count()
 }
 
 #[cfg(test)]
