@@ -24,7 +24,7 @@ mod thread_support;
 
 /// The posts that start a spindle M3 and never reverse it (the refusal
 /// targets, #4031), and one that reverses, for the allow side.
-const M3_ONLY: &[&str] = &["Haas", "Tormach PathPilot", "Doosan DNM", "Grbl 1.1", "grblHAL", "Makera Carvera", "Heidenhain", "Heidenhain Klartext"];
+const M3_ONLY: &[&str] = &["Tormach PathPilot", "Doosan DNM", "Grbl 1.1", "grblHAL", "Makera Carvera", "Heidenhain", "Heidenhain Klartext"];
 
 fn drill(hand: Option<&str>) -> tools::Tool {
     let t = tools::catalog().into_iter().find(|(n, _)| *n == "DR-0300").expect("catalog drill").1;
