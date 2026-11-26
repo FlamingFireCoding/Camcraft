@@ -101,6 +101,7 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
             OpType::SinkerBurn => assert_eq!(cap, PickCapability::Ring, "the sinker burn takes a pick on its orbit"),
             OpType::SinkerSideBurn => assert_eq!(cap, PickCapability::Ends, "the side burn takes an end of its side move"),
             _ => {
+                // #4110: pin refusal text naming hole-order and sinker kinds.
                 let PickCapability::NotTaken(why) = cap else {
                     panic!("{}: only the contour, the wire, the face, the slot, the three turning kinds, the hole-order kinds and the sinker kinds take a pick", k.label)
                 };
