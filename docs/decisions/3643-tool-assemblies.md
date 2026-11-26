@@ -24,17 +24,32 @@
 - `projection_mm` is the stickout from the parent's port to the
   cutting tip. It is the same length as `HolderRef::projection` (nose
   face above the tip). Only a solid tool on a plain or Weldon bore (a
-  collet or a side-lock holder) takes it. It must be more than 0 and
-  must leave shank in the bore. Without it, the shank sits fully home:
-  a solid tool's MCS is at the back end of its shank.
+  collet or a side-lock holder) takes it. It must be more than 0, must
+  leave shank in the bore, and must not push the shank past a stated
+  bore stop. Without it, the shank sits fully home on the bore stop
+  that the parent's geometry states (`ComponentGeometry::with_stop`,
+  the depth from the port frame to the stop). A solid tool's MCS is at
+  the back end of its shank, so "home" moves that MCS the stop depth up
+  the port's Z. A shank mount with no stickout and no stated stop is
+  refused by name. The nose face is never a home position: there the
+  whole tool hangs out of the bore, the gauge length is too long by the
+  insertion depth, and the holder body is modelled too far from the
+  tip, so a holder collision could pass (#4119 review). The built-in
+  library holders (`holder_library`) state no bore depth or clamping
+  length, so `ComponentGeometry::holder` states no stop, and a solid
+  tool in such a holder needs a stated stickout. A shank on a taper
+  coupling still sits on the port: the coupling sets its position.
 - `z_rot_deg` turns the child about the mating Z axis. It moves the
   frames (and so an off-axis seat), not a revolved body.
 - The judged body is the shape the collision laws read today. One body
   is exactly its spun profile's `holder_profile()`, as
   `app::tool_body::build_library` makes it for a library holder.
-  Several bodies are united band by band (the larger radius wins). A
-  span that no body covers takes the smaller radius of its neighbours,
-  so the bands stay contiguous. Each body is checked as a spun profile
+  Several bodies are united band by band (the larger radius wins where
+  two bodies overlap, for example a collet body inside the chuck nose).
+  A span that no body covers takes the smaller radius of its
+  neighbours, so the bands stay contiguous. Both rules are pinned
+  (`overlapping_bodies_keep_the_larger_radius`,
+  `a_gap_between_bodies_takes_the_smaller_neighbour`). Each body is checked as a spun profile
   at its place in the tool frame, so a body below the tip or past the
   size caps is refused by name. A body that reaches into a solid tool's
   flutes is refused (the same `HolderProfile::enclose` test as
@@ -42,8 +57,9 @@
 - Indexable cutter: the cutting diameter is twice the distance of the
   insert's cutting point from the axis. The seat frame is that point.
   The corner radius is the insert's nose radius, half the diameter of a
-  round insert, and 0 for a wiper facet (a smaller corner radius never
-  makes the model larger than the real tool).
+  round insert, and 0 for a wiper facet. A sharp corner (0) makes the
+  model larger at the corner than the real chamfered or radiused tool.
+  This is the safe side for a gouge check.
 - A spindle assembly has one root, one active cutting item, and one
   child on each port. A port may be left unnamed only when the parent
   has one port. Fit refusals reuse the #3642 checks (`check_fit`).

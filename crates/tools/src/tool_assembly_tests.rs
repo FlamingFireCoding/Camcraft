@@ -107,24 +107,112 @@ fn a_collet_chuck_assembly_is_judged_as_the_library_holder() {
     assert!(body.profile.enclose(&tool).is_some());
 }
 
-/// The same pin for a Weldon holder with the shank fully home: the tip
-/// stands the tool's full length below the nose face.
+/// The same pin for a Weldon holder with a stated bore stop: with no
+/// stickout the shank sits home on the stop, so the tip stands the
+/// tool's length less the stop depth below the nose face - exactly as
+/// that stickout, stated, gives it.
 #[test]
 fn a_weldon_holder_with_the_shank_home_is_judged_as_the_library_holder() {
     let entry = find("BT40 Weldon 12 mm").unwrap_or_else(|e| panic!("{e}"));
     let tool = end_mill(12.0);
+    let depth = 0.5 * tool.shank_len;
+    let p = tool.flute_len + tool.shank_len - depth;
+    let holder = ComponentGeometry::holder(&entry, "CSW", entry.gauge_len)
+        .and_then(|g| g.with_stop("CSW", depth))
+        .unwrap_or_else(|e| panic!("{e}"));
+    let today = HolderRef::to(&entry, entry.gauge_len, p).points().unwrap_or_else(|e| panic!("{e}"));
+    let spun = SpunProfile::new(today).unwrap_or_else(|e| panic!("{e}"));
+    for mount in [on(0), stickout(0, p)] {
+        let nodes = [
+            node(adaptive("BT40 Weldon 12", "BT40", "WELDON 12"), holder.clone(), None),
+            node(solid(&tool, "WELDON 12"), ComponentGeometry::default(), mount),
+        ];
+        let r = ok(&nodes);
+        assert!((r.gauge_len - (p + entry.gauge_len)).abs() < 1e-9, "gauge {}", r.gauge_len);
+        let Some(body) = r.body else { panic!("no body") };
+        near_bands(body.profile.bands(), spun.holder_profile().bands());
+    }
+}
+
+/// A shank has a home only on a stated stop: with no stickout and no
+/// bore stop it is refused (the nose face is no stop), as it is when
+/// the stop is as deep as the tool is long, or when a stickout pushes
+/// the shank past the stop.
+#[test]
+fn a_shank_with_no_stated_stop_or_past_its_stop_is_refused() {
+    let entry = find("BT40 Weldon 12 mm").unwrap_or_else(|e| panic!("{e}"));
+    let tool = end_mill(12.0);
     let len = tool.flute_len + tool.shank_len;
     let holder = ComponentGeometry::holder(&entry, "CSW", entry.gauge_len).unwrap_or_else(|e| panic!("{e}"));
-    let nodes = [
-        node(adaptive("BT40 Weldon 12", "BT40", "WELDON 12"), holder, None),
+    let stickout_refused = |n: &[AssemblyNode], want: &str| match refused(n) {
+        AssemblyError::Stickout { ref name, why } => assert!(name == "end mill" && why.contains(want), "{why}"),
+        e => panic!("not a stickout refusal: {e}"),
+    };
+    let mut n = [
+        node(adaptive("BT40 Weldon 12", "BT40", "WELDON 12"), holder.clone(), None),
         node(solid(&tool, "WELDON 12"), ComponentGeometry::default(), on(0)),
     ];
-    let r = ok(&nodes);
-    let today = HolderRef::to(&entry, entry.gauge_len, len).points().unwrap_or_else(|e| panic!("{e}"));
-    let spun = SpunProfile::new(today).unwrap_or_else(|e| panic!("{e}"));
-    assert!((r.gauge_len - (len + entry.gauge_len)).abs() < 1e-9);
-    let Some(body) = r.body else { panic!("no body") };
-    near_bands(body.profile.bands(), spun.holder_profile().bands());
+    stickout_refused(&n, "no bore stop");
+    stickout_refused(&plain(&tool), "no bore stop");
+    let depth = 0.5 * tool.shank_len;
+    let stop = |d: f64| holder.clone().with_stop("CSW", d).unwrap_or_else(|e| panic!("{e}"));
+    n[0].geometry = stop(len);
+    stickout_refused(&n, "as deep as the tool");
+    n[0].geometry = stop(depth);
+    n[1].mount = stickout(0, len - depth - 1.0);
+    stickout_refused(&n, "past the bore stop");
+    n[1].mount = stickout(0, len - depth + 1.0);
+    assert!((ok(&n).gauge_len - (len - depth + 1.0 + entry.gauge_len)).abs() < 1e-9, "a shallower shank is legal");
+    assert_eq!(holder.clone().with_stop("CSW2", depth), Err(GeometryError::UnknownPort("CSW2".into())));
+    for bad in [0.0, -1.0, f64::NAN] {
+        assert!(matches!(holder.clone().with_stop("CSW", bad), Err(GeometryError::BadStop { .. })), "{bad}");
+    }
+}
+
+/// Where two bodies overlap the union keeps the larger radius: an ER
+/// collet whose body reaches 20 mm up into the chuck nose does not
+/// shrink the chuck there.
+#[test]
+fn overlapping_bodies_keep_the_larger_radius() {
+    let tool = end_mill(10.0);
+    let p = tool.flute_len + 20.0;
+    let pt = SpunPoint::line;
+    let pts = vec![pt(0.0, 0.0), pt(0.0, 10.0), pt(30.0, 10.0), pt(30.0, 0.0)];
+    let collet = ComponentBody::new(pts, -10.0).unwrap_or_else(|e| panic!("{e}"));
+    let nodes = [
+        node(adaptive("BT40 ER20 chuck", "BT40", "ER20"), axial(60.0, Some(cylinder(60.0, 17.5))), None),
+        node(adaptive("ER20 collet 10", "ER20", "CYL 10"), axial(0.0, Some(collet)), on(0)),
+        node(solid(&tool, "CYL 10"), ComponentGeometry::default(), stickout(1, p)),
+    ];
+    let Some(body) = ok(&nodes).body else { panic!("no body") };
+    let b = &body.profile;
+    assert!((b.bottom() - (p - 10.0)).abs() < 1e-9 && (b.top() - (p + 60.0)).abs() < 1e-9, "{:?}", b.bands());
+    for (z, r) in [(p - 5.0, 10.0), (p + 10.0, 17.5), (p + 40.0, 17.5)] {
+        assert!((b.reach_over(z, z) - r).abs() < 1e-9, "at {z}: {:?}", b.bands());
+    }
+}
+
+/// A span that no body covers, between two bodies, takes the smaller
+/// radius of its neighbours (the child's shank or spigot runs through
+/// it), never 0.
+#[test]
+fn a_gap_between_bodies_takes_the_smaller_neighbour() {
+    let tool = end_mill(12.0);
+    let p = tool.flute_len + 10.0;
+    let pt = SpunPoint::line;
+    let pts = vec![pt(0.0, 0.0), pt(0.0, 15.0), pt(20.0, 15.0), pt(20.0, 0.0)];
+    let lower = ComponentBody::new(pts, -50.0).unwrap_or_else(|e| panic!("{e}"));
+    let nodes = [
+        node(adaptive("BT40 to HSK-A63", "BT40", "HSK-A63"), axial(30.0, Some(cylinder(30.0, 40.0))), None),
+        node(adaptive("HSK-A63 Weldon 12", "HSK-A63", "WELDON 12"), axial(50.0, Some(lower)), on(0)),
+        node(solid(&tool, "WELDON 12"), ComponentGeometry::default(), stickout(1, p)),
+    ];
+    let Some(body) = ok(&nodes).body else { panic!("no body") };
+    let b = &body.profile;
+    assert!((b.bottom() - p).abs() < 1e-9 && (b.top() - (p + 80.0)).abs() < 1e-9, "{:?}", b.bands());
+    for (z, r) in [(p + 10.0, 15.0), (p + 35.0, 15.0), (p + 65.0, 40.0)] {
+        assert!((b.reach_over(z, z) - r).abs() < 1e-9, "at {z}: {:?}", b.bands());
+    }
 }
 
 /// Adapter + holder + tool: the lengths sum, each MCS sits where the
@@ -261,7 +349,7 @@ fn an_off_axis_body_and_degenerate_geometry_are_refused_by_name() {
     let off = Frame::new([5.0, 0.0, -60.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]).unwrap_or_else(|e| panic!("{e}"));
     n.insert(1, node(adaptive("ext", "CYL 12", "CYL 12"), axial(30.0, Some(cylinder(30.0, 9.0))), on(0)));
     n[0].geometry = ComponentGeometry::new(vec![("CSW".into(), off)], None, None).unwrap_or_else(|e| panic!("{e}"));
-    n[2].mount = on(1);
+    n[2].mount = stickout(1, tool.flute_len + 10.0);
     assert_eq!(refused(&n), AssemblyError::OffAxis { name: "ext".into() });
     assert_eq!(Frame::new([0.0; 3], [0.0; 3], [1.0, 0.0, 0.0]), Err(FrameError::ZeroAxis));
     assert_eq!(Frame::new([f64::NAN, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]), Err(FrameError::NonFinite));

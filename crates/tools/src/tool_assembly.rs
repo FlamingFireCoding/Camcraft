@@ -44,7 +44,12 @@ pub struct Mount {
     /// The turn (degrees) about the mating Z axis.
     pub z_rot_deg: f64,
     /// The stickout (mm) from the parent's port to the cutting tip of a
-    /// solid tool on a shank mount; `None`: the shank sits fully home.
+    /// solid tool on a shank mount (a plain or Weldon bore). `None`: the
+    /// shank sits fully home on the bore stop that the parent's geometry
+    /// states ([`ComponentGeometry::with_stop`]). A shank mount with no
+    /// stated stickout and no stated stop is refused: the nose face is
+    /// never a home position, because there the whole tool hangs out of
+    /// the bore and the holder is modelled too far from the tip.
     pub projection_mm: Option<f64>,
 }
 
@@ -109,12 +114,12 @@ pub fn resolve(nodes: &[AssemblyNode]) -> Result<ResolvedAssembly, AssemblyError
     if !gauge_len.is_finite() || gauge_len <= 0.0 || gauge_len > crate::holder_profile::MAX_BODY_HEIGHT {
         return Err(AssemblyError::BadGauge { gauge_len });
     }
-    let to_tool = |f: &Frame| {
+    let to_tool = |i: usize, f: &Frame| {
         let o = f.origin();
-        Frame::new([o[0], o[1], o[2] + gauge_len], f.z(), f.x()).map_err(|e| AssemblyError::frame(&nodes[0], e))
+        Frame::new([o[0], o[1], o[2] + gauge_len], f.z(), f.x()).map_err(|e| AssemblyError::frame(&nodes[i], e))
     };
-    let frames = frames.iter().map(to_tool).collect::<Result<Vec<_>, _>>()?;
-    let cip = to_tool(&cip)?;
+    let frames = frames.iter().enumerate().map(|(i, f)| to_tool(i, f)).collect::<Result<Vec<_>, _>>()?;
+    let cip = to_tool(cut, &cip)?;
     let solid = match nodes[cut].component.kind() {
         ComponentKind::CuttingItem(CuttingItem::Solid { tool, .. }) => Some(&**tool),
         _ => None,
@@ -246,9 +251,13 @@ fn place(
             name: n.component.name().to_owned(),
             what: "z_rot_deg",
         })?;
-        let placed = match m.projection_mm {
+        let shift = match m.projection_mm {
+            None => home_shift(nodes, k, m.parent, port)?,
+            Some(p) => Some(stickout_shift(nodes, k, m.parent, port, p)?),
+        };
+        let placed = match shift {
             None => turned,
-            Some(p) => turned.moved(stickout_shift(nodes, k, m.parent, port, p)?).map_err(|e| AssemblyError::frame(n, e))?,
+            Some(d) => turned.moved(d).map_err(|e| AssemblyError::frame(n, e))?,
         };
         frames[k] = Some(placed);
     }
@@ -268,11 +277,7 @@ fn stickout_shift(nodes: &[AssemblyNode], k: usize, parent: usize, port: &str, p
     let ComponentKind::CuttingItem(CuttingItem::Solid { .. }) = n.component.kind() else {
         return Err(no("only a solid tool has a stickout"));
     };
-    let bore = match nodes[parent].component.kind() {
-        ComponentKind::AdaptiveItem { csw, .. } if port == crate::component::ADAPTIVE_PORT => Some(csw),
-        _ => None,
-    };
-    if !matches!(bore, Some(ConnectionCode::Cylindrical { .. } | ConnectionCode::Weldon { .. })) {
+    if !shank_bore(nodes, parent, port) {
         return Err(no("a stickout needs a plain or Weldon bore (a collet or a side-lock holder)"));
     }
     let tip = -cip_local(n)?.origin()[2];
@@ -282,7 +287,45 @@ fn stickout_shift(nodes: &[AssemblyNode], k: usize, parent: usize, port: &str, p
     if p >= tip {
         return Err(no("the stickout leaves no shank in the bore"));
     }
+    if let Some(stop) = nodes[parent].geometry.stop(port)
+        && tip - p > stop + AXIS_TOL
+    {
+        return Err(no("the stickout pushes the shank past the bore stop"));
+    }
     Ok(tip - p)
+}
+
+/// Where a shank with no stated stickout sits: fully home on the
+/// parent's stated bore stop (its MCS moves the stop depth up the
+/// port's Z). A node that is not a solid tool on a plain or Weldon bore
+/// sits on the port itself (`None`). A shank mount without a stated
+/// stop is refused by name: the nose face is not a stop.
+fn home_shift(nodes: &[AssemblyNode], k: usize, parent: usize, port: &str) -> Result<Option<f64>, AssemblyError> {
+    let n = &nodes[k];
+    let ComponentKind::CuttingItem(CuttingItem::Solid { .. }) = n.component.kind() else {
+        return Ok(None);
+    };
+    if !shank_bore(nodes, parent, port) {
+        return Ok(None);
+    }
+    let no = |why: &'static str| AssemblyError::Stickout { name: n.component.name().to_owned(), why };
+    let Some(stop) = nodes[parent].geometry.stop(port) else {
+        return Err(no("the holder states no bore stop, so the shank has no home position: state a stickout"));
+    };
+    let tip = -cip_local(n)?.origin()[2];
+    if stop >= tip {
+        return Err(no("the bore stop is as deep as the tool is long, so no tool stands out of the bore"));
+    }
+    Ok(Some(stop))
+}
+
+/// Is `port` of `parent` a plain or Weldon bore that takes a shank?
+fn shank_bore(nodes: &[AssemblyNode], parent: usize, port: &str) -> bool {
+    matches!(
+        nodes[parent].component.kind(),
+        ComponentKind::AdaptiveItem { csw: ConnectionCode::Cylindrical { .. } | ConnectionCode::Weldon { .. }, .. }
+            if port == crate::component::ADAPTIVE_PORT
+    )
 }
 
 impl AssemblyError {

@@ -20,6 +20,8 @@ pub enum GeometryError {
     NonFiniteBase,
     Body(SpunError),
     Holder(LibraryError),
+    UnknownPort(String),
+    BadStop { port: String, depth: f64 },
 }
 
 impl core::fmt::Display for GeometryError {
@@ -30,6 +32,10 @@ impl core::fmt::Display for GeometryError {
             Self::NonFiniteBase => write!(f, "the body's base height must be a finite number"),
             Self::Body(e) => write!(f, "the body outline is refused: {e}"),
             Self::Holder(e) => write!(f, "the holder is refused: {e}"),
+            Self::UnknownPort(p) => write!(f, "the port '{p}' has no frame, so it cannot have a bore stop"),
+            Self::BadStop { port, depth } => {
+                write!(f, "the bore stop of the port '{port}' must be a finite depth more than 0 mm, not {depth}")
+            }
         }
     }
 }
@@ -73,6 +79,7 @@ pub struct ComponentGeometry {
     ports: Vec<(String, Frame)>,
     body: Option<ComponentBody>,
     cip: Option<Frame>,
+    stops: Vec<(String, f64)>,
 }
 
 impl ComponentGeometry {
@@ -92,7 +99,24 @@ impl ComponentGeometry {
                 return Err(GeometryError::DuplicatePort(name.clone()));
             }
         }
-        Ok(Self { ports, body, cip })
+        Ok(Self { ports, body, cip, stops: Vec::new() })
+    }
+
+    /// The same geometry with a bore stop on `port`: the shank of a
+    /// solid tool sits fully home when its back end is `depth` mm into
+    /// the bore, measured from the port frame along its +Z. Only a
+    /// stated stop gives a shank its home position (see
+    /// [`crate::tool_assembly::Mount::projection_mm`]).
+    pub fn with_stop(mut self, port: &str, depth: f64) -> Result<Self, GeometryError> {
+        if self.port(port).is_none() {
+            return Err(GeometryError::UnknownPort(port.to_owned()));
+        }
+        if !depth.is_finite() || depth <= 0.0 {
+            return Err(GeometryError::BadStop { port: port.to_owned(), depth });
+        }
+        self.stops.retain(|(n, _)| n != port);
+        self.stops.push((port.to_owned(), depth));
+        Ok(self)
     }
 
     /// One port on the axis, `depth` mm below the MCS, and an optional
@@ -106,7 +130,9 @@ impl ComponentGeometry {
     /// line, its one port `port` on the nose face `gauge_len` below,
     /// and its body the entry's own outline at that gauge length
     /// ([`HolderEntry::points`] with the nose at the body's base) - the
-    /// outline the holder library draws for a tool today.
+    /// outline the holder library draws for a tool today. The library
+    /// states no bore depth, so the port has no bore stop: a solid tool
+    /// in it needs a stated stickout, or a stop from [`Self::with_stop`].
     pub fn holder(entry: &HolderEntry, port: &str, gauge_len: f64) -> Result<Self, GeometryError> {
         let points = entry.points(0.0, gauge_len).map_err(GeometryError::Holder)?;
         let body = ComponentBody::new(points, -gauge_len)?;
@@ -117,6 +143,13 @@ impl ComponentGeometry {
     #[must_use]
     pub fn port(&self, port: &str) -> Option<&Frame> {
         self.ports.iter().find(|(n, _)| n == port).map(|(_, f)| f)
+    }
+
+    /// The bore stop of `port` (mm into the bore), if this geometry
+    /// states one.
+    #[must_use]
+    pub fn stop(&self, port: &str) -> Option<f64> {
+        self.stops.iter().find(|(n, _)| n == port).map(|(_, d)| *d)
     }
 
     #[must_use]

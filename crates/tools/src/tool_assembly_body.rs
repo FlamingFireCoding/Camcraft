@@ -80,6 +80,9 @@ pub(super) fn judged(
         many => {
             let bands = union(many.iter().flat_map(SpunProfile::bands).collect());
             let profile = HolderProfile::from_bands(bands);
+            // `spun` is only the drawn outline for display. If the united
+            // bands cannot be drawn, the outline is left out (`None`); the
+            // judged `profile` that the laws read is kept either way.
             AssemblyBody { spun: SpunProfile::from_bands(profile.bands()), profile }
         }
     };
