@@ -356,10 +356,17 @@ Do not re-review, re-gate or refresh anything between wave-1 merges.
    approved pushing there, otherwise ask the author once and leave it out of
    this run.
    Use the ownership guard and `/resolve-conflicts` pre-push check. Record
-   one writer before dispatch. Run `cargo check --tests` for affected code
-   after refresh and before push, even for SAME. A moved remote head or a
+   one writer before dispatch and pass its record URL, identity, base and
+   starting exact head. Run `cargo check --tests -p <affected-package>` for
+   affected code after refresh and before push, even for SAME. Shared inputs,
+   including `Cargo.lock`, select each affected package, one package at a time;
+   never `--workspace` or an unqualified full-workspace build. A moved remote head or a
    rejected push is a STOP, never a force-push. Release the writer after the
-   verified push; record one PR-level reviewer before any DELTA review.
+   verified push; record one collaborator reviewer before any DELTA review.
+   Pass the record URL, identity, base and starting exact head to that reviewer.
+   Require reads before work, a re-read of ownership and head before a verdict
+   or labels, and a release on completion, skip or failure. Contributor
+   pre-checks claim no reviewer ownership.
 2. Classify the refresh with `cargo xtask merge-plan --delta N --reviewed <reviewed sha>`:
    `SAME` or `MECHANICAL` -> merge it now (AGENTS.md says which PR comment to
    leave and when the PR is flagged ready again); `DELTA` -> one read-only

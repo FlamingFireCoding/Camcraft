@@ -129,8 +129,10 @@ from the PR. A live writer or reviewer means stand down and name it.
    **Compile before a refresh push**, also for a clean merge with no hand
    edits: run `cargo check --tests -p <affected-package>` for each affected
    code package on the final refreshed tree. Include packages changed by
-   the incoming base, not only the PR diff. Shared build inputs require all
-   affected workspace packages. Record the commands, results and local
+   the incoming base, not only the PR diff. Shared build inputs, including
+   `Cargo.lock`, require each affected package, one package at a time with
+   `-p`; never `--workspace` or an unqualified full-workspace build. Record
+   the commands, results and local
    exact head on the PR. A clean text merge is not a compile check. For a
    prose-only refresh with no affected code, record that scope and run the
    focused documentation checks. A failed check stops the push.
@@ -193,7 +195,11 @@ reports `CONFLICTING` without the label - add the label to those):
      reviewer checks only the remerge-diff of those merges (both sides kept,
      nothing from main dropped, targeted tests; rebuild only if logic was
      merged by hand). Before dispatch, use the ownership guard to record
-     one PR-level reviewer after the writer releases. Its labels follow
+     one collaborator reviewer after the writer releases. Pass the record URL,
+     identity, base and starting exact head in the brief. Require reads before
+     work, a re-read of ownership and head before a verdict or labels, and a
+     release on completion, skip or failure. Contributor pre-checks use no
+     reviewer ownership. Its labels follow
      the review-prs table (step 2b):
      `needs-rework` if the resolution is wrong (remove `merge-ready` in the
      same `gh pr edit` call: the two labels are never on one PR, AGENTS.md
