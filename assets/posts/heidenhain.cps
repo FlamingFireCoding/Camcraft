@@ -815,42 +815,10 @@ function onCycle() {
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   motion("G00", [wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.R, orgZ), "M99"]);
 }
-function supportsFunctionDwell() {
-  if (typeof machine === "undefined" || !machine) return true;
-  var id = machine.controllerIdentity;
-  if (!id || !id.model) return true;
-  var m = String(id.model).trim();
-  // iTNC 530 has no version that supports FUNCTION DWELL (it uses cycle 9 G04 F).
-  if (m === "iTNC 530" || m.indexOf("iTNC 530") >= 0) return false;
-  var nc = id.nc_software ? String(id.nc_software).trim() : "";
-  // Check known minimum NC software versions for FUNCTION DWELL:
-  // TNC 640: 34059x-07
-  // TNC 620: 81760x-04
-  // TNC 320: 77185x-04
-  // TNC 128: 77184x-05
-  // TNC7: all versions
-  if (m === "TNC7" || m.indexOf("TNC7") >= 0) return true;
-  var match = nc.match(/^(\d{5})\d-(\d{2})/);
-  if (match) {
-    var prefix = match[1];
-    var rel = parseInt(match[2], 10);
-    if (prefix === "34059") return rel >= 7;
-    if (prefix === "81760") return rel >= 4;
-    if (prefix === "77185") return rel >= 4;
-    if (prefix === "77184") return rel >= 5;
-    // Any older software family (e.g. 34049, 60642, 34055, 34056, 73498, 28047, etc.)
-    return false;
-  }
-  return true;
-}
-
 function dwellAtBottom(z) {
   if (pendingDwell === null || !has(z) || Math.abs(z - pendingDwell.z) > DWELL_TOL) return;
-  if (supportsFunctionDwell()) {
-    block(["FUNCTION DWELL TIME " + fu(pendingDwell.s)]);
-  } else {
-    block(["G04", "F" + fu(pendingDwell.s)]);
-  }
+  // #4093: ISO programs always use G04 F<s> (cycle 9 DWELL TIME). FUNCTION DWELL is not confirmed for ISO.
+  block(["G04", "F" + fu(pendingDwell.s)]);
   pendingDwell = null;
 }
 // A dwell whose chain never reached its bottom is refused, never lost.

@@ -6,7 +6,7 @@
 //! G71 *`; pp. 66/71/131: blocks end in `*`, coordinates are signed
 //! (`X+0 Y+38.5`); cycle names/Q inventories come from Cycle Programming
 //! manual 892905-25 §§3.3/3.8/4.2/4.3; p. 756: G54 = datum shift, G73 = rotation, G80 = working
-//! plane; p. 456: `FUNCTION DWELL TIME<seconds>`. These tests parse the
+//! plane; dwell uses G04 F<s> (cycle 9). These tests parse the
 //! posted programs and assert exactly that.
 //!
 //! Gate map (M4.4): covers post::post (assets/posts/heidenhain.cps).
@@ -278,7 +278,7 @@ fn heidenhain_keeps_the_legacy_no_spindle_tap_refusal_and_maps_presets() {
 }
 
 #[test]
-fn heidenhain_dwell_writes_g04_f_for_itnc_and_function_dwell_for_newer() {
+fn heidenhain_dwell_writes_g04_f_in_iso_for_all_controllers_and_defaults() {
     let make_stream = || {
         use cnc::CycleRec;
         use cnc::Record as R;
@@ -341,20 +341,41 @@ fn heidenhain_dwell_writes_g04_f_for_itnc_and_function_dwell_for_newer() {
     assert!(out.program.contains("G04 F0.5*"), "TNC 640 -06 writes G04 F: {}", out.program);
     assert!(!out.program.contains("FUNCTION DWELL"));
 
-    // 4. TNC 640 with -07 writes FUNCTION DWELL TIME with space
+    // 4. TNC 640 with -07 also writes G04 F in ISO
     let mut tnc640_new = itnc_mch.clone();
     tnc640_new["controller"] = json!({
         "identity": { "model": "TNC 640", "nc_software": "340590-07" }
     });
     let out = engine::run(&cps, &tnc640_new, &stream).expect("posts with tnc 640 -07");
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
-    assert!(out.program.contains("FUNCTION DWELL TIME 0.5*"), "TNC 640 -07 writes FUNCTION DWELL TIME with space: {}", out.program);
-    assert!(!out.program.contains("G04 F"));
+    assert!(out.program.contains("G04 F0.5*"), "TNC 640 -07 writes G04 F: {}", out.program);
+    assert!(!out.program.contains("FUNCTION DWELL"));
 
-    // 5. Default/generic machine without controller identity writes FUNCTION DWELL TIME with space
+    // 5. Spaced NC string (e.g. "340 590-06") writes G04 F
+    let mut tnc_spaced = itnc_mch.clone();
+    tnc_spaced["controller"] = json!({
+        "identity": { "model": "TNC 640", "nc_software": "340 590-06" }
+    });
+    let out = engine::run(&cps, &tnc_spaced, &stream).expect("posts with spaced nc");
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert!(out.program.contains("G04 F0.5*"), "Spaced NC software writes G04 F: {}", out.program);
+    assert!(!out.program.contains("FUNCTION DWELL"));
+
+    // 6. Unknown model (e.g. "TNC 426") writes G04 F
+    let mut tnc_unknown = itnc_mch.clone();
+    tnc_unknown["controller"] = json!({
+        "identity": { "model": "TNC 426", "nc_software": "280 472-01" }
+    });
+    let out = engine::run(&cps, &tnc_unknown, &stream).expect("posts with tnc 426");
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert!(out.program.contains("G04 F0.5*"), "Unknown model writes G04 F: {}", out.program);
+    assert!(!out.program.contains("FUNCTION DWELL"));
+
+    // 7. Default/generic machine without controller identity writes G04 F
     let base_mch: serde_json::Value =
         serde_json::from_str(&read("assets/machines/3axis-vmc.mch")).expect("vmc");
     let out = engine::run(&cps, &base_mch, &stream).expect("posts with base machine");
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
-    assert!(out.program.contains("FUNCTION DWELL TIME 0.5*"), "Default machine writes FUNCTION DWELL TIME with space: {}", out.program);
+    assert!(out.program.contains("G04 F0.5*"), "Default machine writes G04 F: {}", out.program);
+    assert!(!out.program.contains("FUNCTION DWELL"));
 }

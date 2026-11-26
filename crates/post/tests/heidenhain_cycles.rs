@@ -370,7 +370,7 @@ fn nonzero_entry_peck_and_deep_and_backbore_keep_the_expanded_chain() {
     let cuts: Vec<_> = bs.iter().filter(|b| b.starts_with("G01 ")).collect();
     assert_eq!(cuts.len(), 6, "both nonzero-R peck chains and the backbore chain stay explicit: {cuts:?}");
     assert!(cuts.iter().any(|b| b.contains("Z-3 F100")) && cuts.iter().any(|b| b.contains("Z-8 F100")), "the from-R infeed chain is preserved: {cuts:?}");
-    assert_eq!(bs.iter().filter(|b| b.starts_with("FUNCTION DWELL TIME ")).count(), 1);
+    assert_eq!(bs.iter().filter(|b| b.starts_with("G04 F")).count(), 1);
 }
 
 #[test]
