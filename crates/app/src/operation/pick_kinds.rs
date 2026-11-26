@@ -36,6 +36,11 @@ pub enum PickCapability {
     /// The wire's threading point (`WireContourOp.picks`) and its exit
     /// (#3332): the end of an open run, or where a closed cut leaves.
     Threading,
+    /// A point on an edge chain (#3329, the Deburr): the chain nearest
+    /// the start pick is cut first from its end nearest it (a closed
+    /// chain from its point nearest it), and the chain nearest the exit
+    /// pick is cut last to its end nearest it. Snaps to an edge.
+    Chain,
     /// A point in the lathe (Z, X) plane (#3331): the first pass starts
     /// there and the last pass leaves there. Each pick states its Z.
     Meridian,
@@ -63,7 +68,7 @@ impl PickCapability {
     pub fn takes(self, role: PickRole) -> bool {
         match self {
             Self::NotTaken(_) => false,
-            Self::Threading | Self::Ring | Self::Region | Self::HoleOrder | Self::Ends | Self::Raster | Self::Meridian => {
+            Self::Threading | Self::Ring | Self::Region | Self::HoleOrder | Self::Ends | Self::Raster | Self::Chain | Self::Meridian => {
                 matches!(role, PickRole::Start | PickRole::Exit)
             }
         }
@@ -99,6 +104,8 @@ impl KindInfo {
             // #3330: the raster corner where the cut starts, and the end
             // of the last pass.
             OpType::Parallel5D => PickCapability::Raster,
+            // #3329 slice 1: the chain cut first and the chain cut last.
+            OpType::Deburr => PickCapability::Chain,
             // #3329 slice 3: the descent place of each level's first
             // pass, and the end of the last pass.
             OpType::Pocket3D => PickCapability::Region,
@@ -110,7 +117,6 @@ impl KindInfo {
             | OpType::Chamfer2D
             | OpType::Circular
             | OpType::Finish3D
-            | OpType::Deburr
             | OpType::MultiAxisDeburr
             | OpType::Swarf
             | OpType::AdvancedSwarf

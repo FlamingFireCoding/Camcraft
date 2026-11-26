@@ -87,6 +87,8 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
             OpType::Contour5D => assert_eq!(cap, PickCapability::Ring, "the 5-axis contour takes a ring pick"),
             // #3330: the 5-axis parallel starts at a raster corner.
             OpType::Parallel5D => assert_eq!(cap, PickCapability::Raster, "the 5-axis parallel takes a raster corner"),
+            // #3329: the Deburr's chain cut first and its chain cut last.
+            OpType::Deburr => assert_eq!(cap, PickCapability::Chain, "the deburr takes an edge chain pick"),
             // #3329: the 3D Pocket's descent place and the end of its last pass.
             OpType::Pocket3D => assert_eq!(cap, PickCapability::Region, "the 3D pocket takes a region pick"),
             OpType::WireContour => assert_eq!(cap, PickCapability::Threading, "the wire takes its threading point"),
@@ -106,8 +108,9 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
             OpType::SinkerBurn => assert_eq!(cap, PickCapability::Ring, "the sinker burn takes a pick on its orbit"),
             OpType::SinkerSideBurn => assert_eq!(cap, PickCapability::Ends, "the side burn takes an end of its side move"),
             _ => {
+                // #4110: pin refusal text naming hole-order and sinker kinds.
                 let PickCapability::NotTaken(why) = cap else {
-                    panic!("{}: only the contour, the wire, the face, the slot and the three turning kinds take a pick", k.label)
+                    panic!("{}: only the contour, the wire, the face, the slot, the three turning kinds, the hole-order kinds and the sinker kinds take a pick", k.label)
                 };
                 assert!(!why.is_empty(), "{}: the reason is named", k.label);
             }
@@ -196,6 +199,10 @@ mod contour5d;
 // #3330: the 5-Axis Parallel takes a start and an exit pick.
 #[path = "start_exit_shared/parallel5d.rs"]
 mod parallel5d;
+
+// #3329: the Deburr takes a start and an exit pick.
+#[path = "start_exit_shared/deburr.rs"]
+mod deburr;
 
 // #3329: the 3D Pocket takes a start and an exit pick.
 #[path = "start_exit_shared/pocket3d.rs"]
