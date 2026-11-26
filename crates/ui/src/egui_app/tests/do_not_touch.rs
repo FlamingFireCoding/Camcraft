@@ -171,6 +171,66 @@ fn unsupported_op_shows_do_not_touch_note_without_pick_button() {
 }
 
 #[test]
+fn contour_boundary_shows_pick_protected_and_viewport_click_adds_rows() {
+    let _g = snapshot_guard();
+    let mut h = Harness::builder()
+        .with_size(Vec2::new(1400.0, 1100.0))
+        .build_ui_state(frame, ShellUi::seeded());
+    h.run_steps(2);
+    let (_face_top, face_other, edge) = {
+        let st = &mut h.state_mut().state;
+        seed_part_and_offset(st, OpType::Contour)
+    };
+    h.run_steps(3);
+    expand_boundary(&mut h);
+
+    assert!(
+        h.query_by_label("Pick protected").is_some(),
+        "Contour Boundary group must show Pick protected"
+    );
+    h.get_by_label("Pick protected").click();
+    h.run_steps(2);
+    assert_eq!(h.state().state.boundary_pick, Some(crate::state::BoundaryPick::DoNotTouch));
+
+    // Frame the block [0..30, 0..30, 0..15] cleanly in perspective and pick a face + an edge by real viewport click.
+    {
+        let st = &mut h.state_mut().state;
+        st.cam = crate::viewport::Camera::frame([15.0, 15.0, 7.5], 45.0).toward([0.6, -0.7, 0.5]);
+        st.geo_pick = crate::state::GeoPick::Face;
+    }
+    h.run_steps(2);
+    let click_at = |h: &mut Harness<'static, ShellUi>, q: [f64; 3]| {
+        let ([x0, y0], [x1, y1]) = h.state().state.viewport_rect;
+        let (w, ht) = (x1 - x0, y1 - y0);
+        let uv = crate::interact::project_uv(&h.state().state.cam.mvp(f64::from(w / ht)), q).expect("on screen");
+        let p = egui::pos2(x0 + uv[0] * w, y0 + uv[1] * ht);
+        h.input_mut().events.push(Event::PointerMoved(p));
+        h.run();
+        for pressed in [true, false] {
+            h.input_mut().events.push(Event::PointerButton {
+                pos: p,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+            h.run();
+        }
+        h.run_steps(2);
+    };
+    // Side face at x = 30 (faces[0] is min/max Z or X; pick x=30 face center, not face_top).
+    click_at(&mut h, [30.0, 15.0, 7.5]);
+    assert_eq!(h.state().state.op_ui.area.do_not_touch.picks.len(), 1, "face viewport click adds row: {}", h.state().state.status);
+    {
+        let st = &mut h.state_mut().state;
+        st.geo_pick = crate::state::GeoPick::Edge;
+    }
+    h.run();
+    click_at(&mut h, [30.0, 15.0, 15.0]);
+    assert_eq!(h.state().state.op_ui.area.do_not_touch.picks.len(), 2, "edge viewport click adds row: {}", h.state().state.status);
+    let _ = (face_other, edge);
+}
+
+#[test]
 fn avoid_marks_cache_reuses_still_frames_and_follows_input_changes() {
     let _g = snapshot_guard();
     let mut h = Harness::builder()
