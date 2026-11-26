@@ -208,26 +208,28 @@ fn area2(pts: &[Point3], t: [u32; 3]) -> f64 {
     n.dot(n)
 }
 
-/// Drop collapsed, zero-area and duplicate (same vertex set, either
-/// winding) triangles, then compact to the vertices still referenced.
-/// Returns the dropped count.
+/// Drop collapsed and zero-area triangles, then settle duplicates (the
+/// same vertex set, either winding) by edge parity (#4182): a set whose
+/// edges the rest of the mesh uses an even number of times keeps no
+/// copy (a back-to-back pair left where a closed body collapsed), any
+/// other set keeps its first copy (a stray copy on a closed solid).
+/// Keeping one of a back-to-back pair left its three edges odd, so the
+/// weld opened the closed mesh it was meant to clean. Compacts to the
+/// vertices still referenced; returns the dropped count.
 fn drop_degenerate(ix: &mut Indexed) -> usize {
-    let mut seen: HashSet<[u32; 3]> = HashSet::with_capacity(ix.tris.len());
     let before = ix.tris.len();
     let pts = &ix.pts;
-    ix.tris.retain(|&t| {
-        if t[0] == t[1] || t[1] == t[2] || t[2] == t[0] {
-            return false;
-        }
-        // A NaN area (overflowing cross product) fails the keep test too.
-        let keeps_area = area2(pts, t) > ZERO_AREA2;
-        if !keeps_area {
-            return false;
-        }
-        let mut key = t;
-        key.sort_unstable();
-        seen.insert(key)
-    });
+    // A NaN area (overflowing cross product) fails the keep test too.
+    ix.tris.retain(|&t| t[0] != t[1] && t[1] != t[2] && t[2] != t[0] && area2(pts, t) > ZERO_AREA2);
+    let keep_one = duplicate_sets(&ix.tris);
+    if !keep_one.is_empty() {
+        let mut kept: HashSet<[u32; 3]> = HashSet::with_capacity(keep_one.len());
+        ix.tris.retain(|&t| match keep_one.get(&sorted(t)) {
+            None => true,
+            Some(false) => false,
+            Some(true) => kept.insert(sorted(t)),
+        });
+    }
     let dropped = before - ix.tris.len();
     // Compact: a vertex only degenerate facets used must not linger in
     // the count the report states.
@@ -251,6 +253,62 @@ fn drop_degenerate(ix: &mut Indexed) -> usize {
     }
     ix.pts = pts;
     dropped
+}
+
+fn sorted(t: [u32; 3]) -> [u32; 3] {
+    let mut k = t;
+    k.sort_unstable();
+    k
+}
+
+/// Each vertex set that two or more triangles share, and whether one copy
+/// stays: true unless the triangles outside the set use every one of its
+/// three edges an even number of times.
+fn duplicate_sets(tris: &[[u32; 3]]) -> HashMap<[u32; 3], bool> {
+    let mut copies: HashMap<[u32; 3], u32> = HashMap::new();
+    for &t in tris {
+        *copies.entry(sorted(t)).or_insert(0) += 1;
+    }
+    copies.retain(|_, c| *c > 1);
+    if copies.is_empty() {
+        return HashMap::new();
+    }
+    let edges = |k: &[u32; 3]| [(k[0], k[1]), (k[1], k[2]), (k[0], k[2])];
+    let mut uses: HashMap<(u32, u32), u32> = copies.keys().flat_map(edges).map(|e| (e, 0)).collect();
+    for &t in tris {
+        for e in edges(&sorted(t)) {
+            if let Some(u) = uses.get_mut(&e) {
+                *u += 1;
+            }
+        }
+    }
+    copies
+        .iter()
+        .map(|(k, &c)| {
+            let outside_even = edges(k).iter().all(|e| uses.get(e).copied().unwrap_or(0).saturating_sub(c) % 2 == 0);
+            (*k, !outside_even)
+        })
+        .collect()
+}
+
+/// The mesh a binary STL holds (#4182): every corner as the `f32` value
+/// the file writes. Two corners closer than one `f32` step are distinct
+/// in `facets` and one corner in the file, so their facets would be
+/// written with a repeated corner. When any facet collapses there, the
+/// rounded corners are welded bit-exact (`weld` at 0): collapsed facets
+/// dropped, duplicates settled by edge parity. `None` when nothing
+/// collapses: the facets write as they are. Refusals as `weld`'s.
+pub fn weld_at_f32(facets: &[Triangle]) -> Result<Option<RepairReport>, GeoError> {
+    let q = |p: Point3| Point3::new(f64::from(p.x as f32), f64::from(p.y as f32), f64::from(p.z as f32));
+    let collapses = facets.iter().any(|t| {
+        let (a, b, c) = (q(t.a), q(t.b), q(t.c));
+        a == b || b == c || c == a
+    });
+    if !collapses {
+        return Ok(None);
+    }
+    let rounded = facets.iter().map(|t| Triangle::new(q(t.a), q(t.b), q(t.c))).collect();
+    weld(&Mesh::from_facets(rounded), 0.0).map(Some)
 }
 
 /// Weld vertices within `tol` of each other (bit-exact only for `tol`
