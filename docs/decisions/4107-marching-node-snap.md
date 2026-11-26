@@ -12,5 +12,3 @@ A first form tested the fraction `t` against `NODE_SNAP`. `t` and `1 - t` from t
 - Making `open_edges` count every edge in the same PR: it is used as a closed-mesh check by several tests, and a stricter count may be wanted separately. The pins count every edge themselves.
 
 **Cost to change later.** One constant and the snap in `tet`'s crossing. Going back is deleting it; the pins in `crates/sim/tests/stock_dual.rs` and the unit test in `iso.rs` name the behaviour.
-
-**Update (#4180).** The snap is now decided per sample (`on_surface` in `marching`), not per edge: see `4180-snap-per-sample.md`.

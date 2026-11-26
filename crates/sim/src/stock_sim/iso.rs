@@ -304,10 +304,12 @@ mod tests {
     }
 
     #[test]
-    fn an_edge_gets_the_same_corner_from_either_end_at_the_snap_threshold() {
+    fn an_edge_gets_the_same_corner_from_either_end_near_the_snap_threshold() {
         // #4107: one tetrahedron crosses the edge from its inside end (one
         // corner inside), its neighbour from the outside end (three inside).
-        // Near the snap threshold both must snap, or neither.
+        // Both must put the same corner on it. Since #4180 the snap is
+        // decided per sample (`on_surface`, before `tet`), so these tiny
+        // non-zero values interpolate, from either end alike.
         let x0 = NODE_SNAP / (1.0 - NODE_SNAP); // t = NODE_SNAP when the far value is 1
         for k in -4000_i64..4000 {
             let d = f64::from_bits((x0.to_bits() as i64 + k) as u64);
