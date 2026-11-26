@@ -80,6 +80,8 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
             // #3330: the 5-axis parallel starts at a raster corner.
             OpType::Parallel5D => assert_eq!(cap, PickCapability::Raster, "the 5-axis parallel takes a raster corner"),
             OpType::WireContour => assert_eq!(cap, PickCapability::Threading, "the wire takes its threading point"),
+            // #3326: the Face takes the corner of its first row and the side of its last.
+            OpType::Face => assert_eq!(cap, PickCapability::Raster, "the face takes a raster pick"),
             // #3328: the first hole and the last hole of the list.
             OpType::Drill | OpType::Bore | OpType::Thread => assert_eq!(cap, PickCapability::HoleOrder, "{}: a hole order pick", k.label),
             // #3331 slice 1: a point in the lathe (Z, X) plane.
@@ -92,7 +94,9 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
             OpType::SinkerBurn => assert_eq!(cap, PickCapability::Ring, "the sinker burn takes a pick on its orbit"),
             OpType::SinkerSideBurn => assert_eq!(cap, PickCapability::Ends, "the side burn takes an end of its side move"),
             _ => {
-                let PickCapability::NotTaken(why) = cap else { panic!("{}: this kind takes no pick", k.label) };
+                let PickCapability::NotTaken(why) = cap else {
+                    panic!("{}: only the contour, the wire, the face, the slot and the three turning kinds take a pick", k.label)
+                };
                 assert!(!why.is_empty(), "{}: the reason is named", k.label);
             }
         }
