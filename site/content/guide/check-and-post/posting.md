@@ -43,6 +43,7 @@ or machine configuration. Check its travel, tools and clearance before use.
 | Tormach PathPilot Plasma | `tormach-plasma.cps` | PathPilot plasma | `tormach-1300pl.mch` |
 | Generic ISO Wire EDM | `wire-iso.cps` | Generic RS-274 motion; EDM words from machine codes | No control-specific pairing; fill the wire machine's EDM code templates |
 | Sodick Wire EDM (Mark 21) | `sodick-wire.cps` | Sodick Mark 21 / EX21, vertical 2-axis work | `sodick-alc400g.mch`; select the post manually and replace example technology values |
+| Sodick Wire EDM (LN2W) | `sodick-ln2w.cps` | Sodick LN2W (AQ400L / AQ600L), vertical 2-axis work; millimetres only | `sodick-aq600l.mch` (its default post); replace example technology values |
 | Agie Wire EDM (AgieVision) | `agie-native.cps` | AgieVision ISO, SBR and SBL job files for the AGIECUT Classic 2S | `agiecut-classic-2s.mch` template; select the post manually |
 | G-EDM Wire EDM | `g-edm.cps` | G-EDM G-RBLv3, 2-axis wire | None dedicated |
 | Sinker EDM (ISO) | `sinker-iso.cps` | Generic ISO-style sinker; EDM words from machine codes | `sinker-edm.mch` template; fill its EDM code templates |

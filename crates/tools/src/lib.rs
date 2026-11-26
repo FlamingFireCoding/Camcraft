@@ -43,6 +43,8 @@ pub mod orientation;
 // #894: the thread mills - form constants, sanity and the pitch door.
 pub mod thread_mill;
 pub mod thread_hand;
+// #4031: a rotating cutter's hand (right M3, left M4), separate from the tap's thread hand.
+pub mod cutter_hand;
 // #1444: the undercut cutters - T-slot, keyseat, dovetail, lollipop.
 pub mod undercut;
 pub mod catalog_fields;

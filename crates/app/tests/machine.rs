@@ -773,6 +773,7 @@ fn every_shipped_machine_mounts_and_speaks_its_declaration() {
         ("EMCO VMC-200", Kind::Mill),
         ("Sinker EDM 3-axis (template)", Kind::SinkerEdm),
         ("Sodick ALC400G", Kind::WireEdm),
+        ("Sodick AQ600L", Kind::WireEdm),
         ("AGIECUT Classic 2S (template)", Kind::WireEdm),
     ];
     assert_eq!(camcraft_app::posting::shipped_machines().expect("the shipped machines read").len(), expectations.len(), "the pane offers what the tests pin");

@@ -561,6 +561,11 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // is the stamp itself.
         // v81 -> v82 (#2826): the Rotary Flow arm arrives; no v81
         // file names it, so nothing seats or moves - pure step-up.
+        // v82 -> v83 (#4031): a tool may state its cutter hand
+        // (`cutter_hand`, right M3 / left M4); absent is right-hand, as
+        // every v82 file cut. A v82 reader would silently drop a stated
+        // left hand and post M3 for a cutter that must reverse, so the
+        // ladder steps.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         if from < 68 {
