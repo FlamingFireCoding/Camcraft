@@ -258,9 +258,9 @@ fn checked(world: &World, op: &Operation, name: &str, source: Option<&str>) -> R
         return Err("The Agie Wire EDM job requires a through cut from stock top to bottom and the setup Z origin at stock top".into());
     }
     // Guide heights and posted stock Z are in the setup frame (stock top Z0).
-    if edm.lower_guide_z.is_some_and(|z| z > lo.z - oz)
-        || edm.upper_guide_z.is_some_and(|z| z < 0.0)
-    {
+    // #4039: work that meets a guide plane is in reach (within the guide-reach tolerance).
+    use crate::machine::wire_edm::{above_guide, below_guide};
+    if edm.lower_guide_z.is_some_and(|z| below_guide(lo.z - oz, z)) || edm.upper_guide_z.is_some_and(|z| above_guide(0.0, z)) {
         return Err("The wire work extends outside the stated wire guide heights".into());
     }
     Ok((side, job, lo, hi, [ox, oy, oz]))
