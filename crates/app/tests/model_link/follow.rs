@@ -11,7 +11,8 @@ use camcraft_app::operation::{BoundaryMode, ExtraBoundary};
 use camcraft_app::posting;
 
 use super::area_support::{
-    AreaControls, BoundaryShape, ChainSide, OpenBoundary, TOOL, op, pocket, run, sel,
+    AreaControls, BoundaryShape, ChainSide, OpType, OpenBoundary, TOOL, op, operation, pocket, run,
+    sel,
 };
 use super::source_names::*;
 
@@ -254,6 +255,40 @@ fn a_carried_pick_a_model_without_a_record_and_a_plain_update_behave_as_today() 
     let (report, _) = reimport(&world, &mut h, block(50.0), None);
     assert_eq!(src_of(&world, OP), vec![on_part(front)]);
     assert!(report.is_empty() && review_of(&world, OP).is_empty());
+}
+
+#[test]
+fn a_probe_or_slot_pick_set_its_numbers_and_does_not_follow() {
+    for kind in [OpType::Probe, OpType::Slot] {
+        let world = part_world(Some(plain(&block(40.0))));
+        let top = face(&world, TOP);
+        let params = operation::retype_params(&pocket(10.0, 5.0), kind as usize);
+        land_op(
+            &world,
+            OP,
+            op(sel(PART, top.clone()), params, AreaControls::default()),
+        );
+        let mut h = History::default();
+        let (report, _) = reimport(
+            &world,
+            &mut h,
+            block(50.0),
+            Some(reversed(&block(50.0), None)),
+        );
+        assert_eq!(
+            src_of(&world, OP),
+            vec![on_part(top)],
+            "{kind:?}: the pick stays"
+        );
+        assert!(review_of(&world, OP).is_empty(), "{kind:?}");
+        assert!(report.followed.is_empty(), "{kind:?}");
+        assert_eq!(report.lost.len(), 1, "{kind:?}");
+        let why = report.lost[0].why.as_deref().unwrap_or("");
+        assert!(
+            why.contains("set the operation's numbers"),
+            "{kind:?}: {why}"
+        );
+    }
 }
 
 #[test]

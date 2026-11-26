@@ -204,6 +204,23 @@ fn a_former_name_follows() {
 }
 
 #[test]
+fn two_old_faces_never_meet_on_one_new_face() {
+    // The new front face is "front" and, by its former name, "back"; the
+    // new back face has a name of its own. Each old pick finds one
+    // candidate, but the two would meet on it: neither follows.
+    let mut new = reversed();
+    new.0[5 - FRONT] = FaceName {
+        name: "front".into(),
+        verified: true,
+        former: Some("back".into()),
+    };
+    new.0[5 - BACK] = name("back2");
+    let p = Pair::boxes(plain(), new);
+    assert_eq!(p.face(FRONT).expect("moved").to, Err(Lost::Shared));
+    assert_eq!(p.face(BACK).expect("moved").to, Err(Lost::Shared));
+}
+
+#[test]
 fn a_name_that_moved_to_a_carried_face_does_not_follow() {
     // The new record gives "front" to the carried x = 0 face.
     let new = (
@@ -314,6 +331,7 @@ fn every_reason_has_words() {
         Lost::Many(3),
         Lost::KindChanged,
         Lost::NotNew,
+        Lost::Shared,
         Lost::NewUnverified,
     ] {
         assert!(!why.reason().is_empty(), "{why:?}");

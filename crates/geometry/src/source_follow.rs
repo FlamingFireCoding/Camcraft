@@ -23,7 +23,8 @@
 //!   record face's `former` name counts as its name too, so the pieces of
 //!   a Split Face still answer to the face they came from);
 //! - that new feature was not in the old revision, its names are
-//!   verified, and a face keeps its plane kind.
+//!   verified, a face keeps its plane kind, and it answers to the names
+//!   of no other old feature.
 //!
 //! Anything else is a [`Lost`] verdict with its reason: the pick stays as
 //! it is and generation refuses it, exactly as before #3915. A wrong
@@ -64,6 +65,10 @@ pub enum Lost {
     /// The only new feature with these names was in the old revision too,
     /// under other names.
     NotNew,
+    /// The only new feature with these names also answers to the names of
+    /// another old feature (through a `former` name): two picks would meet
+    /// on one face.
+    Shared,
     /// SolidCraft did not verify the name of the only new feature.
     NewUnverified,
 }
@@ -81,6 +86,7 @@ impl Lost {
             Lost::Many(n) => format!("{n} faces have these names now"),
             Lost::KindChanged => "the face with these names changed kind".into(),
             Lost::NotNew => "the face with these names was in the model before".into(),
+            Lost::Shared => "the face with these names also carries another face's name".into(),
             Lost::NewUnverified => "SolidCraft did not verify the new face's name".into(),
         }
     }
@@ -293,10 +299,29 @@ pub fn follow(old: &Revision, new: &Revision, kind: PickKind, id: u64) -> Option
         [one] if !one.record.as_deref().is_some_and(|r| new.verified(r)) => {
             Err(Lost::NewUnverified)
         }
+        [one] if claimants(old, new, kind, one) > 1 => Err(Lost::Shared),
         [one] => Ok(one.id),
         many => Err(Lost::Many(many.len())),
     };
     Some(Verdict { names, to })
+}
+
+/// How many old features of `kind` the new feature `one` answers to by
+/// name: the pick's own, and any other whose names it carries through a
+/// `former` name. More than one, and two picks would meet on one face.
+fn claimants(old: &Revision, new: &Revision, kind: PickKind, one: &Entry) -> usize {
+    let Some(faces) = one.record.as_deref() else {
+        return 0;
+    };
+    old.entries(kind)
+        .iter()
+        .filter(|e| {
+            e.record
+                .as_deref()
+                .and_then(|r| old.names_of(r))
+                .is_some_and(|k| new.matches(&k, faces))
+        })
+        .count()
 }
 
 #[cfg(test)]

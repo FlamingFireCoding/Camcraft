@@ -34,6 +34,7 @@
 - It runs only when the old model and the new mesh both hold a record that tiles their facets.
 - The operations are snapshotted whole at construction and written back by `invert` (the `SetOperationGeometry` pattern). Undo puts back the ids and the review lines; redo follows again.
 - The operation goes Stale, as before, because its picks changed.
+- A follow does not run the pick-time gates of `SetOperationGeometry` (area, heights, sketch, "Do not touch" overlap). The followed pick names the same SolidCraft face. Generation stays the backstop for the shape of the pick (the area gate's own comment: "Generate stays the backstop"), and the review line makes a person look before the post. Not checked: that generation refuses every case that each pick-time gate refuses.
 
 **What a review line does (checked).** `posting::review_problems` refuses the post while an unsuppressed operation has a `needs_review` line: "needs review before posting (...) - inspect the operation and mark it reviewed". `cam.verify` reports such an operation as holding the post (`script/api.rs::holds_post`). `MarkOperationReviewed` (MCP `mark_operation_reviewed`, the operation page's button) clears it, as one undo step. So a person checks each follow before metal is cut.
 
@@ -51,7 +52,7 @@
 
 **Decided.** Each face or patch pick that could not follow stays as it was, so generation refuses it exactly as before. It is named in the re-import report, with its operation, its SolidCraft names and the reason:
 
-- the window: `UpdateModel::summary()` (the window's status after a re-import) gives "N picks followed by SolidCraft name; M picks could not follow: face 'top' in 'Face1' (no face has these names now); ...". It names the first 8 lost picks and counts the rest, and the phrase is capped at 900 bytes;
+- the window: `UpdateModel::summary()` (the window's status after a re-import, and `ImportFixture::update_summary()` for a fixture's re-import) gives "N picks followed by SolidCraft name; M picks could not follow: face 'top' in 'Face1' (no face has these names now); ...". It names the first 8 lost picks and counts the rest, and the phrase is capped at 900 bytes;
 - `cam.import` and MCP `import_model`: the optional key `picks`, `{ "followed": [...], "lost": [...] }`, one row each `{ "operation", "pick", "names", "why"? }`. It names every pick. A first import, and an update where nothing followed or was lost, have no `picks` key, so the answer is as before.
 
 **Not named:** a pick that was already missing before this import (it has no old face to name), and chain and vertex picks (sub-issue 4).
@@ -84,6 +85,8 @@
 
 **Not followed:** setup WCS and alignment picks, fixture-locate picks and electrodes. They behave as today.
 
+**Not followed either: the picks of a Probe and of a Slot.** Their pick writes numbers into the parameters when it is made (`probe_from_picks`, `slot_from_picks`), and generation keeps those numbers: a Probe never reads its pick again, and a Slot only checks that its typed slot still fits the picked room. A followed pick would keep the old face's numbers against the moved face. So their picks stay as they were and are reported lost with the reason "its pick set the operation's numbers - pick it again"; a new pick seeds the numbers again (`stores::seeds_from_picks`).
+
 **Why.** These are the picks that an operation's generation reads. A "Do not touch" pick that misses its follow is still refused at generate (`operation/avoid.rs`), so a miss fails safe.
 
 **Cost to change later.** Each new store is one arm in `stores.rs`. Setup and fixture picks need their own snapshot in the same command.
@@ -96,11 +99,12 @@
 - exactly one old feature has that id, and no other old feature of the same kind has the same names;
 - every name of the old feature is `verified` (it follows exact history in SolidCraft);
 - exactly one new feature of the same kind (face or patch) has the same names. A new record face's `former` name counts as its name, so the pieces of a Split Face still answer to the face they came from. A face keeps its plane kind;
-- that new feature was not in the old revision, and its names are verified too.
+- that new feature was not in the old revision, and its names are verified too;
+- that new feature answers to the names of no other old feature of the same kind (through a `former` name).
 
 Anything else gives a reason, and the pick stays as it was.
 
-**Why.** A wrong follow is the worst failure here, and a missed follow is only today's behaviour. The rules beyond the plan close the cases where a follow could merge two picks into one face (two old faces with one name set), or move a pick to a face that was already in the model under other names.
+**Why.** A wrong follow is the worst failure here, and a missed follow is only today's behaviour. The rules beyond the plan close the cases where a follow could merge two picks into one face (two old faces with one name set, or a new face whose name is one old face's and whose `former` name is another's), or move a pick to a face that was already in the model under other names.
 
 **Considered and dropped.**
 - Name equality on the new side only (the plan's first form). Two old strips of one curved face would then both follow to the same new face.

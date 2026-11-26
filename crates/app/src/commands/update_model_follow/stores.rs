@@ -125,6 +125,17 @@ pub(super) fn holds_face_pick(op: &Operation, model: &str) -> bool {
     found
 }
 
+/// The kinds whose pick writes numbers into the parameters when it is
+/// made (`SetOperationGeometry`: `probe_from_picks`, `slot_from_picks`).
+/// Generation keeps those numbers: a Probe never reads its pick again,
+/// and a Slot only checks that its typed slot still fits the picked room.
+/// So a pick of theirs that followed would keep the old face's numbers
+/// against the moved face. Their picks never follow; they are reported
+/// lost, and a new pick seeds the numbers again.
+pub(super) fn seeds_from_picks(op: &Operation) -> bool {
+    matches!(op.params, OpParams::Probe { .. } | OpParams::Slot { .. })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,6 +234,20 @@ mod tests {
             });
             let after: Vec<u64> = before.iter().map(|i| i + 100).collect();
             assert_eq!(ids(&op), after, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn a_probe_and_a_slot_seed_from_their_picks_and_nothing_else_does() {
+        assert!(seeds_from_picks(&op_of(OpType::Probe)));
+        assert!(seeds_from_picks(&op_of(OpType::Slot)));
+        for kind in [
+            OpType::Pocket,
+            OpType::Deburr,
+            OpType::Face,
+            OpType::Contour,
+        ] {
+            assert!(!seeds_from_picks(&op_of(kind)), "{kind:?}");
         }
     }
 

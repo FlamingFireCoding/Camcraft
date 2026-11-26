@@ -39,6 +39,9 @@ mod stores;
 pub use report::{FollowReport, PickNote};
 use report::{noun, review_line};
 
+/// Why the pick of a Probe or a Slot does not follow (`stores::seeds_from_picks`).
+const SEEDED: &str = "its pick set the operation's numbers - pick it again";
+
 /// One operation the follow rewrites: as it stood, and after.
 struct OpChange {
     key: String,
@@ -127,6 +130,8 @@ impl Follow {
         let mut followed_all: Vec<PickNote> = Vec::new();
         let mut changes: Vec<OpChange> = Vec::new();
         for (key, label, prev, prev_meta) in &self.held {
+            // A Probe's or a Slot's pick set its numbers; it never follows.
+            let seeded = stores::seeds_from_picks(prev);
             let mut next = prev.clone();
             let mut followed: Vec<PickNote> = Vec::new();
             stores::for_each_pick_mut(&mut next, |g| {
@@ -149,6 +154,10 @@ impl Follow {
                     why: None,
                 };
                 match v.to {
+                    Ok(_) if seeded => {
+                        note.why = Some(SEEDED.to_owned());
+                        lost.push(note);
+                    }
                     Ok(to) => {
                         g.feature = match kind {
                             PickKind::Face => FeatureSel::Face(to),
