@@ -102,7 +102,7 @@ fn every_kind_has_one_pick_capability_and_only_the_taken_ones_take_a_pick() {
             OpType::SinkerSideBurn => assert_eq!(cap, PickCapability::Ends, "the side burn takes an end of its side move"),
             _ => {
                 let PickCapability::NotTaken(why) = cap else {
-                    panic!("{}: only the contour, the wire, the face, the slot and the three turning kinds take a pick", k.label)
+                    panic!("{}: only the contour, the wire, the face, the slot, the three turning kinds, the hole-order kinds and the sinker kinds take a pick", k.label)
                 };
                 assert!(!why.is_empty(), "{}: the reason is named", k.label);
             }
