@@ -9,4 +9,4 @@
 - Also requiring each edge to be used once in each direction: fins of back-to-back triangles use their edge in both directions, so the count is the law that catches them; orientation is a separate check if wanted.
 - Repairing the dual mesh (dropping fins): the marching mesh of the same samples is already the stand-in for a dual mesh that fails the check.
 
-**Cost to change later.** One function and two call sites. Going back is calling `open_edges` at those sites; the pins in `crates/sim/tests/stock_dual.rs` and the unit tests in `iso.rs` name the behaviour.
+**Cost to change later.** One function and two call sites. Going back is calling `open_edges` at those sites; the pins in `crates/sim/tests/stock_dual.rs` and the unit tests in `crates/sim/src/stock_sim/iso_edges.rs` (split from `iso.rs` at the 400-line rule; `iso` re-exports both counts) name the behaviour.
