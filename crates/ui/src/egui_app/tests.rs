@@ -154,6 +154,7 @@ mod catalog_filters;
 mod cycle_combo;
 mod holes_break_through;
 mod holes_fine_bore;
+mod bore_entry_group;
 mod ma_deburr_page;
 mod radial_step_field;
 mod auto_input_manual;

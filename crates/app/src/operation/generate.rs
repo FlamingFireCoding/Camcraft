@@ -3072,8 +3072,14 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             holes,
             break_through,
             pass_start,
+            entry: bore_entry,
             ..
         } => {
+            // The command doors refuse it first (`named_refusal`); this is
+            // the second check, for a project file or a caller that skipped them.
+            if let Some(why) = OpParams::bore_entry_refusal(*bore_entry) {
+                return Err(GenError::Invalid(why));
+            }
             // #1557: the stated break-through, the drill's own by default.
             let run = break_through.unwrap_or(drilling::THROUGH_CLEAR);
             broke = super::break_through::deepest(
@@ -3117,7 +3123,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 plunge_feed: *plunge_feed,
                 climb: *climb,
                 tolerance: *tolerance,
-                entry: Entry3D::Plunge,
+                entry: *bore_entry,
                 helix_radius: 1.0,
             }, *pass_start)?;
             (region, path)
