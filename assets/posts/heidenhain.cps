@@ -700,6 +700,13 @@ function sameHole(p) {
 }
 // #3102: the top of the documented Q208 range (mm/min), the fastest retract.
 var RETRACT_FEED_MAX = 99999.999;
+// #4094: the retract feed that a cycle 205 without Q208 (340 49x level)
+// implies: the top of the range, no slower one. A fixed value, never
+// RETRACT_FEED_MAX, so the guard below still compares the ask with it
+// when the asked feed changes.
+var OLD_CYCLE_RETRACT_FEED = 99999.999;
+// #4094: Q395 = 0, the depth is to the tool tip (the stream's own Z).
+var DEPTH_REFERENCE = 0;
 function qword(n, v) {
   // Q values may need four decimals (not integer feed rounding, which
   // would change a tap's feed/pitch relation). Numeric ranges checked below.
@@ -709,6 +716,60 @@ function qword(n, v) {
 }
 function cycleBad(why) {
   msg(coolantWho() + "Heidenhain drilling/tapping: " + why);
+}
+// #4094: the cycle 200/205 parameter level of the stated control. Q379
+// and Q253 (cycle 205) exist from iTNC 530 340 422; Q208 (cycle 205)
+// and Q395 (cycles 200, 205) only from iTNC 530 60642x-04, TNC 640
+// 34059x-04, TNC 620 81760x-01 and TNC 320 77185x-01 (iTNC 530 manual
+// 670388-25 p13; the cycle examples of the 340 49x manuals end without
+// them: docs/research/heidenhain/differences.md B2/B3, dialects.md).
+// Returns "q208" (Q379 Q253 Q208 Q395), "q379" (Q379 Q253, no Q208 or
+// Q395) or null with drillLevelWhy set. A machine with no controller
+// identity keeps "q208", the level of the TNC 640 manual this post is
+// specced from (docs/decisions/4094-dinsio-cycle-parameter-level.md).
+// The dialect resolver of #4095 replaces this table.
+var drillLevelWhy = "";
+// #4172: one guard for the whole NC software input. The string must be the
+// complete canonical identifier of dialects.md section 1: 6 digits, "-",
+// exactly 2 release digits, then nothing or " SP<n>". The first five digits
+// are the family, the sixth the variant. Each row names the model, the
+// family, the highest variant, the releases that the research names (an
+// unnamed release such as TNC 640 -03 or 81760x-12 is refused) and the
+// first release at the q208 level (0: none). Anything else is refused.
+var NC_ID = /^(\d{5})(\d)-(\d{2})(?: SP[1-9]\d{0,2})?$/;
+var DRILL_ROWS = [
+  // iTNC 530 340 422: only that variant. The research names no release;
+  // Q379 exists from it on and Q208 never before 60642x-04.
+  { model: "iTNC 530", fam: "34042", vmin: 2, vmax: 2, rels: "any", q208: 0 },
+  { model: "iTNC 530", fam: "34049", vmin: 0, vmax: 4, rels: [1, 2, 3, 4, 5, 6, 7, 8], q208: 0 },
+  { model: "iTNC 530", fam: "60642", vmin: 0, vmax: 5, rels: [1, 2, 3, 4], q208: 4 },
+  { model: "TNC 640", fam: "34059", vmin: 0, vmax: 5, rels: [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 18], q208: 4 },
+  { model: "TNC 620", fam: "34056", vmin: 0, vmax: 5, rels: [1, 2, 3, 4], q208: 0 },
+  { model: "TNC 620", fam: "73498", vmin: 0, vmax: 5, rels: [1, 2], q208: 0 },
+  { model: "TNC 620", fam: "81760", vmin: 0, vmax: 5, rels: [1, 2, 3, 4, 5, 6, 7, 8, 16, 17, 18], q208: 1 },
+  { model: "TNC 320", fam: "34055", vmin: 0, vmax: 5, rels: [1, 2, 3, 4, 5, 6], q208: 0 },
+  { model: "TNC 320", fam: "77185", vmin: 0, vmax: 5, rels: [1, 2, 4, 5, 6, 18], q208: 1 }
+];
+function drillLevel() {
+  var id = typeof machine !== "undefined" && machine ? machine.controllerIdentity : null;
+  if (!id) return "q208";
+  var model = String(id.model || ""), nc = String(id.nc_software || "");
+  var m = NC_ID.exec(nc);
+  var level = null;
+  if (m) {
+    var fam = m[1], v = Number(m[2]), rel = Number(m[3]);
+    for (var ri = 0; ri < DRILL_ROWS.length && !level; ri++) {
+      var r = DRILL_ROWS[ri];
+      if (r.model !== model || r.fam !== fam || v < r.vmin || v > r.vmax || rel < 1) continue;
+      if (r.rels !== "any" && r.rels.indexOf(rel) < 0) continue;
+      level = r.q208 > 0 && rel >= r.q208 ? "q208" : "q379";
+    }
+  }
+  if (!level) {
+    drillLevelWhy = "the cycle 200/205 parameter set of " + model + " NC " + nc +
+      " is not known to this post - refused, not posted";
+  }
+  return level;
 }
 function onCycle() {
   startPreamble();
@@ -804,8 +865,27 @@ function onCycle() {
     // the range asks for the fastest retract that the control permits.
     words.push(qword(212, 0), qword(205, p.Q), qword(258, 0), qword(259, 0),
       qword(257, p.Q), qword(256, Math.min(1, p.Q)), qword(211, dwell),
-      qword(379, 0), qword(253, feed), qword(208, RETRACT_FEED_MAX), qword(395, 0));
-  } else if (g === "G200") words.push(qword(211, dwell), qword(395, 0));
+      qword(379, 0), qword(253, feed));
+  } else if (g === "G200") words.push(qword(211, dwell));
+  if (g === "G200" || g === "G205") {
+    var level = drillLevel();
+    if (!level) { cycleBad(drillLevelWhy); return; }
+    var asked = g === "G205" ? [[208, RETRACT_FEED_MAX], [395, DEPTH_REFERENCE]] : [[395, DEPTH_REFERENCE]];
+    for (var ai = 0; ai < asked.length; ai++) {
+      var qn = asked[ai][0], qv = asked[ai][1];
+      if (level === "q208") { words.push(qword(qn, qv)); continue; }
+      // #4094: the 340 49x level has no Q208/Q395. The old cycle drills to
+      // the tool tip (Q395=0) and retracts at its own rate (Q208 at the top
+      // of its range asks for no slower one). Any other ask is refused.
+      var implied = qn === 208 ? OLD_CYCLE_RETRACT_FEED : 0;
+      if (qv !== implied) {
+        cycleBad(g + " Q" + qn + "=" + qv + " cannot be written for " +
+          String(machine.controllerIdentity.model) + " NC " + String(machine.controllerIdentity.nc_software) +
+          ": its cycle " + g.substring(1) + " has no Q" + qn + " - refused, not posted");
+        return;
+      }
+    }
+  }
   // #1359: checked last, so a tap's own named refusals (rpm, pitch)
   // still speak; inCycle stays set, so the hole's chain is swallowed too.
   if (spindleStopped("drilling cycle " + g)) return;
@@ -817,7 +897,8 @@ function onCycle() {
 }
 function dwellAtBottom(z) {
   if (pendingDwell === null || !has(z) || Math.abs(z - pendingDwell.z) > DWELL_TOL) return;
-  block(["FUNCTION DWELL TIME" + fu(pendingDwell.s)]);
+  // #4093: ISO programs always use G04 F<s> (cycle 9 DWELL TIME). FUNCTION DWELL is not confirmed for ISO.
+  block(["G04", "F" + fu(pendingDwell.s)]);
   pendingDwell = null;
 }
 // A dwell whose chain never reached its bottom is refused, never lost.

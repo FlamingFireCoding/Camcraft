@@ -191,7 +191,7 @@ pub(crate) fn marching(g: &Grid) -> Vec<Triangle> {
                 for (c, o) in CORNER.iter().enumerate() {
                     let s = [i + o[0], j + o[1], k + o[2]];
                     p[c] = g.at(s);
-                    v[c] = g.val(s);
+                    v[c] = on_surface(g.val(s), g.step);
                 }
                 if v.iter().all(|x| *x < 0.0) || v.iter().all(|x| *x >= 0.0) {
                     continue;
@@ -205,10 +205,22 @@ pub(crate) fn marching(g: &Grid) -> Vec<Triangle> {
     out
 }
 
-/// The fraction of a lattice edge within which a crossing is put on the
-/// sample (#4107): at a 0.25 mm step it moves a corner at most 0.43 nm
-/// (a body diagonal of the cell).
+/// The fraction of the sample step within which a sample is on the
+/// surface (#4107, #4180): at a 0.25 mm step a sample within 0.25 nm of
+/// zero reads zero, which moves the surface by at most that.
 const NODE_SNAP: f64 = 1e-6;
+
+/// A sample within `NODE_SNAP` of a step of zero reads +0.0: on the
+/// surface, on the outside of `d < 0`. A cut floor on the lattice leaves
+/// values of about 1e-12 there, of both signs. Decided per edge (#4107's
+/// first form), two such samples of opposite sign both took their long
+/// edges' corners while the edge between them kept its own crossing
+/// mid-edge; the facet through the three was exactly collinear, `push`
+/// dropped it and the mesh opened by three edges (#4180). One value per
+/// sample is the same in every tetrahedron that shares it.
+fn on_surface(v: f64, step: f64) -> f64 {
+    if v.abs() < NODE_SNAP * step { 0.0 } else { v }
+}
 
 /// Polygonize one tetrahedron: inside is d < 0.
 fn tet(out: &mut Vec<Triangle>, p: [Point3; 4], v: [f64; 4]) {
@@ -216,24 +228,17 @@ fn tet(out: &mut Vec<Triangle>, p: [Point3; 4], v: [f64; 4]) {
     let outside: Vec<usize> = (0..4).filter(|&c| v[c] >= 0.0).collect();
     let cross = |a: usize, b: usize| {
         let (da, db) = (v[a], v[b]);
-        // #4107: a crossing within NODE_SNAP of a sample sits on it. A value
-        // of about 1e-12 (a floor on the lattice) put the corner about 1e-12
-        // mm from the sample, under the 1e-9 weld; on the sample the facets
-        // that share it are exactly zero-area and `push` drops them. The test
-        // reads |da| and |db| against |da - db|, which are the same numbers
-        // when the edge is crossed from its other end, so two tetrahedra that
-        // share the edge snap together or not at all. A snapped corner is
-        // the sample itself: pa + (pb - pa) is not always pb.
-        let span = (da - db).abs();
+        // #4107: a sample on the surface (`on_surface`) is the corner
+        // itself: pa + (pb - pa) is not always pb. An edge is crossed only
+        // from an inside end (d < 0), so at most one end reads zero.
         let (pa, pb) = (p[a], p[b]);
-        if span > f64::EPSILON {
-            if da.abs() < NODE_SNAP * span {
-                return pa;
-            }
-            if db.abs() < NODE_SNAP * span {
-                return pb;
-            }
+        if da == 0.0 {
+            return pa;
         }
+        if db == 0.0 {
+            return pb;
+        }
+        let span = (da - db).abs();
         let t = if span > f64::EPSILON { (da / (da - db)).clamp(0.0, 1.0) } else { 0.5 };
         Point3::new(pa.x + (pb.x - pa.x) * t, pa.y + (pb.y - pa.y) * t, pa.z + (pb.z - pa.z) * t)
     };
@@ -299,10 +304,12 @@ mod tests {
     }
 
     #[test]
-    fn an_edge_gets_the_same_corner_from_either_end_at_the_snap_threshold() {
+    fn an_edge_gets_the_same_corner_from_either_end_near_the_snap_threshold() {
         // #4107: one tetrahedron crosses the edge from its inside end (one
         // corner inside), its neighbour from the outside end (three inside).
-        // Near the snap threshold both must snap, or neither.
+        // Both must put the same corner on it. Since #4180 the snap is
+        // decided per sample (`on_surface`, before `tet`), so these tiny
+        // non-zero values interpolate, from either end alike.
         let x0 = NODE_SNAP / (1.0 - NODE_SNAP); // t = NODE_SNAP when the far value is 1
         for k in -4000_i64..4000 {
             let d = f64::from_bits((x0.to_bits() as i64 + k) as u64);
@@ -341,6 +348,29 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_floor_on_the_lattice_reading_both_signs_stays_closed() {
+        // #4180: a box whose top face is lattice layer 4, that layer read
+        // as +-1e-12 with both signs, every other sample the exact
+        // distance. Snapped per edge, 15 collinear facets were dropped:
+        // 45 open edges.
+        let (step, n) = (0.25, [16usize, 16, 8]);
+        let mut d = Vec::new();
+        for k in 0..=n[2] {
+            for j in 0..=n[1] {
+                for i in 0..=n[0] {
+                    let (x, y, z) = (i as f64 * step, j as f64 * step, k as f64 * step);
+                    let top = if k != 4 { z - 1.0 } else if (i * 7 + j * 13) % 3 == 0 { 1e-12 } else { -1e-12 };
+                    d.push([top, 0.35 - z, 0.6 - x, x - 3.4, 0.6 - y, y - 3.4].into_iter().fold(f64::MIN, f64::max));
+                }
+            }
+        }
+        let tris = marching(&Grid { lo: Point3::ZERO, step, n, d });
+        assert!(!tris.is_empty());
+        assert_eq!(open_edges(&tris), 0);
+        assert_eq!(unpaired_edges(&tris), 0);
     }
 
     #[test]
