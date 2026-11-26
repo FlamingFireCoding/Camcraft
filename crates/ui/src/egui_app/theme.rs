@@ -63,6 +63,22 @@ pub struct Tokens {
     pub handle_text: Color32,
     /// Rim of a picked point's disc in the viewport (#1120).
     pub pick_rim: Color32,
+    /// The viewport furniture (#1120): view cube, nav buttons, corner
+    /// hint, playback marker, axis triad and the hover gold. Each table
+    /// holds the set for its own viewport ground; a theme file that turns
+    /// the ground light or dark gets the matching set (`theme_files`).
+    pub cube_edge: Color32,
+    pub cube_label: Color32,
+    pub cube_glyph_on: Color32,
+    pub cube_glyph_off: Color32,
+    pub viewport_hint: Color32,
+    pub marker_stem: Color32,
+    pub marker_ring: Color32,
+    pub marker_dot: Color32,
+    pub axis_x: Color32,
+    pub axis_y: Color32,
+    pub axis_z: Color32,
+    pub viewport_hover: Color32,
     // -- geometry: the Phase-6 complaint made themeable - ribbon size,
     // input fields and button size are tokens, not literals.
     /// Corner radius of widget rects and painted cells/rows.
@@ -187,6 +203,7 @@ impl Tokens {
             accent_hover, field_bg, field_hover, field_active, selection_bg,
             selection_stroke, viewport: _, ribbon_ink: _,
             handle_shade: _, handle_text: _, pick_rim: _,
+            cube_edge: _, cube_label: _, cube_glyph_on: _, cube_glyph_off: _, viewport_hint: _, marker_stem: _, marker_ring: _, marker_dot: _, axis_x: _, axis_y: _, axis_z: _, viewport_hover: _,
             radius_widget, radius_window, radius_menu,
             item_spacing_x: _, item_spacing_y: _,
             button_padding_x: _, button_padding_y: _,

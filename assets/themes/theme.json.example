@@ -25,7 +25,19 @@
     "ribbon_ink": "#FFFFFF",
     "handle_shade": "#000000AA",
     "handle_text": "#FFFFFF",
-    "pick_rim": "#F5F0FA"
+    "pick_rim": "#F5F0FA",
+    "cube_edge": "#FFFFFFAA",
+    "cube_label": "#FFFFFFE6",
+    "cube_glyph_on": "#FFFFFF",
+    "cube_glyph_off": "#FFFFFFA0",
+    "viewport_hint": "#FFFFFFC8",
+    "marker_stem": "#E1E1E1",
+    "marker_ring": "#F0F0F0",
+    "marker_dot": "#FFFFFF",
+    "axis_x": "#F54646",
+    "axis_y": "#3CDC50",
+    "axis_z": "#5A8CFF",
+    "viewport_hover": "#FFD966"
   },
   "geometry": {
     "radius_widget": 2,
