@@ -6,11 +6,29 @@
   `machine.controllerIdentity` (model and NC software) and gives one of two
   parameter levels for cycles 200 (DRILLING) and 205 (UNIVERSAL PECKING):
   - `q379`: G200 without `Q395`; G205 with `Q379`/`Q253`, without `Q208` and
-    `Q395`. For iTNC 530 340 422, 34049x (all releases) and 60642x-01 to -03;
-    TNC 640 34059x-01/-02; TNC 620 34056x and 73498x; TNC 320 34055x.
+    `Q395`. For iTNC 530 340 422, 34049x-01 to -08 and 60642x-01 to -03;
+    TNC 640 34059x-01/-02; TNC 620 34056x-01 to -04 and 73498x-01/-02;
+    TNC 320 34055x-01 to -06.
   - `q208`: the output of today (`Q379`, `Q253`, `Q208`, `Q395`). For iTNC 530
-    60642x-04 and later; TNC 640 34059x-04 and later; TNC 620 81760x; TNC 320
-    77185x.
+    60642x-04; TNC 640 34059x-04 to -11 and -16 to -18; TNC 620 81760x-01 to
+    -08 and -16 to -18; TNC 320 77185x-01, -02, -04 to -06 and -18.
+- **One guard for the NC software string (#4172 review).** The post parses
+  the complete canonical identifier of `dialects.md` section 1, with no
+  prefix match: `^\d{5}\d-\d{2}( SP[1-9]\d{0,2})?$`. The first five digits
+  are the family and the sixth is the variant. Then one table row must
+  match all of: the model, the family, the variant range, and a release that
+  the research names (never `-00`). The variant ranges: iTNC 530 34049 +
+  `0..4` and 60642 + `0..5` (from `dialects.md`); 340 422 is the one
+  variant `2` of family 34042; the TNC 640/620/320 families take `0..5`.
+  The research gives no variant range for these, so the HSCI range of the
+  iTNC 530 is used; a variant above it is refused. The release lists are
+  the releases that the research names: TNC 640 -03 and -12 to -15, for
+  example, are not named and are refused. 340 422 has no named release in
+  the research, so each release `-01` to `-99` takes `q379`: Q379 exists
+  from 340 422 on, and Q208 never exists before 60642x-04.
+  - The first version matched a prefix (`/^(\d{5})(\d)-(\d{2})/`). It read
+    `340490-03junk` and `340490-030` as release 03, and it accepted
+    `340490-00` and `340499-03`. Each of these is now refused by name.
 - A stated identity that is not in this table (for example iTNC 530 340 420,
   TNC 640 34059x-03, TNC 426, TNC7, or an NC software that does not parse) is
   refused by name for G200/G205: "the cycle 200/205 parameter set of <model>
@@ -50,6 +68,12 @@
   file that names a HEIDENHAIN control has no identity.
 
 **Dropped.**
+
+- An open upper release bound for the q208 families (TNC 640/620/320): a
+  newer release is not in the research, so it is refused by name until a
+  research row adds it. A refusal is the safe failure.
+- A variant range of `0..9` for the TNC 640/620/320 families: the research
+  names no variant above 5.
 
 - Writing the `q379` level when there is no identity: it is not confirmed
   that a newer control accepts a G205 block without `Q208`/`Q395`.

@@ -729,25 +729,40 @@ function cycleBad(why) {
 // specced from (docs/decisions/4094-dinsio-cycle-parameter-level.md).
 // The dialect resolver of #4095 replaces this table.
 var drillLevelWhy = "";
+// #4172: one guard for the whole NC software input. The string must be the
+// complete canonical identifier of dialects.md section 1: 6 digits, "-",
+// exactly 2 release digits, then nothing or " SP<n>". The first five digits
+// are the family, the sixth the variant. Each row names the model, the
+// family, the highest variant, the releases that the research names (an
+// unnamed release such as TNC 640 -03 or 81760x-12 is refused) and the
+// first release at the q208 level (0: none). Anything else is refused.
+var NC_ID = /^(\d{5})(\d)-(\d{2})(?: SP[1-9]\d{0,2})?$/;
+var DRILL_ROWS = [
+  // iTNC 530 340 422: only that variant. The research names no release;
+  // Q379 exists from it on and Q208 never before 60642x-04.
+  { model: "iTNC 530", fam: "34042", vmin: 2, vmax: 2, rels: "any", q208: 0 },
+  { model: "iTNC 530", fam: "34049", vmin: 0, vmax: 4, rels: [1, 2, 3, 4, 5, 6, 7, 8], q208: 0 },
+  { model: "iTNC 530", fam: "60642", vmin: 0, vmax: 5, rels: [1, 2, 3, 4], q208: 4 },
+  { model: "TNC 640", fam: "34059", vmin: 0, vmax: 5, rels: [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 18], q208: 4 },
+  { model: "TNC 620", fam: "34056", vmin: 0, vmax: 5, rels: [1, 2, 3, 4], q208: 0 },
+  { model: "TNC 620", fam: "73498", vmin: 0, vmax: 5, rels: [1, 2], q208: 0 },
+  { model: "TNC 620", fam: "81760", vmin: 0, vmax: 5, rels: [1, 2, 3, 4, 5, 6, 7, 8, 16, 17, 18], q208: 1 },
+  { model: "TNC 320", fam: "34055", vmin: 0, vmax: 5, rels: [1, 2, 3, 4, 5, 6], q208: 0 },
+  { model: "TNC 320", fam: "77185", vmin: 0, vmax: 5, rels: [1, 2, 4, 5, 6, 18], q208: 1 }
+];
 function drillLevel() {
   var id = typeof machine !== "undefined" && machine ? machine.controllerIdentity : null;
   if (!id) return "q208";
   var model = String(id.model || ""), nc = String(id.nc_software || "");
-  var m = /^(\d{5})(\d)-(\d{2})/.exec(nc);
+  var m = NC_ID.exec(nc);
   var level = null;
   if (m) {
-    var base = m[1], d = m[1] + m[2], rel = Number(m[3]);
-    if (model === "iTNC 530") {
-      if (base === "34049" || d === "340422") level = "q379";
-      else if (base === "60642") level = rel >= 4 ? "q208" : "q379";
-    } else if (model === "TNC 640") {
-      if (base === "34059") level = rel >= 4 ? "q208" : (rel <= 2 ? "q379" : null);
-    } else if (model === "TNC 620") {
-      if (base === "34056" || base === "73498") level = "q379";
-      else if (base === "81760") level = "q208";
-    } else if (model === "TNC 320") {
-      if (base === "34055") level = "q379";
-      else if (base === "77185") level = "q208";
+    var fam = m[1], v = Number(m[2]), rel = Number(m[3]);
+    for (var ri = 0; ri < DRILL_ROWS.length && !level; ri++) {
+      var r = DRILL_ROWS[ri];
+      if (r.model !== model || r.fam !== fam || v < r.vmin || v > r.vmax || rel < 1) continue;
+      if (r.rels !== "any" && r.rels.indexOf(rel) < 0) continue;
+      level = r.q208 > 0 && rel >= r.q208 ? "q208" : "q379";
     }
   }
   if (!level) {
