@@ -24,7 +24,8 @@ use camcraft_kernel::solidcraft::{
 };
 use sc_util::Parts;
 use serde_json::json;
-use solidcore::kernel::CancelToken;
+use solidcore::kernel::{CancelToken, UpstreamFixes};
+use solidcore_record::brep::envelope;
 use solidcore_record::native;
 
 fn import(bytes: &[u8]) -> Result<SolidcraftImport, KernelError> {
@@ -203,12 +204,51 @@ fn damaged_bodies_never_panic_or_hang() {
 /// The sample's final model body; its names record has the same index.
 const FINAL: usize = 13;
 
+/// A 10 x 20 x 30 block (six faces) as the body of a `Saved`, encoded:
+/// quick to import, so the names run is bounded by the names, not the body.
+fn block_body() -> Vec<u8> {
+    solidcore_ops::session::set_thread_fixes(UpstreamFixes::NAMES.iter().copied())
+        .expect("every fix on, as Solidcraft runs");
+    let b = solidcore_ops::make_box([0.0; 3], [10.0, 20.0, 30.0]).expect("block");
+    let (record, _) = b.to_record().expect("record of the block");
+    encode(&native::Saved {
+        solid: record,
+        metadata: envelope::Metadata {
+            version: envelope::VERSION,
+            color: None,
+            paint: None,
+            boundaries: None,
+            face_sources: None,
+            history: None,
+            preserve_boundaries: false,
+        },
+        runtime: native::Runtime {
+            size: 0.0,
+            coarse_missing: None,
+        },
+    })
+}
+
 #[test]
 fn hostile_names_never_panic_or_refuse_the_import() {
-    // #3915: the sample marked as format 10, so its names are read; then
-    // hostile values put into its final body's names record and index.
+    // #3915: the sample with a six-face block as its final body, marked as
+    // format 10 with six names of our own; then hostile values put into
+    // the names record and its index.
+    let body = block_body();
     let mut base = Parts::sample();
-    base.manifest(|m| m["format"] = json!(NAMES_FORMAT));
+    base.manifest(|m| {
+        m["format"] = json!(NAMES_FORMAT);
+        m["model"]["model_bodies"][FINAL]["names"] = json!(FINAL);
+        m["model"]["names"][FINAL] = json!({
+            "faces": (0..6).map(|f| format!("F1:side:l{f}")).collect::<Vec<_>>(),
+            "info": (0..6).map(|_| json!([[], [], true, []])).collect::<Vec<_>>(),
+        });
+    });
+    // The base reads its six names, so the damage below reaches the reader.
+    match import(&with_body(&base, &body)) {
+        Ok(i) => assert_eq!(i.names.map(|n| n.len()), Some(6), "{:?}", i.names_note),
+        Err(e) => panic!("the block design is refused: {e}"),
+    }
     let hostile = [
         json!(null),
         json!(true),
@@ -258,7 +298,7 @@ fn hostile_names_never_panic_or_refuse_the_import() {
                 _ => names["faces"] = v,
             }
         });
-        cases.push((format!("names {i}"), c.build()));
+        cases.push((format!("names {i}"), with_body(&c, &body)));
     }
     let limit = Duration::from_secs(120);
     let outcome = step_util::bounded_cancel("names mutations", limit, move |stop| {
