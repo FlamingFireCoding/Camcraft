@@ -1,8 +1,10 @@
-//! Pinning tests for LinuxCNC post processor (#4152):
-//! 1. The probe measure check is guarded by `#<_task> EQ 1` so that preview
-//!    in LinuxCNC does not terminate early due to non-real probe deviations.
-//! 2. The active comment guard catches keywords with spaces (e.g. `M S G`)
-//!    and `PYRELOAD`, while leaving non-active text unchanged.
+//! Issue #4152: LinuxCNC active comment guard and probe tolerance preview check.
+//!
+//! Provenance: public LinuxCNC G-code reference (linuxcnc.org/docs)
+//! for active comment keywords and predefined named parameters (#<_task>);
+//! no vendor materials consulted. Original clean-room tests.
+//!
+//! Gate map: covers assets/posts/linuxcnc.cps, camcraft_post::post::engine.
 
 mod recorded;
 
@@ -53,6 +55,8 @@ fn active_comment_guard_catches_spaced_keywords_and_pyreload() {
         ("P Y R E L O A D", "(- P Y R E L O A D)"),
         ("p y r e l o a d", "(- p y r e l o a d)"),
         ("D E B U G, test", "(- D E B U G, test)"),
+        ("PROBEOPEN log.txt", "(- PROBEOPEN log.txt)"),
+        ("P R O B E O P E N log.txt", "(- P R O B E O P E N log.txt)"),
         ("Message", "(Message)"),
         ("Python", "(Python)"),
     ] {
