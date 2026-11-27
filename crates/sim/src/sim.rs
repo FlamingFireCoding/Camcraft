@@ -1240,4 +1240,102 @@ mod tests {
             assert!((len - 1.0).abs() < 1e-12, "a non-unit axis at t={k}");
         }
     }
+
+    /// The hand-built segs for the work-line test below: straight
+    /// prismatic moves with the stated letters, rotary leg and work
+    /// line (the builder writes the same shape).
+    fn wseg(op: usize, secs: f64, dwell: f64, abc: ([f64; 3], [f64; 3]), rl: f64, work: Option<WorkTurn>) -> Seg {
+        Seg {
+            from: p(10.0 * op as f64, 0.0, 10.0),
+            to: p(10.0 * (op + 1) as f64, 0.0, 10.0),
+            arc: None,
+            secs,
+            dwell,
+            feed: Some(600.0),
+            op,
+            abc,
+            pl: secs,
+            rl,
+            work,
+        }
+    }
+
+    #[test]
+    fn script_at_rides_the_work_line_and_none_outside_it() {
+        use crate::machine_view::frame_turn;
+        // The seeded rotary axis line: an A rotary through the WCS
+        // origin - the value shell::sim_script feeds the builder.
+        let a_line = WorkTurn { origin: [0.0, 0.0, 0.0], dir: [1.0, 0.0, 0.0] };
+        let mut sc = Script {
+            ops: vec!["turning".to_owned(), "drill".to_owned()],
+            ..Script::default()
+        };
+        // Op 0 turns the work: a 2 s move tilting the head to -Y (the
+        // A letter runs the whole rotary leg), then a 1 s dwell.
+        sc.segs = vec![
+            // Op 0 turns the work: a 2 s move tilting the head to -Y
+            // (the A letter runs the whole rotary leg), then a 1 s
+            // dwell.
+            wseg(0, 2.0, 1.0, ([0.0; 3], [90.0, 0.0, 0.0]), 2.0, Some(a_line)),
+            // Op 1 is prismatic: no work line anywhere in it.
+            wseg(1, 1.0, 0.0, ([90.0, 0.0, 0.0], [90.0, 0.0, 0.0]), 0.0, None),
+        ];
+        sc.cum = vec![3.0, 4.0];
+        // The stand runs past the last window: the past-window arm is
+        // reachable before the final stand this way.
+        sc.total = 4.5;
+
+        // The empty script stands nowhere and carries no line - all
+        // three of its entry arms say None.
+        let e = Script::default();
+        assert_eq!(e.at(0.0).work, None);
+        assert_eq!(e.at(99.0).work, None);
+        assert_eq!(e.at(f64::NAN).work, None);
+
+        // Before the first window: the start of the rotary op, its
+        // line already stated.
+        assert_eq!(sc.at(-1.0).work, Some(a_line));
+        assert_eq!(sc.at(0.0).work, Some(a_line));
+
+        // Mid-move: the seeded line rides the frame, origin and dir
+        // exactly as seeded, and the turn angle read off the frame's
+        // axis follows the pose about it - a quarter turn split over
+        // the move, growing toward the commanded 90 deg.
+        let m1 = sc.at(1.0);
+        assert_eq!(m1.work, Some(a_line));
+        assert_eq!(m1.work.unwrap().origin, [0.0; 3]);
+        assert_eq!(m1.work.unwrap().dir, [1.0, 0.0, 0.0]);
+        let g1 = frame_turn(&a_line, m1.axis).unwrap();
+        let m2 = sc.at(1.5);
+        assert_eq!(m2.work, Some(a_line));
+        let g2 = frame_turn(&a_line, m2.axis).unwrap();
+        assert!((g1 + std::f64::consts::FRAC_PI_4).abs() < 1e-12, "{g1}");
+        assert!((g2 + 3.0 * std::f64::consts::FRAC_PI_8).abs() < 1e-12, "{g2}");
+        assert!(g1.abs() < g2.abs(), "the turn follows the pose at the playhead");
+
+        // The dwell window: the move's line still rides the frame,
+        // and the pose has arrived at its commanded tilt.
+        let d = sc.at(2.5);
+        assert_eq!(d.readout, Readout::Dwell(1.0));
+        assert_eq!(d.work, Some(a_line));
+        let gd = frame_turn(&a_line, d.axis).unwrap();
+        assert!((gd + std::f64::consts::FRAC_PI_2).abs() < 1e-12, "{gd}");
+
+        // The prismatic op's window: no work line mid-move.
+        assert_eq!(sc.at(3.5).work, None);
+
+        // The past-window arm: the last seg's own line (None here -
+        // op 1 is prismatic), still not the final stand.
+        let w = sc.at(4.2);
+        assert!(!w.done);
+        assert_eq!(w.work, None);
+
+        // Past the end: the final stand carries the last seg's line,
+        // None on this prismatic program - and a non-finite t walks
+        // the same arm.
+        assert!(sc.at(5.0).done);
+        assert_eq!(sc.at(5.0).work, None);
+        assert!(sc.at(f64::NAN).done);
+        assert_eq!(sc.at(f64::NAN).work, None);
+    }
 }
