@@ -949,11 +949,12 @@ function endPreamble() {
   if (!sectionOpen) return;
   restorePlane();
   ensureProbeOff();
+  // #4347: G80 closes the cycle group before any G5.1 word (B-64604EN-2/01, 3.3.2).
+  if (inCycle) block(["G80"]);
+  inCycle = false;
   disableSmoothing();
   ensureRotaryClamped();
   sectionOpen = false;
-  if (inCycle) block(["G80"]);
-  inCycle = false;
   if (wcsRotActive) { block(["G69"]); wcsRotActive = false; }
   wcsYaw = 0;
   wcsRotMode = "";
@@ -1119,7 +1120,9 @@ function heldAngles(p, tw) {
 }
 function onLinear() {
   startPreamble();
-  enableSmoothing();
+  // #4347: an open cycle group's chain is the cycle's (chainCut below),
+  // and no G5.1 word is legal while G81-G89 is modal.
+  if (!inCycle) enableSmoothing();
   var aChanged = has(properties.A) && (!has(lastA) || properties.A !== lastA);
   var tw = tilt(properties);
   if (tw === null || chainCut()) return;
@@ -1142,7 +1145,7 @@ function onCircular() {
   // #3442: an arc whose written ends coincide is no arc block (arcFate, PRELUDE).
   var fate = arcFate(arcWord, arcIncOf(fu));  // #3474: I J K are increments from the start
   if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
-  enableSmoothing();
+  if (!inCycle) enableSmoothing();  // #4347: as onLinear
   var aChanged = has(properties.A) && (!has(lastA) || properties.A !== lastA);
   var tw = tilt(properties);
   if (tw === null || chainCut()) return;
