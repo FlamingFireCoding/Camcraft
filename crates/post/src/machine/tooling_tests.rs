@@ -101,7 +101,7 @@ fn the_new_library_tapers_are_spindle_mounts() {
     assert_eq!(parse_tooling(&v), Ok((Some("HSK-A63".into()), Some("HSK-A63 ER32".into()))));
     let v = json!({ "tooling": { "spindle_mount": "sk40", "default_holder": "sk40 shrink 12 mm" } });
     assert_eq!(parse_tooling(&v), Ok((Some("SK40".into()), Some("SK40 Shrink 12 mm".into()))));
-    for m in ["ISO30", "HSK-F63", "HSK-E40", "HSK-E32", "SK30", "BT50", "CAT50"] {
+    for m in ["ISO30", "HSK-F63", "HSK-E40", "HSK-E32", "SK30", "SK50", "BT50", "CAT50"] {
         assert_eq!(parse_tooling(&json!({ "tooling": { "spindle_mount": m } })), Ok((Some(m.into()), None)), "{m}");
     }
     let v = json!({ "tooling": { "spindle_mount": "SK40", "default_holder": "HSK-A63 ER32" } });

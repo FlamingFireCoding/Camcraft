@@ -72,6 +72,8 @@ fn the_shrink_entries_are_listed() {
     assert_eq!(names("BT50").len(), 8);
     assert_eq!(names("CAT50").len(), 10);
     assert!(names("TTS").is_empty());
+    // No published SK50 shrink-fit table was found (3919-standard-holders-3.md).
+    assert!(names("SK50").is_empty());
     let first = lib.iter().position(|e| matches!(e.clamp, Clamp::Shrink { .. })).expect("shrink entries");
     assert!(lib[first..].iter().all(|e| matches!(e.clamp, Clamp::Shrink { .. })));
 }
