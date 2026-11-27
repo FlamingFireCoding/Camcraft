@@ -14,8 +14,14 @@ fn close(a: &[(f64, f64)], b: &[(f64, f64)]) -> bool {
     a.len() == b.len() && a.iter().zip(b).all(|(p, q)| (p.0 - q.0).abs() < 1e-9 && (p.1 - q.1).abs() < 1e-9)
 }
 
+/// The taper's ER and Weldon entries (its shrink-fit chucks are pinned
+/// in holder_library_shrink_tests.rs).
 fn names(taper: &str) -> Vec<String> {
-    library().into_iter().filter(|e| e.taper.is_some_and(|t| t.name == taper)).map(|e| e.name()).collect()
+    library()
+        .into_iter()
+        .filter(|e| e.taper.is_some_and(|t| t.name == taper) && !matches!(e.clamp, super::super::Clamp::Shrink { .. }))
+        .map(|e| e.name())
+        .collect()
 }
 
 /// The dimension table, as recorded (mm).

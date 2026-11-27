@@ -5,7 +5,9 @@
 //! (straight-shank) ER11-ER40 collet chucks, plus the Tormach TTS
 //! straight-shank holders (#794, `holder_library_tts.rs`), plus the HSK
 //! (`holder_library_hsk.rs`) and DIN 69871 SK / router ISO30
-//! (`holder_library_din.rs`) holders (#3919), each drawn as a spun
+//! (`holder_library_din.rs`) holders, the BT50 / CAT50 tapers
+//! (`holder_library_fifty.rs`) and the DIN 69882-8 shrink-fit chucks
+//! on the tapers (`holder_library_shrink.rs`) (#3919), each drawn as a spun
 //! profile (#93) the tool editor drops into a tool's holder. Specced
 //! from the published standards' dimension tables (the numbers and
 //! their sources are recorded in docs/decisions/793-taper-holders.md
@@ -124,6 +126,11 @@ pub enum Clamp {
     /// A Weldon side-lock holder: a plain body of `body_d` around a
     /// `bore` for the tool's shank.
     Weldon { bore: f64, body_d: f64 },
+    /// A shrink-fit chuck (#3919): a `bore` for the tool's shank, a nose
+    /// of `nose_d` that widens at the 4.5-degree outer taper to a body of
+    /// `body_d` (the DIN 69882-8 table's d2 and d3), each drawn
+    /// [`SHRINK_MARGIN`] wider in radius.
+    Shrink { bore: f64, nose_d: f64, body_d: f64 },
 }
 
 /// One library entry: a taper (`None`: a standalone straight-shank
@@ -146,54 +153,31 @@ pub const MAX_GAUGE: f64 = 500.0;
 /// A Weldon bore takes a shank of its own size, within this (mm).
 pub const BORE_SLACK: f64 = 0.02;
 
-/// Why a library pick is refused. Each refusal names itself.
-#[derive(Clone, Debug, PartialEq)]
-pub enum LibraryError {
-    Unknown(String),
-    NonFinite,
-    BelowTip,
-    TooShort { min: f64 },
-    TooLong,
-    Shank { shank_d: f64, takes: String },
-}
-
-impl core::fmt::Display for LibraryError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Unknown(n) => write!(f, "there is no holder '{n}' in the holder library"),
-            Self::NonFinite => write!(f, "the gauge length and the projection must be finite numbers"),
-            Self::BelowTip => write!(f, "the holder's nose cannot sit below the tool tip (projection < 0)"),
-            Self::TooShort { min } => {
-                write!(f, "the gauge length is shorter than the flange and nose need ({min:.2} mm at least)")
-            }
-            Self::TooLong => write!(f, "the gauge length is longer than {MAX_GAUGE} mm"),
-            Self::Shank { shank_d, takes } => write!(f, "a Ø{shank_d:.3} mm shank does not fit - the holder takes {takes}"),
-        }
-    }
-}
-
-impl std::error::Error for LibraryError {}
-
 impl HolderEntry {
     /// The name the editor lists and MCP takes: "BT30 ER20",
-    /// "BT40 Weldon 12 mm", "CAT40 Weldon 1/2 in", "ER20 chuck".
+    /// "BT40 Weldon 12 mm", "CAT40 Weldon 1/2 in", "ER20 chuck",
+    /// "BT40 Shrink 12 mm".
     #[must_use]
     pub fn name(&self) -> String {
         match (self.taper, self.clamp) {
             (Some(t), Clamp::Er(er)) => format!("{} {}", t.name, er.name),
             (Some(t), Clamp::Weldon { .. }) => format!("{} Weldon {}", t.name, self.label),
+            (Some(t), Clamp::Shrink { .. }) => format!("{} Shrink {}", t.name, self.label),
             (None, Clamp::Er(er)) => format!("{} chuck", er.name),
             (None, Clamp::Weldon { .. }) => format!("Weldon {}", self.label),
+            (None, Clamp::Shrink { .. }) => format!("Shrink {}", self.label),
         }
     }
 
-    /// The radius the nose and body are drawn at: the nut's, or the
-    /// Weldon body's plus [`WELDON_SCREW`].
+    /// The radius the body is drawn at: the nut's, the Weldon body's
+    /// plus [`WELDON_SCREW`], or the shrink-fit body's plus
+    /// [`SHRINK_MARGIN`].
     #[must_use]
     pub fn body_r(&self) -> f64 {
         match self.clamp {
             Clamp::Er(er) => er.nut_d * 0.5,
             Clamp::Weldon { body_d, .. } => body_d * 0.5 + WELDON_SCREW,
+            Clamp::Shrink { body_d, .. } => body_d * 0.5 + SHRINK_MARGIN,
         }
     }
 
@@ -207,14 +191,17 @@ impl HolderEntry {
 
     /// The shortest gauge length that still holds the flange, the nose
     /// (nut or body), and between them the flare or [`MIN_BODY`] of
-    /// body, whichever is longer.
+    /// body, whichever is longer. A shrink-fit chuck's nose cone and
+    /// flare share one envelope (`holder_library_shrink.rs`), so it needs only the
+    /// flange and [`MIN_BODY`].
     #[must_use]
     pub fn min_gauge(&self) -> f64 {
-        let nose = match self.clamp {
-            Clamp::Er(er) => er.nut_len,
-            Clamp::Weldon { .. } => 0.0,
-        };
-        self.taper.map_or(0.0, |t| t.front_face()) + nose + MIN_BODY.max(self.flare_len())
+        let front = self.taper.map_or(0.0, |t| t.front_face());
+        match self.clamp {
+            Clamp::Er(er) => front + er.nut_len + MIN_BODY.max(self.flare_len()),
+            Clamp::Weldon { .. } => front + MIN_BODY.max(self.flare_len()),
+            Clamp::Shrink { .. } => front + MIN_BODY,
+        }
     }
 
     /// Can the holder take a shank of `shank_d`? An ER chuck takes its
@@ -225,7 +212,9 @@ impl HolderEntry {
                 shank_d >= er.min_bore - 1e-9 && shank_d <= er.max_bore + 1e-9,
                 format!("{} collets, Ø{}-{} mm", er.name, er.min_bore, er.max_bore),
             ),
-            Clamp::Weldon { bore, .. } => ((shank_d - bore).abs() <= BORE_SLACK, format!("a Ø{bore:.3} mm shank")),
+            Clamp::Weldon { bore, .. } | Clamp::Shrink { bore, .. } => {
+                ((shank_d - bore).abs() <= BORE_SLACK, format!("a Ø{bore:.3} mm shank"))
+            }
         };
         if ok && shank_d.is_finite() { Ok(()) } else { Err(LibraryError::Shank { shank_d, takes }) }
     }
@@ -254,48 +243,39 @@ impl HolderEntry {
         let gauge = nose + gauge_len;
         let p = SpunPoint::line;
         let r = self.body_r();
-        let mut pts = vec![p(nose, 0.0), p(nose, r)];
-        if let Clamp::Er(er) = self.clamp {
-            // The nut, then the body as wide as the nut: the nut's top
-            // stays a point of its own so it can be edited.
-            pts.push(p(nose + er.nut_len, r));
-        }
-        match self.taper {
-            None => pts.extend([p(gauge, r), p(gauge, 0.0)]),
-            Some(t) => {
-                let front = gauge - t.front_face();
-                let back = gauge - t.standoff;
-                let fr = t.flange_d * 0.5;
-                pts.extend([p(front - self.flare_len(), r), p(front, fr.max(r)), p(front, fr), p(back, fr)]);
-                // A collar (no standoff) tops out at the gauge line.
-                if t.standoff > 0.0 {
-                    pts.extend([p(back, t.standoff_r()), p(gauge, t.standoff_r())]);
+        // The flange's front face and radius; a standalone chuck runs
+        // its body up to the gauge line.
+        let (front, fr) = self.taper.map_or((gauge, 0.0), |t| (gauge - t.front_face(), t.flange_d * 0.5));
+        let mut pts = match self.clamp {
+            Clamp::Shrink { nose_d, .. } => shrink::envelope(nose, nose_d * 0.5 + SHRINK_MARGIN, r, front, fr),
+            Clamp::Er(_) | Clamp::Weldon { .. } => {
+                let mut v = vec![p(nose, 0.0), p(nose, r)];
+                if let Clamp::Er(er) = self.clamp {
+                    // The nut, then the body as wide as the nut: the nut's
+                    // top stays a point of its own so it can be edited.
+                    v.push(p(nose + er.nut_len, r));
                 }
-                pts.push(p(gauge, 0.0));
+                match self.taper {
+                    None => v.extend([p(gauge, r), p(gauge, 0.0)]),
+                    Some(_) => v.extend([p(front - self.flare_len(), r), p(front, fr.max(r)), p(front, fr)]),
+                }
+                v
             }
+        };
+        if let Some(t) = self.taper {
+            let back = gauge - t.standoff;
+            pts.push(p(back, fr));
+            // A collar (no standoff) tops out at the gauge line.
+            if t.standoff > 0.0 {
+                pts.extend([p(back, t.standoff_r()), p(gauge, t.standoff_r())]);
+            }
+            pts.push(p(gauge, 0.0));
         }
         // A body as wide as the flange leaves a zero-length step.
         pts.dedup_by(|b, a| (a.z - b.z).hypot(a.r - b.r) < 1e-9);
         Ok(pts)
     }
 }
-
-/// A Weldon bore: its label, bore and typical body diameter (mm).
-type Bore = (&'static str, f64, f64);
-
-/// Metric Weldon bores (DIN 1835 form B shanks) with the body
-/// diameters typical of DIN 6359 side-lock holders.
-const METRIC_BORES: [Bore; 6] =
-    [("6 mm", 6.0, 25.0), ("8 mm", 8.0, 28.0), ("10 mm", 10.0, 35.0), ("12 mm", 12.0, 42.0), ("16 mm", 16.0, 48.0), ("20 mm", 20.0, 52.0)];
-/// Inch Weldon bores with the body diameters typical of inch end-mill
-/// holders (1.00, 1.25, 1.375, 1.75, 1.75 in).
-const INCH_BORES: [Bore; 5] = [
-    ("1/4 in", 6.35, 25.4),
-    ("3/8 in", 9.525, 31.75),
-    ("1/2 in", 12.7, 34.925),
-    ("5/8 in", 15.875, 44.45),
-    ("3/4 in", 19.05, 44.45),
-];
 
 /// The standalone chucks' default gauge lengths (mm, nose face to the
 /// body's back face), ER11 to ER40: typical straight-shank chuck heads,
@@ -342,6 +322,10 @@ pub fn library() -> Vec<HolderEntry> {
     // #3919: the DIN 69871 SK and router ISO30 holders, then HSK.
     v.extend(din::entries());
     v.extend(hsk::entries());
+    v.extend(fifty::entries());
+    // #3919: the shrink-fit chucks, taper by taper, after every ER and
+    // Weldon entry.
+    v.extend(shrink::entries());
     v
 }
 
@@ -378,9 +362,22 @@ pub use din::{ISO30, SK30, SK40};
 mod hsk;
 pub use hsk::{HSK_A63, HSK_E32, HSK_E40, HSK_F63};
 
+#[path = "holder_library_fifty.rs"]
+mod fifty;
+pub use fifty::{BT50, CAT50};
+
+#[path = "holder_library_shrink.rs"]
+mod shrink;
+pub use shrink::{SHRINK_MARGIN, SHRINK_TAPER};
+
+#[path = "holder_library_error.rs"]
+mod error;
+pub use error::LibraryError;
+
 #[path = "holder_library_weldon.rs"]
 mod weldon;
-pub use weldon::{picker_rows, resolve, weldon_for, weldon_name, PickerRow};
+pub use weldon::{picker_rows, resolve, shrink_for, shrink_name, weldon_for, weldon_name, PickerRow};
+use weldon::{Bore, INCH_BORES, METRIC_BORES};
 
 #[path = "holder_library_ref.rs"]
 mod reference;
