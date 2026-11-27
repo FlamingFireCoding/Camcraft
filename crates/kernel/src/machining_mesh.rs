@@ -228,10 +228,10 @@ pub fn machining_mesh(
     let t_facets = std::time::Instant::now();
     let (mesh, _) = evaluate(&planned.plan, record.faces.len(), false)?;
     // #4200: the evaluator's time, logging only.
-    tracing::info!(stage = "facets", ms = t_facets.elapsed().as_millis() as u64, "evaluated, triangles={}", mesh.triangles.len());
+    tracing::debug!(stage = "facets", ms = t_facets.elapsed().as_millis() as u64, "evaluated, triangles={}", mesh.triangles.len());
     let t_weld = std::time::Instant::now();
     let (positions, triangles, tri_face) = weld(&mesh);
-    tracing::info!(stage = "weld", ms = t_weld.elapsed().as_millis() as u64, "welded, positions={}", positions.len());
+    tracing::debug!(stage = "weld", ms = t_weld.elapsed().as_millis() as u64, "welded, positions={}", positions.len());
     let (open, over, turned) = sides(&triangles);
     if open > 0 || over > 0 || turned > 0 {
         return Err(MeshRefusal::NotWatertight { open, over, turned });
@@ -315,7 +315,7 @@ pub(crate) fn planned(
         .map_err(|_| MeshRefusal::Planner("the planner panicked".into()))?;
         let (mut plan, stats) = planned.map_err(|e| MeshRefusal::Planner(e.to_string()))?;
         // #4200: where the mesh time goes; logging only.
-        tracing::info!(stage = "mesh_plan", ms = t_plan.elapsed().as_millis() as u64, "chord {chord:e} mm: plan made, faces={}", plan.faces.len());
+        tracing::debug!(stage = "mesh_plan", ms = t_plan.elapsed().as_millis() as u64, "chord {chord:e} mm: plan made, faces={}", plan.faces.len());
         if stop.is_cancelled() {
             return Err(MeshRefusal::TimedOut("planning"));
         }
@@ -325,7 +325,7 @@ pub(crate) fn planned(
         // measure below judges the plan as it then stands.
         notes.extend(crate::mesh_redivide::redivide(&mut plan, record, tol_mm, stop));
         let planned_tris: usize = plan.faces.iter().map(|f| f.triangles.len()).sum();
-        tracing::info!(stage = "mesh_plan", ms = t_judge.elapsed().as_millis() as u64, "judged and redivided, triangles={planned_tris}");
+        tracing::debug!(stage = "mesh_plan", ms = t_judge.elapsed().as_millis() as u64, "judged and redivided, triangles={planned_tris}");
         if planned_tris > MAX_MACHINING_TRIANGLES {
             return Err(MeshRefusal::TooLarge(planned_tris));
         }
@@ -334,7 +334,7 @@ pub(crate) fn planned(
             Unmeasured::Cancelled => MeshRefusal::TimedOut("measuring"),
             other => MeshRefusal::Unmeasured(other),
         })?;
-        tracing::info!(stage = "mesh_deviation", ms = t_dev.elapsed().as_millis() as u64, "measured, samples={} largest={:e}", deviation.samples, deviation.largest());
+        tracing::debug!(stage = "mesh_deviation", ms = t_dev.elapsed().as_millis() as u64, "measured, samples={} largest={:e}", deviation.samples, deviation.largest());
         // A NaN deviation is refused too.
         // The judged figure adds the snap's largest move (sqrt(3) windows,
         // one in each axis): the weld after this check may move a vertex

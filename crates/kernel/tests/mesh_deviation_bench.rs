@@ -157,23 +157,26 @@ fn machining_mesh_deviation_bench() {
 }
 
 /// The #4200 repro: the reporter's 3.7 MB twisted rotor, read and meshed,
-/// with the kernel's stage timings printed (`tracing` at info). The row is
-/// profile only: no verdict is pinned, because the rotor is not in the
-/// repository. The path comes from `CAMCRAFT_ROTOR_STEP` and defaults to
-/// the reporter's path; without the file the row prints that it skipped
-/// and passes, so CI without it stays green.
+/// with the kernel's stage timings printed (the bench sets its own
+/// `tracing` filter to `camcraft_kernel=debug`, where the stage events
+/// live). The row is profile only: no verdict is pinned, because the
+/// rotor is not in the repository. The path comes from
+/// `CAMCRAFT_ROTOR_STEP`; without it the row prints that it skipped and
+/// passes, so CI without it stays green.
 #[test]
 #[ignore = "kernel release lane: #4200 profile, the reporter's rotor (set CAMCRAFT_ROTOR_STEP; cargo test --release -p camcraft-kernel -- --ignored)"]
 fn rotor_step_profile_bench() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("camcraft_kernel=debug")),
         )
         .with_test_writer()
         .try_init();
-    let path = std::env::var("CAMCRAFT_ROTOR_STEP")
-        .unwrap_or_else(|_| "C:\\Users\\tbras\\Documents\\Rotor\\Rotor.STEP".into());
+    let Ok(path) = std::env::var("CAMCRAFT_ROTOR_STEP") else {
+        println!("rotor: skipped (set CAMCRAFT_ROTOR_STEP)");
+        return;
+    };
     let bytes = match std::fs::read(&path) {
         Ok(b) => b,
         Err(_) => {
