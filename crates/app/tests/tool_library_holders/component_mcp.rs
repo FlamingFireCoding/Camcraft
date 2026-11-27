@@ -5,8 +5,9 @@
 //! assembly built by `set_tool_assembly` reads back through
 //! `get_tool_assembly`; an edit of the shared insert updates both tools
 //! in one undo step; a save to a library file, the sync and its undo;
-//! the named refusals, which change nothing. Provenance: our own tests
-//! over our own tools.
+//! the named refusals, which change nothing; an upsert carries an
+//! insert's running data (#3646) and a library save refuses it.
+//! Provenance: our own tests over our own tools.
 
 use camcraft_app::mcp::Server;
 use camcraft_app::project::{component_to_dto, tool_to_json};
@@ -44,7 +45,7 @@ impl Mcp {
 }
 
 fn dto((c, g): (ToolComponent, ComponentGeometry)) -> Value {
-    serde_json::to_value(component_to_dto(&DocumentComponent { component: c, geometry: g, library_ref: None })).expect("dto")
+    serde_json::to_value(component_to_dto(&DocumentComponent::new(c, g))).expect("dto")
 }
 
 fn library(tag: &str) -> String {
@@ -197,4 +198,22 @@ fn mcp_component_tools_refuse_by_name_and_change_nothing() {
     assert!(!std::path::Path::new(&lib).exists(), "no refused save writes the library");
 
     assert_eq!(m.ok("get_tool_assembly", json!({ "tool": A })), before, "nothing changed");
+}
+
+#[test]
+fn mcp_upsert_carries_insert_running_data_and_a_library_save_refuses_it() {
+    let mut m = shop();
+    let mut row = dto(insert("CCMT09T304"));
+    row["running"] = json!({ "tool_material": "carbide" });
+    let r = m.ok("upsert_tool_component", json!({ "component": row }));
+    assert_eq!(r["component"]["component"]["running"]["tool_material"], json!("carbide"), "the stated data lands: {r}");
+    // A later upsert that does not state the key keeps the held data.
+    let r = m.ok("upsert_tool_component", json!({ "component": dto(insert("CCMT09T308")) }));
+    assert_eq!(r["component"]["component"]["running"]["tool_material"], json!("carbide"), "the held data stays: {r}");
+    let lib = library("running");
+    let e = m.refused("save_library_component", json!({ "id": INSERT, "library": lib }));
+    assert!(e.contains(INSERT) && e.contains("running data"), "{e}");
+    let mut facts = dto(insert("CCMT09T304"));
+    facts["milling"] = json!({ "dc": 25.0, "kapr_deg": 90.0, "apmx": 5.0, "center_cutting": false });
+    assert!(m.refused("upsert_tool_component", json!({ "component": facts })).contains("not a cutter body"));
 }

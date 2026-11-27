@@ -8,7 +8,10 @@
 //! The law: strict, all or nothing. Each row is built again through the
 //! checked constructors (`ToolComponent::new`, `ComponentGeometry::new`
 //! and `with_stop`, `Frame::new`, `ComponentBody::new`), an unknown key
-//! is refused, and each refusal names the row by its id.
+//! is refused, and each refusal names the row by its id. #3646: a
+//! multi-seat cutter body's catalog facts (`milling`) and an insert's
+//! running data (`running`) are optional keys; a fact on the wrong kind
+//! of row is refused by the row law of the component commands.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -22,7 +25,10 @@ use camcraft_tools::insert_iso1832::{InsertSpec, Thickness};
 use camcraft_tools::insert_seat::{Clamping, HolderStyle, InsertSeatSpec};
 use camcraft_tools::spun::SpunPoint;
 
-use crate::schema::{DocumentComponent, LibraryRef};
+use camcraft_tools::milling_cutter::MillingBody;
+
+use super::{CuttingRowDto, ToolMaterialDto};
+use crate::schema::{DocumentComponent, InsertRunning, LibraryRef};
 
 /// One tool component on file.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -36,6 +42,59 @@ pub struct ComponentDto {
     /// The user library copy the row was taken from (a project only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub library_ref: Option<LibraryRefDto>,
+    /// #3646: a multi-seat cutter body's catalog facts (a tool item only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub milling: Option<MillingDto>,
+    /// #3646: an insert's own tool material and cutting rows (an insert only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub running: Option<RunningDto>,
+}
+
+/// #3646: the catalog facts of a multi-seat cutter body - `DC`, `KAPR`
+/// (degrees), `APMX`, centre cutting and an optional seat count.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct MillingDto {
+    pub dc: f64,
+    pub kapr_deg: f64,
+    pub apmx: f64,
+    pub center_cutting: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seat_count: Option<u32>,
+}
+
+/// #3646: what an insert gives each tool that cuts with it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
+pub struct RunningDto {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_material: Option<ToolMaterialDto>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cutting: Vec<CuttingRowDto>,
+}
+
+fn milling_dto(m: &MillingBody) -> MillingDto {
+    MillingDto { dc: m.dc, kapr_deg: m.kapr_deg, apmx: m.apmx, center_cutting: m.center_cutting, seat_count: m.seat_count }
+}
+
+fn running_dto(r: &InsertRunning) -> RunningDto {
+    RunningDto {
+        tool_material: r.tool_material.map(|m| match m {
+            camcraft_tools::cutting::ToolMaterial::Hss => ToolMaterialDto::Hss,
+            camcraft_tools::cutting::ToolMaterial::Carbide => ToolMaterialDto::Carbide,
+        }),
+        cutting: r.cutting.iter().map(CuttingRowDto::from_row).collect(),
+    }
+}
+
+fn running(r: &RunningDto) -> InsertRunning {
+    InsertRunning {
+        tool_material: r.tool_material.map(|m| match m {
+            ToolMaterialDto::Hss => camcraft_tools::cutting::ToolMaterial::Hss,
+            ToolMaterialDto::Carbide => camcraft_tools::cutting::ToolMaterial::Carbide,
+        }),
+        cutting: r.cutting.iter().map(|c| c.to_row()).collect(),
+    }
 }
 
 /// The component kind and its codes. Codes are written as their text
@@ -184,6 +243,8 @@ pub fn component_to_dto(row: &DocumentComponent) -> ComponentDto {
             .library_ref
             .as_ref()
             .map(|r| LibraryRefDto { id: r.id.clone(), content_hash: r.content_hash.clone() }),
+        milling: row.milling.as_ref().map(milling_dto),
+        running: row.running.as_ref().map(running_dto),
     }
 }
 
@@ -191,7 +252,9 @@ pub fn component_to_dto(row: &DocumentComponent) -> ComponentDto {
 /// the compact wire JSON of its name, item and geometry, so the same
 /// content gives the same hash in each build and on each machine. The
 /// id and the library link are not content: a document row and its
-/// library copy can have different ids.
+/// library copy can have different ids. The #3646 cutter facts and
+/// running data are not in the hash either: a library copy does not
+/// hold them, and a sync keeps the document row's own.
 #[must_use]
 pub fn content_hash(component: &ToolComponent, geometry: &ComponentGeometry) -> String {
     let content = (component.name(), item_dto(component.kind()), geometry_dto(geometry));
@@ -295,7 +358,23 @@ pub fn component_from_dto(dto: &ComponentDto) -> Result<DocumentComponent, Strin
         }
         Some(r) => Some(LibraryRef { id: r.id.trim().to_owned(), content_hash: r.content_hash.trim().to_owned() }),
     };
-    Ok(DocumentComponent { component, geometry, library_ref })
+    let row = DocumentComponent {
+        component,
+        geometry,
+        library_ref,
+        milling: dto.milling.as_ref().map(|m| MillingBody {
+            dc: m.dc,
+            kapr_deg: m.kapr_deg,
+            apmx: m.apmx,
+            center_cutting: m.center_cutting,
+            seat_count: m.seat_count,
+        }),
+        running: dto.running.as_ref().map(running),
+    };
+    if let Some(why) = crate::commands::tool_assembly::row_refusal(&row) {
+        return Err(why);
+    }
+    Ok(row)
 }
 
 /// Every row of `rows`, checked whole: the first refused row, or an id

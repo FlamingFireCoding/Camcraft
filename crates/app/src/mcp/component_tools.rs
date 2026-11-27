@@ -20,6 +20,7 @@ use super::tools::{Tool, opt_str, req_str};
 use crate::commands::{DeleteDocumentComponent, SyncDocumentComponent, UpsertDocumentComponent};
 use crate::component_library;
 use crate::project::component_to_dto;
+use crate::schema::DocumentComponent;
 use crate::script::Env;
 use crate::tool_assembly as ta;
 use camcraft_tools::component::ToolComponent;
@@ -191,8 +192,21 @@ fn document_row(env: &Env, a: &Map<String, Value>, id: &str) -> Value {
 fn upsert_tool_component(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
     let row = parse_component(a, "component")?;
     let id = row.component.id().to_owned();
-    let added = ta::component(&env.world, &id).is_none();
-    let cmd = UpsertDocumentComponent::new(&env.world, row.component, row.geometry).map_err(cmd_err)?;
+    let held = ta::component(&env.world, &id);
+    let added = held.is_none();
+    // #3646: the stated cutter facts and running data land with the row;
+    // a key the call does not state keeps the held row's value, and the
+    // library link stays (as a catalog-fact edit keeps them).
+    let row = match held {
+        None => row,
+        Some(h) => DocumentComponent {
+            library_ref: h.library_ref,
+            milling: row.milling.or(h.milling),
+            running: row.running.or(h.running),
+            ..row
+        },
+    };
+    let cmd = UpsertDocumentComponent::with_row(&env.world, row).map_err(cmd_err)?;
     let updated = cmd.updated_tools();
     env.history.execute(&env.world, cmd);
     Ok(json!({ "component": document_row(env, a, &id), "added": added, "updated_tools": updated }))

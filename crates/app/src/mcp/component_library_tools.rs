@@ -121,7 +121,7 @@ pub(super) fn row_json(scope: &str, dto: &ComponentDto, c: &ToolComponent) -> Va
 
 /// The wire form of a library entry.
 pub(super) fn library_dto(e: &LibraryComponent) -> ComponentDto {
-    component_to_dto(&DocumentComponent { component: e.component.clone(), geometry: e.geometry.clone(), library_ref: None })
+    component_to_dto(&DocumentComponent::new(e.component.clone(), e.geometry.clone()))
 }
 
 /// The checked component under `key`. A stated `library_ref` is
@@ -153,7 +153,7 @@ fn save_library_component(env: &mut Env, a: &Map<String, Value>) -> Result<Value
     if component_library::is_builtin_id(&id) {
         return Err(format!("tool component '{id}' is built in - it is not saved to the user library"));
     }
-    let entry = LibraryComponent { component: row.component, geometry: row.geometry };
+    let entry = LibraryComponent::from_row(row)?;
     let content_hash = entry.content_hash();
     let path = library_path(a)?;
     store::put(&path, entry)?;

@@ -98,3 +98,32 @@ a change to a key needs a project version step. The commands and the
 status are small and are pinned in
 `crates/app/tests/tool_library_holders/component_files.rs` and
 `component_sync.rs`.
+
+## The #3646 cutter facts and running data on file (merge of #4249)
+
+**Chosen.** #4249 (#3646) gave `DocumentComponent` two fields: `milling`
+(the catalog facts of a multi-seat cutter body) and `running` (an
+insert's tool material and cutting rows). The v84 component row carries
+them as two optional keys, `milling` and `running`. Each key is strict:
+an unknown key is refused, and the reader applies the same row law as
+the component commands (`row_refusal`: cutter facts only on a tool item,
+running data only on an insert). A `.camtools` v8 row uses the same wire
+form. The user component library (`camcraft-components/1`) does not
+hold the two keys and refuses a row that states them. A sync keeps the
+document row's own facts and running data, as a hand edit does. The
+content hash stays over the name, the item and the geometry.
+
+**Why.** The #4249 PR body asks the second PR to merge to carry the two
+fields into this file format. Without them, a saved multi-seat cutter
+loses its facts and its insert loses its cutting rows on reopen. The
+library format stays as it is so that the library, its hash and its
+built-in rows do not change in a merge.
+
+**Considered and dropped.**
+- The library holds the facts too, with the facts in the content hash.
+  Dropped for now: it changes `LibraryComponent` and every caller in
+  the stacked PRs (#4268, #4271, #4280). A follow-up issue can add it.
+- Accept and drop the keys in a library file. Dropped: a silent loss.
+- Save a document row with the facts to the library and drop them.
+  Dropped: a silent loss. `LibraryComponent::from_row` refuses such a
+  row by name, and each save path (MCP, UI) goes through it.
