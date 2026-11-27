@@ -202,6 +202,10 @@ pub mod tool_cutter;
 pub use camcraft_tools::holder_library;
 // #368: a tool's modelled body and the reads the judging laws take from it.
 pub mod tool_body;
+// #3644: the document component table and each tool's component stack.
+pub mod tool_assembly;
+// #3644: the records the table holds, for the callers outside this crate.
+pub use camcraft_tools::{component, component_geometry, connection_code};
 // #371: the editor's placement preview and picks, the sim's posed body.
 pub mod tool_body_view;
 // #369: lathe-held tool bodies (the turning tool frame).
@@ -215,6 +219,10 @@ pub mod tool_body_lathe_view;
 pub mod tool_body_assembly;
 // #743: the simulated tool as the collision laws read it, revolved.
 pub mod sim_tool_body;
+// #4266: the sim playback's machine-frame view - the math lives in
+// camcraft-sim (pure vectors, no document concern); `app` re-exports it
+// for the UI ("app holds the document, nothing else").
+pub use camcraft_sim::machine_view as sim_machine_view;
 // #1038: a lathe-held body drawn as modelled in the holder law's frame.
 pub mod sim_lathe_body;
 pub mod units;
