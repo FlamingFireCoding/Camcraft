@@ -14,7 +14,7 @@ use crate::state::{ErrorScope, LibraryPage, State, ToolSource};
 use camcraft_app::tools::ToolKind;
 
 /// The way back from an editor to its list.
-pub(crate) const BACK: &str = "← List";
+pub(crate) const BACK: &str = "‹ List";
 /// The footer's button on a list page.
 pub(crate) const CLOSE: &str = "Close";
 /// The header's close button (its AccessKit name; it shows "×").
@@ -93,19 +93,19 @@ pub(crate) fn header(ui: &mut Ui, state: &State, face: &Face) -> Option<Ask> {
         }
         match face {
             Face::List(..) => {
-                ui.label(RichText::new(super::TITLE).strong());
+                ui.label(title(ui, super::TITLE));
             }
             Face::Tool { name, kind, number } => {
-                ui.label(RichText::new(name).strong());
+                ui.label(title(ui, name));
                 let t = if *number > 0 { format!("T{number}") } else { "T?".to_owned() };
                 ui.weak(format!("{} · {t}", super::super::browser_tree::kind_name(*kind)));
             }
             Face::Holder(name) => {
-                ui.label(RichText::new(name).strong());
+                ui.label(title(ui, name));
                 ui.weak("holder");
             }
             Face::Component(name) => {
-                ui.label(RichText::new(name).strong());
+                ui.label(title(ui, name));
                 ui.weak("component");
             }
         }
@@ -189,6 +189,12 @@ pub(crate) fn hint(face: &Face) -> &'static str {
         Face::Tool { .. } => HINT_APPLY,
         Face::Component(_) => HINT_COMPONENT,
     }
+}
+
+/// The header's title: a little larger than the body text, in the body
+/// ink (the theme's strong ink is not readable on every window fill).
+fn title(ui: &Ui, text: &str) -> RichText {
+    RichText::new(text).size(15.0).color(ui.visuals().text_color())
 }
 
 /// The primary button: filled with the theme's accent while enabled.

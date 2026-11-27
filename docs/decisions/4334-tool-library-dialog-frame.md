@@ -3,7 +3,7 @@
 **Decided.** The tool library window gets one frame around its pages
 (`crates/ui/src/egui_app/tool_library_dialog/frame.rs`):
 
-- A header row: "← List" while an editor (the tool editor, the component
+- A header row: "‹ List" while an editor (the tool editor, the component
   editor) or the read-only holder view is open; the title ("Tool library" on
   a list page, else the tool, holder or component name with a dim
   subtitle such as "End mill · T1"); the Cutting tools | Holders tabs; and a
@@ -38,7 +38,10 @@
 5. *Cancel = drop the draft and go back to the list.* This is what the old
    way back did, so List and Cancel do the same now. When the editor keeps a
    draft over a page change, Cancel can become "revert the draft".
-6. *The flat look of #4245 with the existing theme tokens.* No shadow, the
+6. *"‹ List", not "← List".* The bundled egui fonts have no "←" glyph (it
+   shows as a box); "‹" renders. An arrow icon can replace it in a later
+   refit.
+7. *The flat look of #4245 with the existing theme tokens.* No shadow, the
    theme's window fill and stroke, hairline separators of the panels, Apply
    filled with the theme accent (the `action_bar` inks). No new theme or kit
    crate in this PR.
