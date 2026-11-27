@@ -16,10 +16,12 @@
 //! #3897: the holder list's used-by count (`used_by`). #3644: the
 //! component table and assembly commands (`assembly_cmds`). #3645: the
 //! table and stacks in the project file (`component_files`), the user
-//! component library and its sync (`component_sync`).
+//! component library and its sync (`component_sync`). #3647: their MCP
+//! tools (`component_mcp`).
 //! Gate map (M4.4): covers app::tool_library, app::commands (tool_import, tool_assembly),
 //! app::mcp (import_tool_library), app::script (importTools), app::tool_body, app::tool_assembly,
-//! app::project (component_wire, assembly_wire), app::component_library, app::commands (component_sync).
+//! app::project (component_wire, assembly_wire), app::component_library, app::commands (component_sync),
+//! app::mcp (component_tools, assembly_tools, component_library_tools).
 
 use camcraft_app::commands::{
     AddTool, CreateOperation, GenerateOperation, History, ImportMode, ImportReport, ImportTools, SetStock, SetToolBody,
@@ -47,6 +49,8 @@ mod assembly_cmds;
 mod component_files;
 #[path = "tool_library_holders/component_sync.rs"]
 mod component_sync;
+#[path = "tool_library_holders/component_mcp.rs"]
+mod component_mcp;
 
 const DRAWN: &str = "Six";
 const MESH: &str = "Four";
