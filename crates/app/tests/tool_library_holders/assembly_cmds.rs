@@ -4,8 +4,7 @@
 //! their operations go Stale, and undo and redo restore the exact state;
 //! an edit that one assembly cannot take, a delete of a used component,
 //! and an incompatible stack are refused by name and change nothing.
-//! A milling insert stands in for the issue's turning insert: the lathe
-//! side of the resolver is still open on #3643. Provenance: our own
+//! The turning insert of the issue is pinned in `lathe_stack`. Provenance: our own
 //! tests over our own commands.
 
 use camcraft_app::commands::{
