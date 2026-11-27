@@ -99,16 +99,16 @@ pub fn picker_rows() -> Vec<PickerRow> {
             rows.push(PickerRow::Entry(e));
             continue;
         };
-        let row = rows.iter_mut().find_map(|r| match (kind, r) {
-            (Kind::Weldon, PickerRow::Weldon { taper, bores }) | (Kind::Shrink, PickerRow::Shrink { taper, bores })
-                if taper.name == t.name =>
-            {
-                Some(bores)
+        let at = rows.iter().position(|r| match (kind, r) {
+            (Kind::Weldon, PickerRow::Weldon { taper, .. }) | (Kind::Shrink, PickerRow::Shrink { taper, .. }) => {
+                taper.name == t.name
             }
-            _ => None,
+            _ => false,
         });
-        match (row, kind) {
-            (Some(bores), _) => bores.push(bore),
+        match (at.and_then(|i| rows.get_mut(i)), kind) {
+            (Some(PickerRow::Weldon { bores, .. } | PickerRow::Shrink { bores, .. }), _) => bores.push(bore),
+            // `position` only finds a grouped row.
+            (Some(PickerRow::Entry(_)), _) => {}
             (None, Kind::Weldon) => rows.push(PickerRow::Weldon { taper: t, bores: vec![bore] }),
             (None, Kind::Shrink) => rows.push(PickerRow::Shrink { taper: t, bores: vec![bore] }),
         }
