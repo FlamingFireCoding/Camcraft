@@ -215,6 +215,23 @@ pub struct Seg {
     /// walked one shared fraction before stage G.
     pub pl: f64,
     pub rl: f64,
+    /// #4266, display only: the rotary axis line a work-turning rotary
+    /// turns the work about, when the script builder read one (the
+    /// stated op/machine line through the WCS origin, else the free
+    /// fit - the very line `verify::posed_steel` judges the turning
+    /// steel about). `None` on every machine without one: the playback
+    /// keeps today's tip-relative draw. No law reads it; the default
+    /// leaves every verdict untouched.
+    pub work: Option<WorkTurn>,
+}
+
+/// A rotary axis line in the world frame: a point on the line and a
+/// direction (the script builder normalizes it; a degenerate one
+/// leaves no turn - the fallback draw). #4266, display only.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WorkTurn {
+    pub origin: [f64; 3],
+    pub dir: [f64; 3],
 }
 
 /// What the readout says at a point in time.
@@ -244,6 +261,10 @@ pub struct Frame {
     /// turning move runs, its endpoints otherwise. Every frame of a
     /// prismatic program is exactly `[0.0, 0.0, 1.0]`.
     pub axis: [f64; 3],
+    /// The segment's work-turn line ([`Seg::work`]), passed through
+    /// unchanged - the playhead's turn angle is read off `axis` about
+    /// it by the display. #4266, display only.
+    pub work: Option<WorkTurn>,
 }
 
 /// A whole document's timeline. `cum[i]` is the *end* of `segs[i]`'s
@@ -285,6 +306,7 @@ impl Script {
                 readout: Readout::Idle,
                 done: true,
                 axis: home(),
+                work: None,
             };
         };
         if !t.is_finite() {
@@ -297,6 +319,7 @@ impl Script {
                 readout: Readout::Idle,
                 done: false,
                 axis: seg_axis(first, 0.0),
+                work: first.work,
             };
         }
         if t >= self.total {
@@ -310,6 +333,7 @@ impl Script {
                 readout: Readout::Idle,
                 done: true,
                 axis: seg_axis(last, 1.0),
+                work: last.work,
             };
         }
         // The first segment whose window ends after t; nothing past
@@ -333,6 +357,7 @@ impl Script {
                 },
                 done: false,
                 axis: seg_axis(s, leg_frac(s.rl, f, s.secs)),
+                work: s.work,
             }
         } else if local - s.secs < s.dwell {
             Frame {
@@ -341,6 +366,7 @@ impl Script {
                 readout: Readout::Dwell(s.dwell),
                 done: false,
                 axis: seg_axis(s, 1.0),
+                work: s.work,
             }
         } else {
             // Past every window (or a float whisper of one at the
@@ -353,6 +379,7 @@ impl Script {
                 readout: Readout::Idle,
                 done: t >= self.total,
                 axis: seg_axis(s, 1.0),
+                work: s.work,
             }
         }
     }
@@ -570,6 +597,7 @@ pub fn script<'a>(
                 abc: (held, held),
                 pl: secs,
                 rl: 0.0,
+                work: None,
             });
             cum += secs;
             sc.cum.push(cum);
@@ -632,6 +660,7 @@ pub fn script<'a>(
                 abc: (held, next),
                 pl,
                 rl,
+                work: None,
             });
             held = next;
             cum += secs;

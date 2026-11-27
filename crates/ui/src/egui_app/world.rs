@@ -204,6 +204,10 @@ fn collect_parts(state: &State) -> (Vec<GpuPart>, Vec<ModelSrc>) {
     // tinted (display only - the classes ride the vertex, nothing else).
     let models = crate::frame_cost::span("scene/parts.models");
     let struck = state.fixture_highlight();
+    // #4266: the playhead's work turn - the part, the stock and the
+    // steel ride the rotary table about its line; the tool below opts
+    // out (it poses itself, upright).
+    let work_view = sim_work_view(state);
     let mut bodies = Vec::new();
     let mut parts: Vec<GpuPart> = model::model_entities(&state.world)
         .into_iter()
@@ -211,7 +215,7 @@ fn collect_parts(state: &State) -> (Vec<GpuPart>, Vec<ModelSrc>) {
         .map(|(name, entity)| {
             let by = crate::move_drag::preview_offset(state, &name).unwrap_or([0.0; 3]);
             let src = model_src(state, &entity, by);
-            let verts = src.as_ref().map(|s| (*s.verts).clone()).unwrap_or_default();
+            let verts = turned(src.as_ref().map(|s| (*s.verts).clone()).unwrap_or_default(), &work_view);
             bodies.extend(src);
             let classes =
                 if struck.contains(&name) { vec![crate::viewport::STRUCK_CLASS; verts.len()] } else { Vec::new() };
@@ -230,7 +234,7 @@ fn collect_parts(state: &State) -> (Vec<GpuPart>, Vec<ModelSrc>) {
             // `machined::vertex_classes`; plain material until judged), and
             // the GPU eye, when it traces, still paints over the slot.
             (_, Some(mesh)) => parts.push(GpuPart {
-                verts: mesh.iter().flat_map(|t| [t.a, t.b, t.c].map(|p| [ftoz(p.x), ftoz(p.y), ftoz(p.z)])).collect(),
+                verts: turned(mesh.iter().flat_map(|t| [t.a, t.b, t.c].map(|p| [ftoz(p.x), ftoz(p.y), ftoz(p.z)])).collect(), &work_view),
                 selected: false,
                 stock: true,
                 fill: false,
@@ -240,12 +244,10 @@ fn collect_parts(state: &State) -> (Vec<GpuPart>, Vec<ModelSrc>) {
             // it IS the stock's surface after the program, judged - same
             // blend law, and the solid it replaces would only veil it.
             (Some(ps), None) => parts.push(GpuPart {
-                verts: ps
-                    .surface
-                    .verts
-                    .iter()
-                    .map(|p| [ftoz(p.x), ftoz(p.y), ftoz(p.z)])
-                    .collect(),
+                verts: turned(
+                    ps.surface.verts.iter().map(|p| [ftoz(p.x), ftoz(p.y), ftoz(p.z)]).collect(),
+                    &work_view,
+                ),
                 selected: false,
                 stock: true,
                 fill: false,
@@ -263,7 +265,7 @@ fn collect_parts(state: &State) -> (Vec<GpuPart>, Vec<ModelSrc>) {
                     && model::is_stock(&state.world, &entity)
                 {
                     parts.push(GpuPart {
-                        verts: world_verts(state, &entity),
+                        verts: turned(world_verts(state, &entity), &work_view),
                         selected: model::is_selected(&state.world, &entity),
                         stock: true,
                         fill: false,
@@ -278,8 +280,10 @@ fn collect_parts(state: &State) -> (Vec<GpuPart>, Vec<ModelSrc>) {
     // page is open - a stock-slot part painted teal (`INCOMING_CLASS`),
     // apart from the setup's own Stock node.
     if let Some(mesh) = crate::incoming_view::mesh(state) {
-        let verts: Vec<[f32; 3]> =
-            mesh.iter().flat_map(|t| [t.a, t.b, t.c].map(|p| [ftoz(p.x), ftoz(p.y), ftoz(p.z)])).collect();
+        let verts: Vec<[f32; 3]> = turned(
+            mesh.iter().flat_map(|t| [t.a, t.b, t.c].map(|p| [ftoz(p.x), ftoz(p.y), ftoz(p.z)])).collect(),
+            &work_view,
+        );
         let classes = vec![crate::incoming_view::INCOMING_CLASS; verts.len()];
         parts.push(GpuPart { verts, selected: false, stock: true, fill: false, classes });
     }
@@ -296,7 +300,7 @@ fn collect_parts(state: &State) -> (Vec<GpuPart>, Vec<ModelSrc>) {
                 verts.push([ftoz(p.x), ftoz(p.y), ftoz(z)]);
             }
         }
-        parts.push(GpuPart { verts, selected: false, stock: false, fill: true, classes: Vec::new() });
+        parts.push(GpuPart { verts: turned(verts, &work_view), selected: false, stock: false, fill: true, classes: Vec::new() });
     }
     drop(fills);
     // The Boundary group's preview of the area the draft machines (M11.5
@@ -304,7 +308,7 @@ fn collect_parts(state: &State) -> (Vec<GpuPart>, Vec<ModelSrc>) {
     let _preview = crate::frame_cost::span("scene/parts.boundary_preview");
     // #2246: the triangles were made with the preview; a frame reads them.
     if let Some((z, tris)) = crate::boundary_viz::preview_fill(state) {
-        let verts = tris.iter().flat_map(|t| t.iter().map(|p| [ftoz(p.x), ftoz(p.y), ftoz(z)])).collect();
+        let verts = turned(tris.iter().flat_map(|t| t.iter().map(|p| [ftoz(p.x), ftoz(p.y), ftoz(z)])).collect(), &work_view);
         parts.push(GpuPart { verts, selected: false, stock: false, fill: true, classes: Vec::new() });
     }
     (parts, bodies)
@@ -327,16 +331,26 @@ pub(crate) fn sim_tool_tris(state: &State) -> Option<Vec<camcraft_app::geometry:
     // A poisoned lock only means a draw panicked mid-update: the cache
     // is display data, rebuilt from the world, so it is safe to reuse.
     let mut cache = state.sim_tool_cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    let Some((op, tip, axis)) = sim_tool_pose(state) else {
+    let Some((op, tip, axis, work)) = sim_tool_pose(state) else {
         cache.clear();
         return None;
     };
+    // #4266: on a work-turning rotary the machine turns the WORK about
+    // its axis line and the spindle stays vertical - the pose is read
+    // in the machine frame, the same turn the gate's posed-steel laws
+    // judge with. A pose the rotary cannot stand upright (or no line
+    // carried) keeps today's tip-relative draw - the fallback, never a
+    // guessed picture.
+    let (tip, axis) = work.and_then(|w| camcraft_app::sim_machine_view::posed_tool(tip, axis, &w)).unwrap_or((tip, axis));
     cache.posed(&state.world, op, tip, axis)
 }
 
 /// The operation at the playhead with its tool tip and axis, when the
-/// transport is up on this document's timeline.
-fn sim_tool_pose(state: &State) -> Option<(&str, [f64; 3], [f64; 3])> {
+/// transport is up on this document's timeline; the work-turn line the
+/// frame carries (`sim::Frame::work`), if any.
+type ToolPose<'a> = Option<(&'a str, [f64; 3], [f64; 3], Option<camcraft_app::sim::WorkTurn>)>;
+
+fn sim_tool_pose(state: &State) -> ToolPose<'_> {
     let sim = state.sim?;
     let (version, sc) = state.sim_script_cache.as_ref()?;
     if *version != state.doc_version || sc.is_empty() {
@@ -344,7 +358,33 @@ fn sim_tool_pose(state: &State) -> Option<(&str, [f64; 3], [f64; 3])> {
     }
     let f = sc.at(sim.t);
     let op = sc.ops.get(f.op?)?;
-    Some((op.as_str(), [f.pos.x, f.pos.y, f.pos.z], f.axis))
+    Some((op.as_str(), [f.pos.x, f.pos.y, f.pos.z], f.axis, f.work))
+}
+
+/// #4266: the playhead's work turn as the scene draw reads it - the
+/// rotary line and the angle that stands the frame's tool axis upright
+/// about it. `None` when the transport is down, no line is carried, or
+/// the pose will not stand upright under it: the fallback draw.
+fn sim_work_view(state: &State) -> Option<([f64; 3], [f64; 3], f32)> {
+    let sim = state.sim?;
+    let (version, sc) = state.sim_script_cache.as_ref()?;
+    if *version != state.doc_version || sc.is_empty() {
+        return None;
+    }
+    let f = sc.at(sim.t);
+    let w = f.work?;
+    let t = camcraft_app::sim_machine_view::frame_turn(&w, f.axis)?;
+    Some((w.origin, w.dir, t as f32))
+}
+
+/// The work-side vertices turned about the line - the part, the stock
+/// and the steel ride the rotary table while the spindle stays put.
+/// Display only; the unturned draw with no playhead turn.
+fn turned(mut verts: Vec<[f32; 3]>, view: &Option<([f64; 3], [f64; 3], f32)>) -> Vec<[f32; 3]> {
+    if let Some((origin, dir, t)) = view {
+        camcraft_app::sim_machine_view::turn_verts(&mut verts, *origin, *dir, f64::from(*t));
+    }
+    verts
 }
 
 /// [`sim_tool_tris`] as a model part (depth-tested, shaded).

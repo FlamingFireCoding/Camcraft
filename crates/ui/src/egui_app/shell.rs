@@ -1019,7 +1019,38 @@ pub(crate) fn sim_script(state: &State) -> camcraft_app::sim::Script {
         .into_iter()
         .filter_map(|(n, e)| model::toolpath_of(&state.world, &e).map(|tp| (n, tp.path)))
         .collect();
-    sim::script(paths.iter().map(|(n, t)| (n.as_str(), t)), &tr)
+    let mut sc = sim::script(paths.iter().map(|(n, t)| (n.as_str(), t)), &tr);
+    // #4266, display only: each op's work-turn line, when its machine
+    // turns the work about one the gate would judge. `None` elsewhere.
+    let turns: Vec<Option<sim::WorkTurn>> = sc.ops.iter().map(|name| work_turn_of(state, name)).collect();
+    for seg in &mut sc.segs {
+        seg.work = turns[seg.op];
+    }
+    sc
+}
+
+/// #4266, display only: the rotary axis line the operation's work
+/// turns about - the very line the gate's posed-steel laws judge
+/// (`fixture::rotary_axis_of`: the stated op/machine line through the
+/// WCS origin, else the free fit), and only on a mounted machine that
+/// states a work-turning rotary (`turns_part`, the machine editor's
+/// flag). No machine, no work-turning rotary, a non-rotary kind, or a
+/// degenerate line: `None` - the playback keeps today's tip-relative
+/// draw, nothing guessed.
+fn work_turn_of(state: &State, op_name: &str) -> Option<camcraft_app::sim::WorkTurn> {
+    use camcraft_app::{fixture, machine, model};
+    let e = model::find_by_name(&state.world, op_name)?;
+    let op = model::operation_of(&state.world, &e)?;
+    let (_, m) = machine::of_setup(&state.world, op.setup.as_deref());
+    let turns_work = m.is_some_and(|m| m.axes.iter().any(|a| a.rotary && a.turns_part == Some(true)));
+    if !turns_work {
+        return None;
+    }
+    let ax = fixture::rotary_axis_of(&state.world, &op)?;
+    if !ax.dir.iter().all(|d| d.is_finite()) || ax.dir.iter().map(|d| d.abs()).sum::<f64>() < 1e-12 {
+        return None;
+    }
+    Some(camcraft_app::sim::WorkTurn { origin: [ax.origin.x, ax.origin.y, ax.origin.z], dir: ax.dir })
 }
 
 /// The move the G-code viewer's cursor points at, as the segment that

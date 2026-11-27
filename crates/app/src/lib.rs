@@ -219,6 +219,7 @@ pub mod tool_body_lathe_view;
 pub mod tool_body_assembly;
 // #743: the simulated tool as the collision laws read it, revolved.
 pub mod sim_tool_body;
+pub mod sim_machine_view;
 // #1038: a lathe-held body drawn as modelled in the holder law's frame.
 pub mod sim_lathe_body;
 pub mod units;
