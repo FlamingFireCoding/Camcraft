@@ -298,15 +298,42 @@ pub(crate) fn builds() -> u64 {
 struct RadialKey {
     geometry: Key,
     src: SrcRef,
+    /// The stated-axis inputs the judged axis reads (#2772, review of
+    /// #3490): the op's own direction, the work-turning rotaries' lines
+    /// (name and stated vector - the letter law's two reads), and the
+    /// work offset origin every line anchors through. A change in any of
+    /// them can turn the work about a different line, so each is part of
+    /// the key; the free fit stays keyed by the geometry alone.
+    stated: Option<[f64; 3]>,
+    rotaries: Vec<(String, Option<[f64; 3]>)>,
+    wcs: [f64; 3],
 }
 
 /// The axis and the two radii one source reads for the rotary kinds' radial
 /// heights (#2774). The facet fit is the expensive part, so it is retained
-/// while the geometry and the source stay equal: a still frame fits nothing,
-/// and a new source or a new mesh fits once (#2238). The fit reads WORLD
-/// facets, so no tilt enters the key: a 3+2 index change keeps the ring.
-pub(crate) fn radial_axis(world: &World, setup: Option<&str>, src: &SrcRef) -> Option<RadialView> {
-    let key = RadialKey { geometry: Key::of(world, setup, None), src: src.clone() };
+/// while the geometry, the source and the axis inputs stay equal: a still
+/// frame fits nothing, and a new source, a new mesh or a new axis statement
+/// fits once (#2238). The fit reads WORLD facets, so no tilt enters the
+/// key: a 3+2 index change keeps the ring. `stated` is the op's own stated
+/// rotation axis (#2772) - the judged axis reads it, so it is in the key.
+pub(crate) fn radial_axis(world: &World, setup: Option<&str>, src: &SrcRef, stated: Option<[f64; 3]>) -> Option<RadialView> {
+    let rotaries = camcraft_app::machine::of_setup(world, setup)
+        .1
+        .map(|m| {
+            m.axes
+                .iter()
+                .filter(|a| a.rotary && (a.turns_part == Some(true) || a.name.trim().eq_ignore_ascii_case("C")))
+                .map(|a| (a.name.clone(), a.axis))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let key = RadialKey {
+        geometry: Key::of(world, setup, None),
+        src: src.clone(),
+        stated,
+        rotaries,
+        wcs: camcraft_app::posting::wcs_context(world, setup).1,
+    };
     RADIAL.with(|memo| {
         let mut memo = memo.borrow_mut();
         if let Some((old, view)) = memo.as_ref()
@@ -316,7 +343,8 @@ pub(crate) fn radial_axis(world: &World, setup: Option<&str>, src: &SrcRef) -> O
         }
         let _span = crate::frame_cost::span("display/heights.radial_axis");
         RADIAL_BUILDS.with(|n| n.set(n.get().saturating_add(1)));
-        let view = operation::radial_context(world, setup, src).ok().map(|c| RadialView {
+        let view =
+            operation::radial_context_about(world, setup, src, stated).ok().map(|c| RadialView {
             origin: [c.axis.origin.x, c.axis.origin.y, c.axis.origin.z],
             dir: [c.axis.dir.x, c.axis.dir.y, c.axis.dir.z],
             part_rho: c.part_rho,

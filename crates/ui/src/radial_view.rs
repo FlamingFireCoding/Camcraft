@@ -81,10 +81,49 @@ fn off_axis(d: [f64; 3]) -> [f64; 3] {
     [u[0] / len, u[1] / len, u[2] / len]
 }
 
+/// The ring's orthonormal basis in the plane standing square to `dir`:
+/// `u` a unit perpendicular of `dir`, `v` the unit `dir × u` - already the
+/// second perpendicular, NEVER passed back through `off_axis` (which picks
+/// another helper and turns `v` into a direction the ring's plane does not
+/// contain: an X axis rang its points along a line through ±sqrt(2)·r, a
+/// Z axis laid its second vector along the axis itself).
+fn ring_basis(dir: [f64; 3]) -> ([f64; 3], [f64; 3]) {
+    let u = off_axis(dir);
+    let v = [
+        dir[1] * u[2] - dir[2] * u[1],
+        dir[2] * u[0] - dir[0] * u[2],
+        dir[0] * u[1] - dir[1] * u[0],
+    ];
+    let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    let v = if len.is_finite() && len > 1e-12 { [v[0] / len, v[1] / len, v[2] / len] } else { [0.0; 3] };
+    (u, v)
+}
+
+/// One ring's chords: `SEGMENTS` points on the circle of `radius` about
+/// `on_axis`, in the plane standing square to `dir` - the orthonormal
+/// basis of [`ring_basis`], so every point stands IN the plane at the
+/// stated radius, on any axis.
+fn ring_points(on_axis: [f64; 3], dir: [f64; 3], radius: f64) -> Vec<[f64; 3]> {
+    let (u, v) = ring_basis(dir);
+    let step = std::f64::consts::TAU / SEGMENTS as f64;
+    (0..SEGMENTS)
+        .map(|i| {
+            let (s, c) = (step * i as f64).sin_cos();
+            [
+                on_axis[0] + (u[0] * c + v[0] * s) * radius,
+                on_axis[1] + (u[1] * c + v[1] * s) * radius,
+                on_axis[2] + (u[2] * c + v[2] * s) * radius,
+            ]
+        })
+        .collect()
+}
+
 /// The open operation's radial heights, resolved against the source's and
-/// the setup stock's radii about the fitted axis. Nothing to resolve, no
-/// fittable axis, or a height whose source is missing: that ring is not
-/// drawn - the panel names the reason and the gate refuses.
+/// the setup stock's radii about the judged axis - the SAME axis generation
+/// turns about (a stated axis first, the free fit otherwise, #2772).
+/// Nothing to resolve, no fittable axis, or a height whose source is
+/// missing: that ring is not drawn - the panel names the reason and the
+/// gate refuses.
 pub(crate) fn marks(state: &State) -> Vec<RadialMark> {
     let Some(fields) = draft(state) else {
         return Vec::new();
@@ -94,7 +133,9 @@ pub(crate) fn marks(state: &State) -> Vec<RadialMark> {
     }
     let setup = interact::shown_setup(state);
     let src = state.op_ui.src();
-    let Some(view) = height_memo::radial_axis(&state.world, setup.as_deref(), &src) else {
+    let Some(view) =
+        height_memo::radial_axis(&state.world, setup.as_deref(), &src, camcraft_app::rotary_stated::op_stated(&state.op_ui.params))
+    else {
         return Vec::new();
     };
     let d = view.dir;
@@ -121,33 +162,30 @@ pub(crate) fn marks(state: &State) -> Vec<RadialMark> {
 /// overlay reaches, few enough to stay far under the overlay cap.
 const SEGMENTS: usize = 32;
 
-/// The rings as overlay geometry: one circle each, standing on the fitted
+/// The rings as overlay geometry: one circle each, standing on the judged
 /// axis at its radius, in world coordinates.
 pub(crate) fn ring_lines(state: &State) -> Vec<[f32; 6]> {
     let marks = marks(state);
     if marks.is_empty() {
         return Vec::new();
     }
-    let step = std::f64::consts::TAU / SEGMENTS as f64;
     let mut out = Vec::new();
     for m in &marks {
-        let u = off_axis(m.dir);
-        let v = off_axis([
-            m.dir[1] * u[2] - m.dir[2] * u[1],
-            m.dir[2] * u[0] - m.dir[0] * u[2],
-            m.dir[0] * u[1] - m.dir[1] * u[0],
-        ]);
-        let at = |i: usize| {
-            let (s, c) = (step * i as f64).sin_cos();
-            Point3::new(
-                m.on_axis[0] + (u[0] * c + v[0] * s) * m.radius,
-                m.on_axis[1] + (u[1] * c + v[1] * s) * m.radius,
-                m.on_axis[2] + (u[2] * c + v[2] * s) * m.radius,
-            )
-        };
-        for i in 0..SEGMENTS {
-            interact::push_line(&mut out, at(i), at((i + 1) % SEGMENTS), m.rgb);
+        let points = ring_points(m.on_axis, m.dir, m.radius);
+        for i in 0..points.len() {
+            let a = points[i];
+            let b = points[(i + 1) % points.len()];
+            interact::push_line(
+                &mut out,
+                Point3::new(a[0], a[1], a[2]),
+                Point3::new(b[0], b[1], b[2]),
+                m.rgb,
+            );
         }
     }
     out
 }
+
+#[cfg(test)]
+#[path = "radial_view_tests.rs"]
+mod tests;

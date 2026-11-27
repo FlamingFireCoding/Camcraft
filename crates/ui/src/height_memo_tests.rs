@@ -311,7 +311,7 @@ fn the_radial_axis_cache_keeps_still_frames_and_follows_the_bar() {
     );
     let setup = crate::interact::shown_setup(&state);
     let src = SrcRef::Entity("bar".into());
-    let read = || crate::height_memo::radial_axis(&state.world, setup.as_deref(), &src);
+    let read = || crate::height_memo::radial_axis(&state.world, setup.as_deref(), &src, None);
     let v = read().expect("a turned bar has an axis");
     assert!((v.part_rho - 3.0).abs() < 1e-9, "the part's rho: {}", v.part_rho);
     assert!((v.stock_rho.expect("round stock") - 3.2).abs() < 1e-9, "the stock's rho");
@@ -336,6 +336,39 @@ fn the_radial_axis_cache_keeps_still_frames_and_follows_the_bar() {
     assert!(after > builds, "the cube refits (and refuses) once");
     assert!(read().is_none(), "the refusal is cached");
     assert_eq!(super::radial_builds(), after, "a still frame keeps the refusal too");
+}
+
+#[test]
+fn the_radial_axis_cache_follows_a_new_axis_statement() {
+    // #2774 review (item 4): the judged axis reads the op's own stated
+    // axis and the machine's rotary lines, so those inputs are part of
+    // the display key - a new statement refits the axis once and then a
+    // still frame keeps it.
+    let mut state = State::new();
+    state.history.execute(
+        &state.world,
+        SetStock::new(
+            &state.world,
+            StockShape::Cylinder { diameter: 6.4, height: 16.0 },
+            placed(0.0, 0.0, 0.0),
+        )
+        .expect("bar stock"),
+    );
+    state.history.execute(
+        &state.world,
+        ImportModel::from_mesh("bar", Mesh::from_facets(turned_bar(16, 3.0))),
+    );
+    let setup = crate::interact::shown_setup(&state);
+    let src = SrcRef::Entity("bar".into());
+    let unstated = crate::height_memo::radial_axis(&state.world, setup.as_deref(), &src, None).expect("the fit");
+    let builds = super::radial_builds();
+    let stated = crate::height_memo::radial_axis(&state.world, setup.as_deref(), &src, Some([0.0, 0.0, 1.0]))
+        .expect("the stated axis is judged");
+    assert!(super::radial_builds() > builds, "a new axis statement is a new key: it refits");
+    assert_eq!(stated.dir, unstated.dir, "the statement and the fit answer the same line here");
+    let again = crate::height_memo::radial_axis(&state.world, setup.as_deref(), &src, Some([0.0, 0.0, 1.0]));
+    assert_eq!(super::radial_builds(), builds + 1, "a still frame keeps the stated axis too");
+    assert_eq!(again.map(|v| v.dir), Some(stated.dir), "the stated-axis answer is cached");
 }
 
 #[test]

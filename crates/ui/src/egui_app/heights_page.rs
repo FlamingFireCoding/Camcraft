@@ -198,11 +198,15 @@ fn height_rows(ui: &mut Ui, world: &flecs_ecs::prelude::World, setup: Option<&st
 /// the kind's Z plane into a RADIUS about the fitted axis; on, the From
 /// combo picks what the radius reads (stock OD, model max radius, or a
 /// stated radius), and the offset box carries the resolved radius as its
-/// dimmed echo - the same resolve the gate and the generators use.
+/// dimmed echo - the same resolve the gate and the generators use, about
+/// the same judged axis (`stated` is the open draft's own statement,
+/// #2772).
+#[allow(clippy::too_many_arguments)] // one row's flat read
 pub(super) fn radial_row(
     ui: &mut Ui,
     world: &flecs_ecs::prelude::World,
     setup: Option<&str>,
+    stated: Option<[f64; 3]>,
     title: &str,
     h: &mut Option<RadialHeight>,
     dsrc: RadialSource,
@@ -229,7 +233,7 @@ pub(super) fn radial_row(
         // The echo first, then the box: operations.rs's law, as the Z rows lay
         // it out. The box holds the offset; under `Absolute` the number IS the
         // radius, and the row says so - never call it an offset.
-        let echo = radial_echo(world, setup, src.as_ref(), h);
+        let echo = radial_echo(world, setup, src.as_ref(), stated, title, h);
         let label = if h.source == RadialSource::Absolute { "Radius" } else { "Offset" };
         prop_row(ui, label, |ui| {
             ui.add(Label::new(RichText::new(echo).weak()).selectable(false));
@@ -243,10 +247,11 @@ pub(super) fn radial_rows(
     ui: &mut Ui,
     world: &flecs_ecs::prelude::World,
     setup: Option<&str>,
+    stated: Option<[f64; 3]>,
     rows: [(&str, &mut Option<RadialHeight>, RadialSource, f64); 4],
 ) {
     for (title, h, dsrc, doff) in rows {
-        radial_row(ui, world, setup, title, h, dsrc, doff);
+        radial_row(ui, world, setup, stated, title, h, dsrc, doff);
     }
 }
 

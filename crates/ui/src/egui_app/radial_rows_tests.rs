@@ -151,3 +151,45 @@ fn an_enabled_slot_adds_its_from_combo_and_echoes_the_resolved_radius() {
     assert!(label_drawn(&h, "(= R 3.200)"), "the clearance echo reads the stock OD radius");
     assert!(label_drawn(&h, "(= R 4.000)"), "the absolute radius echoes the stated number");
 }
+
+/// The interactive control that shares a row with `label`'s text node:
+/// a checkbox draws its caption as its own node, so the row is found by
+/// the caption's band, the way `dialog_tests` reads its rows.
+fn on_row<'a>(h: &'a Harness<'static, State>, label: &str, role: Role) -> egui_kittest::Node<'a> {
+    let lab = h.get_by_label(label).rect();
+    h.query_all_by(move |n| n.role() == role)
+        .find(|n| {
+            let c = n.rect().center().y;
+            c >= lab.top() - 2.0 && c <= lab.bottom() + 2.0
+        })
+        .expect("a control on the label's row")
+}
+
+#[test]
+fn the_default_bottom_radius_echoes_its_valid_zero() {
+    // #2774 review: the checkbox default for the Bottom radius is R0 - the
+    // band floor at the axis, a valid radius - and the echo must display
+    // the resolved zero, never report it unresolved as not positive.
+    // Driven through the full properties pane (the shell's own page
+    // wrapper), the way a user's click lands.
+    let mut state = opened();
+    state.op_tab = super::op_tabs::SEC_HEIGHTS;
+    if let OpParams::RotaryParallel { bottom_r, .. } = &mut state.op_ui.params {
+        *bottom_r = None;
+    }
+    let mut h = Harness::builder()
+        .with_size(Vec2::new(620.0, 1400.0))
+        .build_ui_state(
+            |ui, st: &mut State| super::pages::properties(ui, st, &super::theme::current()),
+            state,
+        );
+    h.run();
+    on_row(&h, "Bottom radius", Role::CheckBox).click();
+    h.run();
+    assert!(checkbox_on(&h, "Bottom radius"), "the click states the slot");
+    assert!(label_drawn(&h, "(= R 0.000)"), "the default Bottom radius echoes the resolved zero");
+    assert!(
+        !label_drawn(&h, "(unresolved: the radius is not positive)"),
+        "a valid zero is never reported unresolved"
+    );
+}
