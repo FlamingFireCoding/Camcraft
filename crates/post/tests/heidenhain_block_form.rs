@@ -98,7 +98,7 @@ fn check_form(nc: &str, what: &str) -> Vec<String> {
             if head == 'G' {
                 assert!(
                     matches!(w, "G00" | "G01" | "G02" | "G03" | "G17" | "G40" | "G90"
-                        | "G200" | "G205" | "G206" | "G207" | "G247"),
+                        | "G200" | "G206" | "G207" | "G247"),
                     "{what}: {w} is outside the exact move/cycle/preset G-word allowlist: {l:?}"
                 );
             }
@@ -215,10 +215,14 @@ fn heidenhain_native_cycles_and_preset_use_numbered_tnc_blocks() {
     let out = run(&native_cycles());
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
     let b = check_form(&out.program, "native cycles");
-    for g in ["G200", "G205", "G206", "G207", "G247 Q339=2"] {
+    for g in ["G200", "G206", "G207", "G247 Q339=2"] {
         assert!(b.iter().any(|line| line.starts_with(g)), "missing {g}: {}", out.program);
     }
-    assert_eq!(b.iter().flat_map(|line| line.split_whitespace()).filter(|w| *w == "M99").count(), 4);
+    // #4224: the peck hole posts its checked chain, never a G205.
+    for line in ["G01 X+20 Y+10 Z-2 F120", "G00 X+20 Y+10 Z-1", "G01 X+20 Y+10 Z-4 F120"] {
+        assert!(b.iter().any(|l| l == line), "missing {line}: {}", out.program);
+    }
+    assert_eq!(b.iter().flat_map(|line| line.split_whitespace()).filter(|w| *w == "M99").count(), 3);
     assert!(!out.program.contains("G80") && !out.program.contains("M89"));
 }
 
