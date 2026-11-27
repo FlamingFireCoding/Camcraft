@@ -26,8 +26,9 @@ use super::holders::{self, READ_ONLY};
 use crate::egui_app::tool_model_view::BG;
 use crate::state::State;
 
-/// The button back to the holder list.
-pub(crate) const BACK: &str = "Holder list";
+/// The way back to the holder list: since #4334 the frame's header button.
+#[cfg(test)]
+pub(crate) const BACK: &str = super::frame::BACK;
 /// The heading of the tools that use the holder.
 pub(crate) const USED_BY: &str = "Used by";
 /// The drawing's dimension toggle.
@@ -40,7 +41,6 @@ const NOTE: Color32 = Color32::from_rgb(0x9E, 0xA8, 0xB8);
 
 /// What the user asked for this frame.
 enum Ask {
-    List,
     Tool(String),
     /// #3898: copy the built-in holder as a user holder of the document.
     Copy(String),
@@ -63,10 +63,7 @@ pub(super) fn draw(ui: &mut Ui, state: &mut State) {
     let mut ask = None;
     let mut hide = view.hide_dims;
     ui.horizontal(|ui| {
-        if ui.button(BACK).on_hover_text("back to the holders by taper").clicked() {
-            ask = Some(Ask::List);
-        }
-        ui.heading(row.name.as_str());
+        // #4334: the way back and the name head the window (the frame).
         ui.weak(format!("holder · used by {}", count(users.len())));
         // #3898: only a holder with a taper is a built-in component.
         let id = format!("{}holder:{}", camcraft_app::component_library::BUILTIN_PREFIX, row.name);
@@ -110,7 +107,6 @@ pub(super) fn draw(ui: &mut Ui, state: &mut State) {
         v.holders.hide_dims = hide;
     }
     match ask {
-        Some(Ask::List) => state.open_holder_in_library(None),
         Some(Ask::Tool(name)) => state.open_tool_in_library(&name),
         Some(Ask::Copy(id)) => state.queue_component(crate::state::ComponentAction::CopyAsUser { id }),
         None => {}
