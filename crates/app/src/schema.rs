@@ -349,16 +349,20 @@ pub struct DocumentComponent {
     /// #3646: an insert's own tool material and cutting rows. Only on
     /// an insert; each tool that cuts with it takes them.
     pub running: Option<InsertRunning>,
+    /// #3643: a lathe component's body (boxes or facets in its own
+    /// frame) for a turning stack. A spindle stack refuses a row that
+    /// has one by name; it is never dropped in silence.
+    pub lathe_body: Option<camcraft_tools::lathe_assembly::LatheBody>,
 }
 
 impl DocumentComponent {
-    /// A row with no cutter facts and no running data.
+    /// A row with no cutter facts, no running data and no lathe body.
     #[must_use]
     pub fn new(
         component: camcraft_tools::component::ToolComponent,
         geometry: camcraft_tools::component_geometry::ComponentGeometry,
     ) -> Self {
-        Self { component, geometry, milling: None, running: None }
+        Self { component, geometry, milling: None, running: None, lathe_body: None }
     }
 }
 
