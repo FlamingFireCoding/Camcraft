@@ -29,17 +29,23 @@ too; that changed roughing output on stock out of the box (a regression we
 could not pin as wanted), so the seeds drop the band. The panel's unchecked
 rows let a user state a band radius on purpose.
 
-**Project version 74 - migration is a comment-only no-op.** The new fields
-are `Option` and serde-defaulted: a v73 file reads with all radii `None`,
-which is exactly the old behaviour. One consequence: an `OpParams` change
-moves the operation stamp, so an old project's cached toolpaths read STALE
-after the upgrade and regenerate on the next generate. No data is lost; the
-user sees a regenerate, not a wrong program. The current-format example
-(`examples/first-continuous-4axis-part.camproj` / `.nc`) was advanced to
-v74 in a second, test-only commit: the committed `.nc` was already stale on
-main (a regen on main itself moves the same seven trailing A-word digits),
-and the branch regen is byte-identical to the main regen. The `.camproj`
-diff is the version number and the stamp.
+**Project version - the current step is v85.** The ladder has stepped
+past the v74 rung this entry first recorded: the fields now ride the
+v85 rung (`crates/app/src/project/file.rs`'s ladder and
+`apply.rs`'s reader), after v79-v84 landed on main between the held
+branch and this PR. The migration is a comment-only no-op all the
+same: the new fields are `Option` and serde-defaulted, so a v84 file
+reads with every radius `None` - exactly the Z-plane behaviour it
+wrote - and steps up unchanged, while a v84 reader refuses a v85 file
+rather than drop the stated radii. One consequence: an `OpParams`
+change moves the operation stamp, so an old project's cached toolpaths
+read STALE after the upgrade and regenerate on the next generate. No
+data is lost; the user sees a regenerate, not a wrong program. The
+current-format example (`examples/first-continuous-4axis-part.camproj`
+/ `.nc`) is advanced to the current version in a test-only commit: the
+`.camproj` diff is the version number and the stamp, and the committed
+`.nc` posts unchanged from the refreshed project. The compatibility
+break is declared with a `BREAKING CHANGE:` footer on that commit.
 
 **Viewport law - rings are ADDITIVE.** The radial rings the Heights tab
 states draw into the viewport as extra rings about the fitted axis; they
@@ -158,3 +164,34 @@ default source set or the seed offsets is a one-line change in
 `kinds::seed`. Making the band radii required, or changing what
 "stands inside" floors on, touches the gate and its pinning tests in
 `crates/app/tests/rotary_verify.rs` only.
+
+**Review rework (PR #4379, nine findings).** The laws the rework fixed,
+each pinned by its own test:
+
+- **Tip-to-center conversion.** The contour's radial relink
+  (`radial.rs::radial_relink_z`) treats the stated radii as TIP radii and
+  places each link's ball center one ball radius outside it - the same
+  conversion `rotary_links::radial_relink` already applied to the parallel
+  twin - so the posed tip stands at the stated radius, never one ball
+  under it.
+- **One-sided bands.** `band_window` honors a Bottom radius alone (the
+  band runs from the floor cylinder out to the skin's end) and a Top
+  radius alone (from the axis out to the ceiling cylinder); no stored
+  radius goes unread.
+- **Closed band edges.** `each_band_span` keeps a span that starts, ends
+  or sits ON a band cylinder with one closed-interval rule for constant
+  and tangent spans alike.
+- **The judged axis.** The resolver (`radial_context`) reads the radii
+  about the SAME axis generation turns about - a stated axis judged
+  against the model's faces, the free fit only when nothing is stated -
+  and the display cache keys the axis statement, the machine's
+  work-turning rotary lines and the work offset origin.
+- **Radial input validation.** `OpParams::is_sane` checks every set radial
+  field (finite offsets, an absolute radius never under the axis), and
+  `radial_gate` surfaces resolution failures and range/ordering refusals
+  it used to discard. The same door runs on create, edit, paste and
+  retype.
+- **Ring basis.** The viewport ring's second perpendicular is `dir × u`
+  (an orthonormal basis), never re-perpendicularized through `off_axis`.
+- **Zero display.** The panel echo displays the resolved zero for the
+  field that permits it (the Bottom floor, the checkbox default).
