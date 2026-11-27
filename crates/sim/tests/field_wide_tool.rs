@@ -12,7 +12,7 @@
 
 use camcraft_sim::cl::{ArcMove, Move, MoveKind};
 use camcraft_sim::geo2d::Point2;
-use camcraft_sim::geometry::{cube, Point3};
+use camcraft_sim::geometry::Point3;
 use camcraft_sim::stock_sim::{Backend, SdfField, SdfTool, SimOp, Stock, FIELD_BAND};
 use camcraft_tools::undercut::{Head, Undercut};
 
@@ -43,32 +43,53 @@ fn a_wide_tools_short_move_cuts_on_the_field_engine_as_on_the_column_engine() {
     assert!(f.distance(Point3::new(110.0, 110.0, 27.5)) < 0.0, "outside the tool is stock");
 }
 
-/// The ceiling still bounds one field update: the same wide tool across
-/// the whole block in one chord refuses through `subtract_batch`, and in
-/// 5 mm pieces it cuts. `subtract_batch_fitted` cuts the one chord.
-#[test]
-fn a_wide_tools_long_chord_still_refuses_and_its_segments_cut() {
-    let field = || {
-        let m = cube(Point3::new(0.0, 0.0, 0.0), Point3::new(120.0, 120.0, 30.0));
-        SdfField::from_mesh(&m.facets, CELL, FIELD_BAND).unwrap_or_else(|e| panic!("block: {e}"))
-    };
-    let tool = SdfTool::Flat { r: 25.4, flank: 40.0 };
-    let chords = |pieces: usize| -> Vec<Move> {
-        let x = |k: usize| 120.0 * k as f64 / pieces as f64;
-        (0..pieces)
-            .map(|k| Move::new(MoveKind::Feed, Point3::new(x(k), 60.0, 25.0), Point3::new(x(k + 1), 60.0, 25.0), Some(500.0)))
-            .collect()
-    };
-    match field().subtract_batch(&chords(1), &tool, 0.01) {
-        Ok(()) => panic!("a 120 mm chord of a 50.8 mm tool must still refuse one update"),
-        Err(e) => assert!(e.to_string().contains("segment it"), "{e}"),
-    }
-    field().subtract_batch(&chords(24), &tool, 0.01).unwrap_or_else(|e| panic!("5 mm pieces must cut: {e}"));
-    let mut f = field();
-    f.subtract_batch_fitted(&chords(1), &tool, 0.01).unwrap_or_else(|e| panic!("the fitted chord must cut: {e}"));
+/// The 120 mm chord of a 50.8 mm flat tool across a 120 x 120 x 30 mm
+/// block at z 25: past the ceiling as one update.
+fn long_chord() -> Move {
+    Move::new(MoveKind::Feed, Point3::new(0.0, 60.0, 25.0), Point3::new(120.0, 60.0, 25.0), Some(500.0))
+}
+
+/// The faced top is air, and stock stays below the face and beside the pass.
+fn faced_by_the_long_chord(f: &SdfField) {
     assert!(f.distance(Point3::new(100.0, 60.0, 27.5)) > 0.0, "the faced top is air");
     assert!(f.distance(Point3::new(100.0, 60.0, 22.5)) < 0.0, "below the face is stock");
     assert!(f.distance(Point3::new(100.0, 100.0, 27.5)) < 0.0, "beside the pass is stock");
+}
+
+/// The ceiling still bounds one field update: the long chord refuses
+/// through `subtract_batch`, and `subtract_batch_fitted` cuts it in
+/// pieces.
+#[test]
+fn a_wide_tools_long_chord_still_refuses_and_its_segments_cut() {
+    let field = || {
+        SdfField::from_box(Point3::new(0.0, 0.0, 0.0), Point3::new(120.0, 120.0, 30.0), CELL, FIELD_BAND)
+            .unwrap_or_else(|e| panic!("block: {e}"))
+    };
+    let tool = SdfTool::Flat { r: 25.4, flank: 40.0 };
+    match field().subtract_batch(&[long_chord()], &tool, 0.01) {
+        Ok(()) => panic!("a 120 mm chord of a 50.8 mm tool must still refuse one update"),
+        Err(e) => assert!(e.to_string().contains("segment it"), "{e}"),
+    }
+    let mut f = field();
+    f.subtract_batch_fitted(&[long_chord()], &tool, 0.01).unwrap_or_else(|e| panic!("the fitted chord must cut: {e}"));
+    faced_by_the_long_chord(&f);
+}
+
+/// `Stock`'s single-move field arms, `subtract_flat` and `cut_chord`,
+/// cut the long chord in pieces too, as their column arms do.
+#[test]
+fn the_single_move_stock_arms_cut_the_long_chord() {
+    let block = || {
+        Stock::block(Backend::Field { band: FIELD_BAND }, 0.0, 0.0, 120.0, 120.0, 30.0, CELL)
+            .unwrap_or_else(|e| panic!("block: {e}"))
+    };
+    let mut s = block();
+    s.subtract_flat(&long_chord(), 25.4, 0.01).unwrap_or_else(|e| panic!("subtract_flat refused the long chord: {e}"));
+    faced_by_the_long_chord(s.field().expect("a field"));
+    let mut s = block();
+    let m = long_chord();
+    s.cut_chord(m.from, m.to, 25.4).unwrap_or_else(|e| panic!("cut_chord refused the long chord: {e}"));
+    faced_by_the_long_chord(s.field().expect("a field"));
 }
 
 /// One feed move cut through `Stock::simulate` with a flat tool of `r`.

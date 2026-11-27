@@ -65,8 +65,8 @@
 //!   column arm cuts it too); a long chord still refuses.
 //! - **The simulator segments, not its callers (#4179).**
 //!   `subtract_batch_fitted` cuts a chord (or an arc piece) whose
-//!   travel passes the ceiling as the fewest equal pieces that each
-//!   pass it, and the field arms of `Stock` cut through it. The pieces
+//!   travel exceeds the ceiling as the fewest equal pieces that each
+//!   fall under it, and the field arms of `Stock` cut through it. The pieces
 //!   sweep the same solid as the whole: a tool swept along the parts
 //!   of a path is its sweep along the path. `subtract_batch` keeps the
 //!   refusal as the bound of one update.
@@ -163,10 +163,10 @@ impl SdfField {
     }
 
     /// `subtract_batch`, with every chord or arc piece whose travel
-    /// passes the ceiling cut as the fewest equal pieces that each pass
-    /// it (#4179, the module law): the segmenting the refusal names,
+    /// exceeds the ceiling cut as the fewest equal pieces that each fall
+    /// under it (#4179, the module law): the segmenting the refusal names,
     /// applied once here. A piece no longer than one cell that still
-    /// passes the ceiling (a footprint too large for one update)
+    /// exceeds the ceiling (a footprint too large for one update)
     /// refuses by name, before any write.
     pub fn subtract_batch_fitted(
         &mut self,
@@ -263,15 +263,22 @@ impl SdfField {
     }
 
     /// `sw` (a chord from `ends`, or an arc piece) as the fewest equal
-    /// pieces whose travel each passes the ceiling (#4179). A piece's
-    /// work falls as it shortens, so doubling finds a count that passes
+    /// pieces whose travel each falls under the ceiling (#4179). A piece's
+    /// work falls as it shortens, so doubling finds a count that falls under
     /// and bisection the fewest below it. Pieces shorter than a cell
-    /// shrink no window further: past that count it refuses.
+    /// shrink no window further: past that count it refuses. A sweep
+    /// that is neither a chord nor an arc piece has no travel to split,
+    /// so it refuses by name rather than be cut as nothing.
     fn fit(&self, kind: &ToolKind, ax: [f64; 3], sw: &Sweep, ends: Option<(Point3, Point3)>) -> Result<Vec<Sweep>, StockError> {
+        let unsplittable = || {
+            StockError::Invalid(
+                "field subtract: a sweep past the ceiling is neither a chord nor an arc piece, so it cannot be split - segment it".into(),
+            )
+        };
         let travel = match (sw, ends) {
             (_, Some((a, b))) => (b.x - a.x).hypot(b.y - a.y).hypot(b.z - a.z),
             (Sweep::Arc(p), None) => p.travel(),
-            _ => 0.0,
+            _ => return Err(unsplittable()),
         };
         let most = (travel / self.cell).ceil().clamp(1.0, f64::from(u32::MAX)) as usize;
         let pieces = |k: usize| -> Result<Vec<Sweep>, StockError> {
@@ -284,14 +291,14 @@ impl SdfField {
                     (0..k).map(|j| chord_sweep(kind, ax, at(j), at(j + 1))).collect()
                 }
                 (Sweep::Arc(p), None) => Ok(p.split(k).into_iter().map(Sweep::Arc).collect()),
-                _ => Ok(Vec::new()),
+                _ => Err(unsplittable()),
             }
         };
-        let passes = |v: &[Sweep]| v.iter().all(|s| self.travel_work(s, ax) <= MAX_CELLS_PER_MOVE);
+        let under = |v: &[Sweep]| v.iter().all(|s| self.travel_work(s, ax) <= MAX_CELLS_PER_MOVE);
         let (mut lo, mut hi) = (1usize, 2usize);
         let mut best = loop {
             let v = pieces(hi.min(most))?;
-            if passes(&v) {
+            if under(&v) {
                 hi = hi.min(most);
                 break v;
             }
@@ -307,7 +314,7 @@ impl SdfField {
         while hi - lo > 1 {
             let mid = lo + (hi - lo) / 2;
             let v = pieces(mid)?;
-            if passes(&v) {
+            if under(&v) {
                 hi = mid;
                 best = v;
             } else {
