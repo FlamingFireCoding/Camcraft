@@ -933,7 +933,7 @@ pub enum ParamsDto {
         clearance_z: HeightDto,
         top_z: HeightDto,
         bottom_z: HeightDto,
-        /// #2774 (v74): the radial heights about the fitted axis. Absent
+        /// #2774 (v85): the radial heights about the fitted axis. Absent
         /// is the Z-plane law every older file ran.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         clearance_r: Option<RadialHeightDto>,
@@ -971,7 +971,7 @@ pub enum ParamsDto {
         clearance_z: HeightDto,
         top_z: HeightDto,
         bottom_z: HeightDto,
-        /// #2774 (v74): the radial heights, absent on every older file.
+        /// #2774 (v85): the radial heights, absent on every older file.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         clearance_r: Option<RadialHeightDto>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1013,7 +1013,7 @@ pub enum ParamsDto {
         clearance_z: HeightDto,
         top_z: HeightDto,
         bottom_z: HeightDto,
-        /// #2774 (v74): the clearance cylinder and the cut band's top,
+        /// #2774 (v85): the clearance cylinder and the cut band's top,
         /// absent on every older file. No `retract_r` (the kernel names
         /// its own rapids plane) and no `bottom_r` (the rho ladder's floor
         /// is the part's skin).
@@ -1957,7 +1957,7 @@ impl From<HeightDto> for crate::operation::Height {
 }
 
 /// A rotary height on the wire (#2774): a source word plus an offset in mm,
-/// read as a radius about the fitted axis. Declared at v74; absent on every
+/// read as a radius about the fitted axis. Declared at v85; absent on every
 /// older file, which runs the Z-plane law unchanged.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct RadialHeightDto {

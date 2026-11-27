@@ -289,7 +289,7 @@ fn a_full_turn_rotary_parallel_refuses_on_a_head_that_cannot_reach_under() {
     else {
         unreachable!("the parallel params")
     };
-    let op = OpParams::RotaryParallel { tolerance, stepover, clearance_z, retract_z, top_z, bottom_z: Height::fixed(-6.2), feed, plunge_feed, climb, lead_deg, lag_deg, max_tilt_deg, stated_axis: None, picks: Default::default() };
+    let op = OpParams::RotaryParallel { tolerance, stepover, clearance_z, retract_z, top_z, bottom_z: Height::fixed(-6.2), clearance_r: None, retract_r: None, top_r: None, bottom_r: None, feed, plunge_feed, climb, lead_deg, lag_deg, max_tilt_deg, stated_axis: None, picks: Default::default() };
     let world = world_with(Kind::Parallel, 12.4, op);
     let report = posting::verification_report(&world);
     let text = format!("{:?}", report.problems);
@@ -555,9 +555,9 @@ fn a_band_that_crosses_no_skin_is_refused_by_name() {
 #[test]
 fn the_radial_heights_survive_the_project_round_trip() {
     // #2774: the file stores the expression, never a resolved radius. The
-    // read-back is equal field for field, and a v73 writer (no radial
-    // keys) reads back as the Z-plane law - every v73 op's byte-identical
-    // behaviour, the no-op step the v74 rung records.
+    // read-back is equal field for field, and a v84 writer (no radial
+    // keys) reads back as the Z-plane law - every v84 op's byte-identical
+    // behaviour, the no-op step the v85 rung records.
     let mut p = params(Kind::Contour, 25.0);
     if let OpParams::RotaryContour { clearance_r, retract_r, top_r, bottom_r, .. } = &mut p {
         *clearance_r = Some(RadialHeight::of(RadialSource::StockOd, 5.0));

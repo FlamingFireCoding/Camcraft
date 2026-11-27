@@ -184,7 +184,6 @@ pub fn rotary_parallel(
 /// ([`rotary_ends`]), and a note names the end. None, or stock that
 /// ends with the model, is the plain raster.
 pub fn rotary_parallel_in(
-pub fn rotary_parallel_in(
     facets: &[Triangle],
     stock: Option<&[Triangle]>,
     p: &Finish3DParams,
