@@ -142,6 +142,8 @@ mod tool_library_assembly;
 mod tool_library_recipes;
 // #3897 (U6 of #3663): the Holders page and the mock-up gaps.
 mod tool_library_holders_ui;
+// #3898 (U7 of #3663): My library, the component editor and the stack.
+mod tool_library_components;
 mod tool_library_mockup;
 mod anchors;
 mod stock_fit;
