@@ -71,6 +71,19 @@ pub fn assembly_from_dto(tool: &str, links: &[LinkDto], table: &[DocumentCompone
     read_stack(tool, links, table).map(|(a, _)| a)
 }
 
+/// #3645: a `.camtools` tool's stack over the file's `table`, and its
+/// stated body as the project loader lands it ([`as_derived`]), so an
+/// imported assembled tool is the same as the one a project opens.
+pub fn stack_from_dto(
+    tool: &str,
+    links: &[LinkDto],
+    table: &[DocumentComponent],
+    body: Option<ToolBody>,
+) -> Result<(ToolAssembly, Option<ToolBody>), String> {
+    let (a, resolved) = read_stack(tool, links, table)?;
+    Ok((a, body.map(|b| as_derived(b, resolved.as_ref()))))
+}
+
 fn read_stack(tool: &str, links: &[LinkDto], table: &[DocumentComponent]) -> Result<ReadStack, String> {
     let mut out = Vec::with_capacity(links.len());
     let mut nodes = Vec::with_capacity(links.len());
