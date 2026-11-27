@@ -37,12 +37,12 @@ use super::*;
 use crate::egui_app::tool_library_dialog::{HOLDERS_PAGE, component_edit, components, holders, stack};
 use crate::state::{ComponentAction, CommandKind, ToolSource};
 
-const A: &str = "Fly25";
-const B: &str = "Fly32";
-const INSERT: &str = "insert-cc";
+pub(super) const A: &str = "Fly25";
+pub(super) const B: &str = "Fly32";
+pub(super) const INSERT: &str = "insert-cc";
 
 /// A fresh, empty user library folder for one test.
-fn lib_dir(test: &str) -> PathBuf {
+pub(super) fn lib_dir(test: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("camcraft-3898-{test}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     if let Err(e) = std::fs::create_dir_all(&dir) {
@@ -56,7 +56,7 @@ fn lib_file(dir: &std::path::Path) -> PathBuf {
 }
 
 /// A shell whose window reads the user library in `dir`.
-fn shell(dir: &std::path::Path) -> H {
+pub(super) fn shell(dir: &std::path::Path) -> H {
     let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1400.0)).build_ui_state(super::frame, ShellUi::seeded());
     h.state_mut().state.component_lib.dir = Some(dir.to_path_buf());
     h.run_steps(2);
@@ -111,7 +111,7 @@ fn stack_of(body: &str) -> Vec<AssemblyLink> {
 
 /// The fixture of the #3644 tests, landed through the commands: the four
 /// components, the two tools, and (`stacks`) their stacks.
-fn shop(h: &mut H, stacks: bool) {
+pub(super) fn shop(h: &mut H, stacks: bool) {
     let st = &mut h.state_mut().state;
     for (c, g) in [holder(), fly("fly-25", 12.5), fly("fly-32", 16.0), insert("CCMT09T304")] {
         let cmd = UpsertDocumentComponent::new(&st.world, c, g).expect("upsert");
@@ -129,31 +129,31 @@ fn shop(h: &mut H, stacks: bool) {
     h.run_steps(2);
 }
 
-fn shows(h: &H, text: &str) -> bool {
+pub(super) fn shows(h: &H, text: &str) -> bool {
     library_window(h).query_all_by_label(text).next().is_some()
 }
 
-fn done(h: &H) -> usize {
+pub(super) fn done(h: &H) -> usize {
     h.state().state.history.done_len()
 }
 
-fn undo(h: &mut H) {
+pub(super) fn undo(h: &mut H) {
     crate::actions::undo(&mut h.state_mut().state);
     h.run_steps(2);
 }
 
-fn redo(h: &mut H) {
+pub(super) fn redo(h: &mut H) {
     crate::actions::redo(&mut h.state_mut().state);
     h.run_steps(2);
 }
 
-fn open_library(h: &mut H) {
+pub(super) fn open_library(h: &mut H) {
     h.get_by_role_and_label(Role::Button, "Tools").click();
     h.run_steps(2);
     click_window_button(h, components::SOURCE);
 }
 
-fn pick(h: &mut H, id: &str) {
+pub(super) fn pick(h: &mut H, id: &str) {
     if let Some(v) = h.state_mut().state.tool_library.as_mut() {
         v.components.selected = Some(id.to_owned());
     }

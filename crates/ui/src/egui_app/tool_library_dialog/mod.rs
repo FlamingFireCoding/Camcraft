@@ -53,6 +53,7 @@ mod recipes_fill;
 pub(crate) mod recipes_tab;
 pub(crate) mod side_view;
 pub(crate) mod stack;
+pub(crate) mod stack_view;
 pub(crate) mod thumbs;
 mod tool_tab;
 

@@ -9,7 +9,12 @@
 //! `SetToolAssembly`, which derives the tool's record and body in the
 //! same step; "Detach to standalone tool" clears the stack and keeps the
 //! tool as it is. A lathe tool's stack waits for the lathe side of the
-//! resolver (#3643).
+//! resolver (#3643). Under the rows the group shows, read-only, what the
+//! resolver gives for the shown stack: the gauge length, the cutting
+//! diameter and the corner radius, or its refusal by name. "Swap" on an
+//! applied stack offers, for one row, only the parts with which the whole
+//! stack still resolves, and lands the new stack as one undoable
+//! `SetToolAssembly` (`stack_view` builds both when the stack changes).
 //! Provenance: our own group over our own component commands; no
 //! HSMWorks material involved.
 
@@ -23,11 +28,23 @@ use camcraft_app::tool_assembly::{self as ta, Mount};
 
 use crate::state::{ComponentAction, StackDraft, State, is_spun_kind};
 
+use super::stack_view::StackValues;
+
 pub(crate) const HEADING: &str = "Component stack";
 pub(crate) const ADD: &str = "Add component";
 pub(crate) const REMOVE: &str = "Remove last component";
 pub(crate) const APPLY: &str = "Apply stack";
 pub(crate) const DETACH: &str = "Detach to standalone tool";
+/// The labels of the derived values under the rows.
+pub(crate) const GAUGE: &str = "Gauge length";
+pub(crate) const DIAMETER: &str = "Cutting diameter";
+pub(crate) const CORNER: &str = "Corner radius";
+
+/// The label of row `name`'s swap menu.
+#[must_use]
+pub(crate) fn swap_label(name: &str) -> String {
+    format!("Swap {name}…")
+}
 const HEADS: [&str; 6] = ["#", "Component", "Port", "Turn (°)", "Stick-out (mm)", "Library"];
 
 /// The parts that can go on the stack next, with the link each one adds:
@@ -86,7 +103,12 @@ pub(super) fn draw(ui: &mut Ui, state: &mut State) {
     let table = ta::components(&state.world);
     let lib = state.component_library();
     let derived = super::components::derived(state, &lib, None);
+    let current = model::tool_of(&state.world, &entity);
+    let view = super::stack_view::view(&name, current.as_ref(), doc, &draft.links, &table);
+    // A swap lands a whole stack: it is offered on the applied stack only.
+    let applied = stored.as_ref() == Some(&draft.links);
     let mut edit = None;
+    let mut swap: Option<Vec<AssemblyLink>> = None;
     if draft.links.is_empty() {
         ui.weak("No component stack: the tool is standalone.");
     } else {
@@ -116,19 +138,25 @@ pub(super) fn draw(ui: &mut Ui, state: &mut State) {
                     }
                 }
                 ui.label(row.map_or("-", |(_, s, _)| super::components::status_text(s)));
-                if let Some((r, _, users)) = row
-                    && ui
-                        .small_button(format!("Edit {}", r.component.name()))
-                        .on_hover_text(format!("edit this shared component: {} tool(s) use it", users.len()))
-                        .clicked()
-                {
-                    edit = Some(link.component.clone());
-                }
+                ui.horizontal(|ui| {
+                    if let Some((r, _, users)) = row
+                        && ui
+                            .small_button(format!("Edit {}", r.component.name()))
+                            .on_hover_text(format!("edit this shared component: {} tool(s) use it", users.len()))
+                            .clicked()
+                    {
+                        edit = Some(link.component.clone());
+                    }
+                    if let Some((r, _, _)) = row {
+                        swap_menu(ui, r.component.name(), applied, view.swaps.get(i).map_or(&[][..], Vec::as_slice), &mut swap);
+                    }
+                });
                 ui.end_row();
             }
         });
     }
-    let offer = candidates(&draft.links, &table);
+    values_row(ui, view.values.as_ref(), applied);
+    let offer = &view.offer;
     let mut add = None;
     ui.horizontal_wrapped(|ui| {
         let label = ui.label(ADD);
@@ -151,7 +179,7 @@ pub(super) fn draw(ui: &mut Ui, state: &mut State) {
     if let Some((_, link)) = add.and_then(|i| offer.get(i)) {
         draft.links.push(link.clone());
     }
-    let mut ask = None;
+    let mut ask = swap.map(|links| ComponentAction::SetStack { tool: name.clone(), links: Some(links) });
     ui.horizontal_wrapped(|ui| {
         let changed = Some(&draft.links) != stored.as_ref() && !draft.links.is_empty();
         if ui
@@ -177,5 +205,44 @@ pub(super) fn draw(ui: &mut Ui, state: &mut State) {
     }
     if let Some(id) = edit {
         super::component_edit::open(state, &id);
+    }
+}
+
+/// Row `name`'s swap menu: the replacements with which the stack still
+/// resolves; a pick sets `swap` to the whole new stack.
+fn swap_menu(ui: &mut Ui, name: &str, applied: bool, offers: &[super::stack_view::SwapOffer], swap: &mut Option<Vec<AssemblyLink>>) {
+    let enabled = applied && !offers.is_empty();
+    ui.add_enabled_ui(enabled, |ui| {
+        ui.menu_button(swap_label(name), |ui| {
+            for (text, links) in offers {
+                if ui.button(text).clicked() {
+                    *swap = Some(links.clone());
+                    ui.close();
+                }
+            }
+        })
+        .response
+        .on_hover_text("put a part that fits in this place; the stack is built again (one undo step)")
+        .on_disabled_hover_text(if applied { "no other part in the document fits here" } else { "apply or undo the stack edits first" });
+    });
+}
+
+/// The resolver's values for the shown stack, read-only.
+fn values_row(ui: &mut Ui, values: Option<&Result<StackValues, String>>, applied: bool) {
+    match values {
+        None => {}
+        Some(Ok(v)) => {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(format!("{GAUGE}: {:.3} mm", v.gauge_len));
+                ui.label(format!("{DIAMETER}: {:.3} mm", v.diameter));
+                ui.label(format!("{CORNER}: {:.3} mm", v.corner_r));
+                if !applied {
+                    ui.weak("(from the stack edits; not applied)");
+                }
+            });
+        }
+        Some(Err(e)) => {
+            ui.weak(format!("The stack does not resolve: {e}"));
+        }
     }
 }
