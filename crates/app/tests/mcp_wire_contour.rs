@@ -347,6 +347,7 @@ fn list_operation_types_and_skill_match_wire_contour_dto_and_tool_law() {
             verify_tolerance: 0.01,
         }),
         sharp_corners: true,
+        overlap: 1.5,
         lead_arc_radius: Some(0.5),
     };
     let dto_keys: BTreeSet<String> = serde_json::to_value(&populated)

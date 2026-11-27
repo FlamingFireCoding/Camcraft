@@ -58,6 +58,8 @@ fn the_store_round_trips_and_refuses_a_bad_file_whole_by_name() {
     assert!(e.contains("tool component 'fly-25'") && e.contains("'Q'"), "{e}");
     let e = with(&|v| v["components"][2]["library_ref"] = json!({ "id": INSERT, "content_hash": "x" }));
     assert!(e.contains(INSERT) && e.contains("library link"), "{e}");
+    let e = with(&|v| v["components"][2]["running"] = json!({ "tool_material": "carbide" }));
+    assert!(e.contains(INSERT) && e.contains("no running data"), "#3646 data stays in the document: {e}");
     let e = with(&|v| v["components"][0]["id"] = json!("builtin:holder:mine"));
     assert!(e.contains("built-in"), "{e}");
     let e = with(&|v| v["version"] = json!(2));
