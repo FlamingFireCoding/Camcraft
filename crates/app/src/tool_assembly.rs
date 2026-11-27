@@ -14,10 +14,17 @@
 //!   (`crate::commands::tool_assembly`) land the result.
 //! - **The spindle side only.** A lathe-held tool is refused: the lathe
 //!   side of the resolver is still open on #3643.
+//! - **A multi-seat cutter is derived whole** (#3646). When the insert
+//!   sits on a body row with cutter facts, the whole milling record
+//!   comes from `camcraft_tools::milling_cutter` (diameter, corner,
+//!   flutes, flute length, centre cutting, the enclosed holder), and
+//!   every seat must take the insert. An insert row's running data
+//!   (tool material, cutting rows) goes on each tool that cuts with it.
 
 use flecs_ecs::core::{EntityViewGet, WorldGet}; // try_get is not re-exported in prelude (0.2.2)
 use flecs_ecs::prelude::{Entity, World};
 
+use camcraft_tools::milling_cutter;
 use camcraft_tools::tool_assembly::{resolve, AssemblyNode};
 /// #3898: how a link sits on its parent, for the callers outside this crate.
 pub use camcraft_tools::tool_assembly::Mount;
@@ -102,6 +109,7 @@ pub fn derive(name: &str, current: &Tool, links: &[AssemblyLink], table: &[Docum
         ));
     }
     let mut nodes = Vec::with_capacity(links.len());
+    let mut rows = Vec::with_capacity(links.len());
     for link in links {
         let Some(row) = table.iter().find(|r| r.component.id() == link.component) else {
             return Err(format!(
@@ -110,9 +118,13 @@ pub fn derive(name: &str, current: &Tool, links: &[AssemblyLink], table: &[Docum
             ));
         };
         nodes.push(AssemblyNode { component: row.component.clone(), geometry: row.geometry.clone(), mount: link.mount.clone() });
+        rows.push(row);
     }
     let r = resolve(&nodes).map_err(|e| format!("tool '{name}': assembly: {e}"))?;
-    let tool = r.tool.unwrap_or_else(|| Tool { diameter: r.cutting.diameter, corner_r: r.cutting.corner_r, ..current.clone() });
+    let tool = match r.tool {
+        Some(solid) => solid,
+        None => cut_with_insert(name, current, &nodes, &rows, r.cutting.diameter, r.cutting.corner_r)?,
+    };
     let body = match r.body {
         None => None,
         Some(b) => {
@@ -131,4 +143,34 @@ pub fn derive(name: &str, current: &Tool, links: &[AssemblyLink], table: &[Docum
         }
     };
     Ok(Derived { tool, body, gauge_len: r.gauge_len })
+}
+
+/// The record of a tool that cuts with an insert: the insert row's
+/// running data over `current`, then either the whole multi-seat
+/// record (the insert's parent row states cutter facts) or the
+/// resolver's cutting diameter and corner radius.
+fn cut_with_insert(
+    name: &str,
+    current: &Tool,
+    nodes: &[AssemblyNode],
+    rows: &[&DocumentComponent],
+    diameter: f64,
+    corner_r: f64,
+) -> Result<Tool, String> {
+    let at = nodes.iter().position(|n| n.component.insert().is_some());
+    let mut base = current.clone();
+    if let Some(run) = at.and_then(|i| rows.get(i)).and_then(|r| r.running.as_ref()) {
+        base.tool_material = run.tool_material;
+        base.cutting = run.cutting.clone();
+    }
+    let parent = at.and_then(|i| nodes[i].mount.as_ref()).and_then(|m| rows.get(m.parent).map(|r| (m.parent, *r)));
+    let (Some(i), Some((p, body))) = (at, parent) else {
+        return Ok(Tool { diameter, corner_r, ..base });
+    };
+    let Some(spec) = &body.milling else {
+        return Ok(Tool { diameter, corner_r, ..base });
+    };
+    let refused = |e: milling_cutter::MillingError| format!("tool '{name}': {e}");
+    let cutter = milling_cutter::derive(&nodes[p].component, spec, &nodes[i].component).map_err(refused)?;
+    cutter.assembled(&base, nodes).map_err(refused)
 }

@@ -33,7 +33,7 @@ use super::rotary_flow_unwrap::{lerp_at, opposite_sense, Unwrapped, TAU};
 pub(super) const MAX_PASSES: usize = 4096;
 /// Most segment pairs the meet law walks before it refuses by name:
 /// past it the proof would outlive the generation.
-const MEET_PAIR_CAP: usize = 1 << 22;
+pub(super) const MEET_PAIR_CAP: usize = 1 << 22;
 
 /// The track of the chain's own next lap: the same walk advanced one
 /// whole turn in theta, every other coordinate held. The morph
@@ -119,7 +119,7 @@ fn clamp_to(p: Point3, a: Point3, b: Point3) -> Point3 {
 /// the guard's own `seg_seg` law, spelled here so a meet can name
 /// its own spot. The candidates alone cover the parallel and
 /// collinear cases the interior solve's denominator cannot.
-fn seg_seg_at(p1: Point3, q1: Point3, p2: Point3, q2: Point3) -> (f64, Point3) {
+pub(super) fn seg_seg_at(p1: Point3, q1: Point3, p2: Point3, q2: Point3) -> (f64, Point3) {
     let mut best2 = f64::INFINITY;
     let mut wit = p1;
     // Each endpoint of one segment against the other segment; the
@@ -167,7 +167,7 @@ fn seg_seg_at(p1: Point3, q1: Point3, p2: Point3, q2: Point3) -> (f64, Point3) {
 /// Refused by name at the meet's own spot: a band whose boundary
 /// chains touch pinches to a point there, and one whose chains cross
 /// cuts its ground twice. Adjacent picks only - the pairs the kernel
-/// blends.
+/// blends; the non-adjacent pairs ride `rotary_flow_cross` (#4032).
 pub(super) fn meet_or_cross(
     a: &[Point3],
     b: &[Point3],
