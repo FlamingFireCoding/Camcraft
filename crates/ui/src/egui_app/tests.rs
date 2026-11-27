@@ -127,6 +127,8 @@ mod rotary_stated_axis;
 mod rotary_flow_page;
 // #2181: the transport row of the calculation before playback.
 mod transport_precalc;
+// #4266: the sim playback's work turn as the scene draws it.
+mod sim_work_turn;
 mod sim_op_steps;
 mod page_layout;
 mod page_layout_windows;

@@ -946,6 +946,8 @@ pub struct WcsUi {
     /// `sync_setup_ui` zero the readout when an origin is undone without
     /// wiping typing into a never-placed slot.
     pub(crate) placed: bool,
+    /// Display-only refusal, shared by the flip status and the WCS page.
+    pub(crate) flip_note: wcs_ui::FlipNote,
 }
 
 /// Editable fields of the Setups page (M3.2 A). Transient like [`StockUi`]:

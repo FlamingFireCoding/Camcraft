@@ -194,7 +194,7 @@ pub use json::*;
 mod component_wire;
 pub use component_wire::*;
 mod assembly_wire;
-pub use assembly_wire::{assembly_from_dto, assembly_to_dto, LinkDto, MountDto};
+pub use assembly_wire::{assembly_from_dto, assembly_to_dto, stack_from_dto, LinkDto, MountDto};
 mod apply;
 mod fidelity_migrate;
 mod pocket_adaptive_migrate;

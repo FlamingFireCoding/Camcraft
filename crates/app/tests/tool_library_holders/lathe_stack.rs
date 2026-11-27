@@ -39,7 +39,7 @@ use super::cat;
 const A: &str = "OD-M";
 const B: &str = "OD-K";
 const INSERT: &str = "cnmg";
-const HOLDER_M: &str = "pclnr-2525m";
+pub(super) const HOLDER_M: &str = "pclnr-2525m";
 const HOLDER_K: &str = "pclnr-2020k";
 
 fn bx(lo: [f64; 3], hi: [f64; 3]) -> BodyBox {
@@ -140,7 +140,7 @@ fn facing() -> OpParams {
 
 /// A lathe, a bar, the three components, both tools on their stacks
 /// and a generated Facing operation on each.
-fn lathe_shop() -> (World, History) {
+pub(super) fn lathe_shop() -> (World, History) {
     let w = camcraft_app::world::new_world();
     let mut h = History::default();
     let stock = camcraft_app::stock::StockShape::Box { dx: 40.0, dy: 40.0, dz: 40.0 };
@@ -162,9 +162,9 @@ fn lathe_shop() -> (World, History) {
     (w, h)
 }
 
-type Snapshot = (Vec<DocumentComponent>, Vec<(Tool, Option<ToolBody>, Option<ToolAssembly>)>);
+pub(super) type Snapshot = (Vec<DocumentComponent>, Vec<(Tool, Option<ToolBody>, Option<ToolAssembly>)>);
 
-fn snapshot(w: &World) -> Snapshot {
+pub(super) fn snapshot(w: &World) -> Snapshot {
     let tool = |n: &str| {
         let e = model::find_by_name(w, n).expect("tool");
         (model::tool_of(w, &e).expect("a tool"), body_of(w, &e), assembly_of(w, &e))

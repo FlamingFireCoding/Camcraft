@@ -16,8 +16,9 @@
 //! #3897: the holder list's used-by count (`used_by`). #3644: the
 //! component table and assembly commands (`assembly_cmds`). #3645: the
 //! table and stacks in the project file (`component_files`), the user
-//! component library and its sync (`component_sync`). #3898: the
-//! built-in ER collets (`builtin_collets`). #3646: multi-seat
+//! component library and its sync (`component_sync`), the `.camtools`
+//! version 8 export and import of components and stacks (`camtools_v8`).
+//! #3898: the built-in ER collets (`builtin_collets`). #3646: multi-seat
 //! indexable cutters in the document (`multi_seat`). #3643: a turning
 //! tool from linked lathe components (`lathe_stack`).
 //! Gate map (M4.4): covers app::tool_library, app::commands (tool_import, tool_assembly),
@@ -52,6 +53,8 @@ mod component_files;
 mod component_sync;
 #[path = "tool_library_holders/builtin_collets.rs"]
 mod builtin_collets;
+#[path = "tool_library_holders/camtools_v8.rs"]
+mod camtools_v8;
 #[path = "tool_library_holders/multi_seat.rs"]
 mod multi_seat;
 #[path = "tool_library_holders/lathe_stack.rs"]
