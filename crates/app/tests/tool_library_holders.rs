@@ -18,6 +18,7 @@
 //! table and stacks in the project file (`component_files`), the user
 //! component library and its sync (`component_sync`), the `.camtools`
 //! version 8 export and import of components and stacks (`camtools_v8`).
+//! #3646: multi-seat indexable cutters in the document (`multi_seat`).
 //! Gate map (M4.4): covers app::tool_library, app::commands (tool_import, tool_assembly),
 //! app::mcp (import_tool_library), app::script (importTools), app::tool_body, app::tool_assembly,
 //! app::project (component_wire, assembly_wire), app::component_library, app::commands (component_sync).
@@ -50,6 +51,8 @@ mod component_files;
 mod component_sync;
 #[path = "tool_library_holders/camtools_v8.rs"]
 mod camtools_v8;
+#[path = "tool_library_holders/multi_seat.rs"]
+mod multi_seat;
 
 const DRAWN: &str = "Six";
 const MESH: &str = "Four";

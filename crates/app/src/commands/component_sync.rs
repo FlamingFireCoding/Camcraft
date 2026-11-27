@@ -43,6 +43,10 @@ impl SyncDocumentComponent {
             component,
             geometry: entry.geometry.clone(),
             library_ref: Some(LibraryRef { id: lib_id.to_owned(), content_hash }),
+            // #3646: a library copy holds no cutter facts and no running
+            // data; the row keeps its own, as a hand edit does.
+            milling: row.milling,
+            running: row.running.clone(),
         };
         if next == row {
             return Err(CommandError::Invalid(format!("the tool component '{id}' is already up to date with the library")));

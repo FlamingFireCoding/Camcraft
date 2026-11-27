@@ -9,7 +9,11 @@
 //! Gate map (#4045): covers app::posting (MACHINES, WIRE_POSTS,
 //! post_script), app::machine (parse_mch, library), sodick-ln2w.cps.
 
-use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, History, ImportModel, LoadMachine, SetStock};
+use std::collections::BTreeMap;
+
+use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, History, ImportModel, LoadMachine, SetPostScriptOptions, SetStock};
+use camcraft_app::post::options::OptionValue;
+use camcraft_app::schema::PostRef;
 use camcraft_app::geo2d::Point2;
 use camcraft_app::geometry::{feature, Point3};
 use camcraft_app::machine::{library, parse_mch, Kind};
@@ -49,6 +53,7 @@ fn wire(side: WireSide, start: (f64, f64), top: f64, taper_deg: f64, skims: &[&s
         skims: skims.iter().map(|c| WireSkim { condition: (*c).into(), reverse: false }).collect(),
         sharp_corners,
         lead_arc_radius: None,
+        overlap: 0.0,
     }
 }
 
@@ -213,14 +218,43 @@ fn the_ln2w_two_axis_block_posts_its_golden() {
     assert!(!w.iter().any(|l| l.starts_with("TP") || l.starts_with("TN") || matches!(*l, "G50" | "G51" | "G52")), "{text}");
 }
 
-/// Review of PR #4065 (findings 2, 3, 4, 6): the taper test part is
-/// refused by name, with no program. TP / TN need the setup's height above
-/// the worktable, and the LN2W corner motion and lean side are not
-/// confirmed (#4075). No taper word is written from a guess.
+/// #4075: TP is the part's bottom above the worktable, and CamCraft knows
+/// no fixture. Without the post option the taper test part is refused by
+/// name, with no program. No taper word is written from a guess.
 #[test]
-fn the_ln2w_taper_part_is_refused_by_name_until_its_heights_and_rules_are_confirmed() {
-    let err = post(&taper(), LN2W, "taper").expect_err("no taper is posted");
-    assert!(err.contains("Cut1") && err.contains("is tapered") && err.contains("#4075"), "{err}");
+fn the_ln2w_taper_part_is_refused_by_name_without_the_table_height() {
+    let err = post(&taper(), LN2W, "taper-unstated").expect_err("no taper is posted");
+    assert!(err.contains("Cut1") && err.contains("is tapered") && err.contains("partBottomAboveTable") && err.contains("#4075"), "{err}");
+}
+
+/// #4075 Done means: with the table height stated (the post option, set by
+/// the undoable command), the taper test part posts in the owner's 4-axis
+/// form: the start order of #4065, TP TN G74 after the C word, U V on
+/// every cut, G75 before T90, no G51 / G52. The walls lean 3 mm over the
+/// 20 mm part: each leaning move's U or V is 3 mm (the punch is 50 x 30 at
+/// the bottom, 44 x 24 at the top, with the wire's kerf offset).
+#[test]
+fn the_ln2w_taper_part_posts_as_a_four_axis_program_with_the_table_height() {
+    let world = taper();
+    let post_ref = PostRef::Named(LN2W.into());
+    let options = BTreeMap::from([("partBottomAboveTable".to_owned(), OptionValue::Float(5.0))]);
+    History::default().execute(&world, SetPostScriptOptions::for_post(&world, &post_ref, options).expect("the option is set"));
+    // Posted as the named post, so the document's stored option applies.
+    let cps = posting::builtin_post_text(LN2W).expect("registered");
+    let out = std::env::temp_dir().join(format!("camcraft-aq600l-taper-{}.nc", std::process::id()));
+    let posted = posting::post_script_for_post_with_options(&world, &out, &post_ref, cps, None);
+    let _ = std::fs::remove_file(&out);
+    let text = posted.map(|p| p.program).expect("the taper posts");
+    golden("edm_test_taper.nc", &text);
+    // The section note names the work Z that TP stands for (PR #4171).
+    assert!(text.contains("TP 5. IS WORK Z") && text.contains("ABOVE THE WORKTABLE - THE POST OPTION STATES WORK Z"), "{text}");
+    let w = words(&text);
+    assert_eq!(&w[2..11], ["G00 X-35. Y0. U0. V0.", "Z0.", "T91", "T84", "T94", "C001", "TP5.", "TN25.", "G74"], "{text}");
+    let cuts: Vec<&str> = w.iter().copied().filter(|l| l.starts_with("G01 ")).collect();
+    assert!(!cuts.is_empty() && cuts.iter().all(|l| l.contains(" U") && l.contains(" V")), "U V on every cut: {text}");
+    assert!(cuts.iter().any(|l| l.contains("U3.") || l.contains("U-3.") || l.contains("V3.") || l.contains("V-3.")), "a 3 mm lean over 20 mm: {text}");
+    assert_eq!(&w[w.len() - 3..], ["G75", "T90", "M02"], "{text}");
+    assert!(!w.iter().any(|l| l.split(' ').any(|x| matches!(x, "G50" | "G51" | "G52" | "G02" | "G03"))), "{text}");
 }
 
 /// The Mark 21 dialect is not changed by this work: on the same machine
