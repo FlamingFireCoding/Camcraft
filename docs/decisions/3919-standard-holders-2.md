@@ -134,6 +134,29 @@ The default gauge length of each 50-taper ER and Weldon entry is 100,
 a typical catalogue length (the shrink-fit tables above list 100 for
 BT50 and CAT50). The user sets the real gauge length.
 
+### Shrink-fit chucks in the component library
+
+The built-in component library (#3645, `component_library::builtins`)
+turns each holder entry with a taper into a read-only adaptive item. A
+shrink-fit chuck maps so:
+
+- machine side: its taper, as for the ER and Weldon entries;
+- workpiece side: `CYL <bore>`, a plain bore. The chuck grips the shank
+  directly, with no collet. `CYL` takes a plain shank of the bore
+  (within the bore slack) and a Weldon shank of that size, and refuses
+  all other shanks. A Weldon shank in a shrink-fit chuck is normal shop
+  practice (h6 shanks, the flat is only unused);
+- geometry: `ComponentGeometry::holder` at the library gauge length,
+  the same conservative outline that the holder library draws (never
+  smaller than the steel). No bore stop: the tables state no bore
+  depth, so a solid tool needs a stated stickout, as in a Weldon entry.
+
+Dropped: a new `SHRINK <bore>` connection code. It would mate exactly
+the same shanks as `CYL`, and each tool file and machine side would
+need to know a second name for one bore. Dropped also: leaving the
+shrink-fit entries out of the catalogue. The mapping is not in doubt,
+and a missing entry would make the user draw the chuck by hand.
+
 **Why.** Shrink-fit chucks are the issue's group 4; CAT50 and BT50 are
 in its "Then" list. Without them a user with such a holder had to draw
 it by hand, and the collision checks judged a hand-made shape. #4239: a
