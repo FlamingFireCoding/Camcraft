@@ -134,7 +134,7 @@ pub(crate) fn tool_library_window(ctx: &egui::Context, state: &mut State) {
     let (w, left) = width(screen);
     // Flat, docked look (#4245): the theme's window fill and hairline, a
     // small radius, no shadow; the panels give their own margins.
-    let frame = egui::Frame::window(&ctx.style()).shadow(egui::Shadow::NONE).inner_margin(0.0);
+    let frame = egui::Frame::window(&ctx.global_style()).shadow(egui::Shadow::NONE).inner_margin(0.0);
     Window::new(TITLE)
         .id(Id::new("tool-library"))
         .title_bar(false)
