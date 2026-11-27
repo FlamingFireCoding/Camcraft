@@ -69,7 +69,7 @@ pub fn wire_comp_spans(path: &mut Toolpath, side: WireSide, mode: Compensation, 
     let die = match side {
         WireSide::Die => true,
         WireSide::Punch => false,
-        WireSide::Left | WireSide::Right => {
+        WireSide::Left | WireSide::Right | WireSide::Centre => {
             return Err(refused(
                 mode,
                 "is stated on an open run - the control's wire offset engages on a closed profile's lead-in from its start hole; cut the run with computer compensation",

@@ -54,6 +54,7 @@ fn wire(side: WireSide, start: (f64, f64), top: f64, taper_deg: f64, skims: &[&s
         sharp_corners,
         lead_arc_radius: None,
         compensation: Default::default(),
+        overlap: 0.0,
     }
 }
 

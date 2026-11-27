@@ -69,6 +69,7 @@ fn doc_on(machine: &str) -> (World, History) {
 
 fn die(sharp_corners: bool) -> WireContourOp {
     WireContourOp {
+        overlap: 0.0,
         lead_arc_radius: None,
         compensation: Default::default(),
         top_z: Height::fixed(12.0),

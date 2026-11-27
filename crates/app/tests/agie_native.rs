@@ -121,6 +121,7 @@ fn punch_setup(
         skims: Vec::new(),
         four_axis: None,
         sharp_corners: false,
+        overlap: 0.0,
     };
     h.execute(
         &world,

@@ -91,6 +91,7 @@ fn punch(taper_deg: f64) -> World {
     h.execute(&world, ImportModel::from_mesh("part", cone()));
     let src = SrcRef::Selection(vec![top_face(&world)]);
     let op = WireContourOp {
+        overlap: 0.0,
         lead_arc_radius: None,
         compensation: Default::default(),
         top_z: Height::fixed(H),

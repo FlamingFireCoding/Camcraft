@@ -94,3 +94,20 @@ fn the_offset_with_a_taper_or_an_open_run_is_refused_at_the_door() {
         assert!(why.contains(said), "{why}");
     }
 }
+
+/// The closing overlap (#3216) rides the offset too: the control's part
+/// contour continues past the seam by the stated length, on the part's
+/// own edge, and `G40` goes on the lead-out after it.
+#[test]
+fn the_closing_overlap_is_programmed_on_the_part_contour_under_the_offset() {
+    let mut op = offset(wire(WireSide::Die, (0.0, 0.0), 10.0, 0.0, &[], true), Compensation::Control);
+    op.overlap = 2.0;
+    let world = cut("edm-test-square.step", (40.0, 40.0), 10.0, within((-5.0, 5.0), (-5.0, 5.0)), op);
+    let clause = posting::wire_clause(&world);
+    assert!(clause.problems.is_empty(), "the wire laws judge the wire-centre path: {:?}", clause.problems);
+    let text = post(&world, LN2W, "square-offset-overlap").expect("the square posts with the offset and the overlap");
+    let w = words(&text);
+    let out = w.iter().position(|l| *l == "G40 G01 X0. Y0.").unwrap_or_else(|| panic!("G40 on the lead-out: {text}"));
+    assert_eq!(&w[out - 2..out], ["G01 X5. Y0.", "G01 X5. Y2."], "the overlap past the seam is on the part contour: {text}");
+    assert!(!w.iter().any(|l| l.contains("4.835")), "the part contour, not the wire centre: {text}");
+}
