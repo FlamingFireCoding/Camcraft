@@ -194,15 +194,17 @@ fn upsert_tool_component(env: &mut Env, a: &Map<String, Value>) -> Result<Value,
     let id = row.component.id().to_owned();
     let held = ta::component(&env.world, &id);
     let added = held.is_none();
-    // #3646: the stated cutter facts and running data land with the row;
-    // a key the call does not state keeps the held row's value, and the
-    // library link stays (as a catalog-fact edit keeps them).
+    // #3646 / #3643: the stated cutter facts, running data and lathe body
+    // land with the row; a key the call does not state keeps the held
+    // row's value, and the library link stays (as a catalog-fact edit
+    // keeps them).
     let row = match held {
         None => row,
         Some(h) => DocumentComponent {
             library_ref: h.library_ref,
             milling: row.milling.or(h.milling),
             running: row.running.or(h.running),
+            lathe_body: row.lathe_body.or(h.lathe_body),
             ..row
         },
     };

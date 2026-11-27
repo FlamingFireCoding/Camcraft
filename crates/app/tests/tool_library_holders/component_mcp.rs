@@ -6,7 +6,8 @@
 //! `get_tool_assembly`; an edit of the shared insert updates both tools
 //! in one undo step; a save to a library file, the sync and its undo;
 //! the named refusals, which change nothing; an upsert carries an
-//! insert's running data (#3646) and a library save refuses it.
+//! insert's running data (#3646) and a library save refuses it; an
+//! upsert carries a lathe body (#3643) the same way.
 //! Provenance: our own tests over our own tools.
 
 use camcraft_app::mcp::Server;
@@ -216,4 +217,24 @@ fn mcp_upsert_carries_insert_running_data_and_a_library_save_refuses_it() {
     let mut facts = dto(insert("CCMT09T304"));
     facts["milling"] = json!({ "dc": 25.0, "kapr_deg": 90.0, "apmx": 5.0, "center_cutting": false });
     assert!(m.refused("upsert_tool_component", json!({ "component": facts })).contains("not a cutter body"));
+}
+
+#[test]
+fn mcp_upsert_carries_a_lathe_body_and_a_library_save_refuses_it() {
+    let mut m = shop();
+    let facets = json!({ "facets": [[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 0.0]]] });
+    let mut row = dto(fly("fly-40", 20.0));
+    row["lathe_body"] = facets.clone();
+    let r = m.ok("upsert_tool_component", json!({ "component": row }));
+    assert_eq!(r["component"]["component"]["lathe_body"], facets, "the stated body lands: {r}");
+    // A later upsert that does not state the key keeps the held body.
+    let r = m.ok("upsert_tool_component", json!({ "component": dto(fly("fly-40", 21.0)) }));
+    assert_eq!(r["component"]["component"]["lathe_body"], facets, "the held body stays: {r}");
+    let lib = library("lathe");
+    let e = m.refused("save_library_component", json!({ "id": "fly-40", "library": lib }));
+    assert!(e.contains("fly-40") && e.contains("lathe body"), "{e}");
+    let mut bad = dto(fly("fly-40", 20.0));
+    bad["lathe_body"] = json!({ "facets": [] });
+    let e = m.refused("upsert_tool_component", json!({ "component": bad }));
+    assert!(e.contains("fly-40") && e.contains("no facets"), "{e}");
 }
