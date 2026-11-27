@@ -258,6 +258,9 @@ pub fn component_to_dto(row: &DocumentComponent) -> ComponentDto {
 #[must_use]
 pub fn content_hash(component: &ToolComponent, geometry: &ComponentGeometry) -> String {
     let content = (component.name(), item_dto(component.kind()), geometry_dto(geometry));
+    // The write cannot fail, so the default is never taken: the value is
+    // our own DTOs and a `Value`, every map key is a string, and
+    // serde_json writes a non-finite number as null, not as an error.
     let bytes = serde_json::to_vec(&content).unwrap_or_default();
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in bytes {
