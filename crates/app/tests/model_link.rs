@@ -14,7 +14,8 @@
 //! app::geometry::import::sourced (#2689).
 //! #3915 (`model_link/`): a `.sc` model's picks follow SolidCraft face
 //! names at a re-import (`follow`), and the source face record rides the
-//! project file (`face_record`); covers app::commands::update_model_follow,
+//! project file (`face_record`); the follow reads its own facet order,
+//! never a cached one (`facet_order`); covers app::commands::update_model_follow,
 //! app::commands::update_model (with_source_faces, summary), app::project
 //! (source_faces_dto), app::source_faces, app::posting (review clause).
 //! Lane shape (M4.4): all tests here run in seconds.
@@ -26,6 +27,8 @@ mod source_names;
 mod follow;
 #[path = "model_link/face_record.rs"]
 mod face_record;
+#[path = "model_link/facet_order.rs"]
+mod facet_order;
 
 use std::path::{Path, PathBuf};
 

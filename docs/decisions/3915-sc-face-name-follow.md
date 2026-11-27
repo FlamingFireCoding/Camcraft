@@ -104,6 +104,8 @@
 
 Anything else gives a reason, and the pick stays as it was.
 
+The two revisions' features are built from their facets in `update_model_follow.rs` (`feature::features_of_facets`), never read from the features caches. Those caches key a mesh by an order-free content digest (`feature::digest_of`), so a cache hit can carry the facet order of another mesh with the same triangles. The record names facets by index, so those features would give the wrong names to the faces. The ids are the same either way, because they hash positions, not indexes. Pinned by `model_link::facet_order`. The cost is two feature builds at a re-import that has a pick to follow.
+
 **Why.** A wrong follow is the worst failure here, and a missed follow is only today's behaviour. The rules beyond the plan close the cases where a follow could merge two picks into one face (two old faces with one name set, or a new face whose name is one old face's and whose `former` name is another's), or move a pick to a face that was already in the model under other names.
 
 **Considered and dropped.**

@@ -29,6 +29,7 @@ use camcraft_geometry::source_follow::{self, PickKind, Revision};
 use flecs_ecs::prelude::World;
 
 use crate::geometry::Triangle;
+use crate::geometry::feature;
 use crate::model;
 use crate::operation::FeatureSel;
 use crate::schema::{Operation, OperationMeta};
@@ -119,9 +120,14 @@ impl Follow {
             );
             return;
         }
+        // Built here, never from the features caches: the content digest
+        // of `model::features_of_local` is order-free, so a cache hit can
+        // carry another mesh's facet order, and the record would then name
+        // the wrong facets. The ids come out the same (they hash positions,
+        // never indexes), so the stored picks still match.
         let (fa, fb) = (
-            model::features_of_shared(old_facets),
-            model::features_of_shared(new_facets),
+            feature::features_of_facets(old_facets),
+            feature::features_of_facets(new_facets),
         );
         let (Some(ra), Some(rb)) = (Revision::new(&fa, old), Revision::new(&fb, new)) else {
             return;
