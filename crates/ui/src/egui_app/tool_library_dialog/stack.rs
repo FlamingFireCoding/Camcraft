@@ -9,18 +9,19 @@
 //! `SetToolAssembly`, which derives the tool's record and body in the
 //! same step; "Detach to standalone tool" clears the stack and keeps the
 //! tool as it is. A lathe tool's stack waits for the lathe side of the
-//! resolver (#3643).
+//! resolver (#3643). Frame cost: State keeps the offer and the rows
+//! (`state_component_views`), keyed on the component table, the stacks,
+//! the library read and the draft; a still frame builds nothing.
 //! Provenance: our own group over our own component commands; no
 //! HSMWorks material involved.
 
 use egui::{RichText, Ui};
 
-use camcraft_app::component::{ComponentKind, CuttingItem, ToolComponent};
-use camcraft_app::component_fit::compatible_children;
 use camcraft_app::model;
-use camcraft_app::schema::{AssemblyLink, DocumentComponent};
-use camcraft_app::tool_assembly::{self as ta, Mount};
+use camcraft_app::tool_assembly as ta;
 
+#[cfg(test)]
+pub(crate) use crate::state::candidates;
 use crate::state::{ComponentAction, StackDraft, State, is_spun_kind};
 
 pub(crate) const HEADING: &str = "Component stack";
@@ -29,41 +30,6 @@ pub(crate) const REMOVE: &str = "Remove last component";
 pub(crate) const APPLY: &str = "Apply stack";
 pub(crate) const DETACH: &str = "Detach to standalone tool";
 const HEADS: [&str; 6] = ["#", "Component", "Port", "Turn (°)", "Stick-out (mm)", "Library"];
-
-/// The parts that can go on the stack next, with the link each one adds:
-/// the holding parts for an empty stack, else the parts that fit the last
-/// holding part (a cutting item holds nothing).
-#[must_use]
-pub(crate) fn candidates(links: &[AssemblyLink], table: &[DocumentComponent]) -> Vec<(String, AssemblyLink)> {
-    let comps: Vec<&ToolComponent> = table.iter().map(|r| &r.component).collect();
-    if links.is_empty() {
-        return comps
-            .into_iter()
-            .filter(|c| !matches!(c.kind(), ComponentKind::CuttingItem(CuttingItem::Insert(_))))
-            .map(|c| (c.name().to_owned(), AssemblyLink { component: c.id().to_owned(), mount: None }))
-            .collect();
-    }
-    let parent = links.iter().enumerate().rev().find_map(|(i, l)| {
-        comps.iter().copied().find(|c| c.id() == l.component).filter(|c| !matches!(c.kind(), ComponentKind::CuttingItem(_))).map(|c| (i, c))
-    });
-    let Some((at, parent)) = parent else {
-        return Vec::new();
-    };
-    compatible_children(parent, comps.iter().copied())
-        .into_iter()
-        .filter(|f| f.component.insert().is_some() || !links.iter().any(|l| l.component == f.component.id()))
-        .map(|f| {
-            // A solid tool on a shank mount needs a stated stick-out: it
-            // starts at the tool's own (flute plus shank length).
-            let projection_mm = match f.component.kind() {
-                ComponentKind::CuttingItem(CuttingItem::Solid { tool, .. }) => Some(tool.flute_len + tool.shank_len),
-                _ => None,
-            };
-            let mount = Mount { parent: at, port: Some(f.port.clone()), z_rot_deg: 0.0, projection_mm };
-            (format!("{} in {} {}", f.component.name(), parent.name(), f.port), AssemblyLink { component: f.component.id().to_owned(), mount: Some(mount) })
-        })
-        .collect()
-}
 
 pub(super) fn draw(ui: &mut Ui, state: &mut State) {
     ui.add_space(6.0);
@@ -83,9 +49,8 @@ pub(super) fn draw(ui: &mut Ui, state: &mut State) {
         Some(d) if d.tool == name && d.synced == doc => d,
         _ => StackDraft { tool: name.clone(), synced: doc, links: stored.clone().unwrap_or_default() },
     };
-    let table = ta::components(&state.world);
-    let lib = state.component_library();
-    let derived = super::components::derived(state, &lib, None);
+    let derived = state.component_derived(None);
+    let view = state.component_stack_view(&draft.links);
     let mut edit = None;
     if draft.links.is_empty() {
         ui.weak("No component stack: the tool is standalone.");
@@ -128,7 +93,7 @@ pub(super) fn draw(ui: &mut Ui, state: &mut State) {
             }
         });
     }
-    let offer = candidates(&draft.links, &table);
+    let offer = &view.offer;
     let mut add = None;
     ui.horizontal_wrapped(|ui| {
         let label = ui.label(ADD);

@@ -37,12 +37,12 @@ use super::*;
 use crate::egui_app::tool_library_dialog::{HOLDERS_PAGE, component_edit, components, holders, stack};
 use crate::state::{ComponentAction, CommandKind, ToolSource};
 
-const A: &str = "Fly25";
-const B: &str = "Fly32";
-const INSERT: &str = "insert-cc";
+pub(super) const A: &str = "Fly25";
+pub(super) const B: &str = "Fly32";
+pub(super) const INSERT: &str = "insert-cc";
 
 /// A fresh, empty user library folder for one test.
-fn lib_dir(test: &str) -> PathBuf {
+pub(super) fn lib_dir(test: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("camcraft-3898-{test}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     if let Err(e) = std::fs::create_dir_all(&dir) {
@@ -56,7 +56,7 @@ fn lib_file(dir: &std::path::Path) -> PathBuf {
 }
 
 /// A shell whose window reads the user library in `dir`.
-fn shell(dir: &std::path::Path) -> H {
+pub(super) fn shell(dir: &std::path::Path) -> H {
     let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1400.0)).build_ui_state(super::frame, ShellUi::seeded());
     h.state_mut().state.component_lib.dir = Some(dir.to_path_buf());
     h.run_steps(2);
@@ -76,7 +76,7 @@ fn holder() -> (ToolComponent, ComponentGeometry) {
 }
 
 /// A single-seat cutter body with a CC seat `r` off the axis.
-fn fly(id: &str, r: f64) -> (ToolComponent, ComponentGeometry) {
+pub(super) fn fly(id: &str, r: f64) -> (ToolComponent, ComponentGeometry) {
     let seat = HolderDesignation::parse("SCLCR2020K09").expect("holder code").seat;
     let kind = ComponentKind::ToolItem { mcs: code("CYL 20"), seats: vec![InsertSeat { port: "CSW1".into(), spec: seat }] };
     let frame = Frame::new([r, 0.0, -60.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]).expect("seat frame");
@@ -84,7 +84,7 @@ fn fly(id: &str, r: f64) -> (ToolComponent, ComponentGeometry) {
     (ToolComponent::new(id, id, kind).expect("cutter body"), g)
 }
 
-fn insert(text: &str) -> (ToolComponent, ComponentGeometry) {
+pub(super) fn insert(text: &str) -> (ToolComponent, ComponentGeometry) {
     let spec = InsertSpec::parse(text).expect("insert code");
     let c = ToolComponent::new(INSERT, text, ComponentKind::CuttingItem(CuttingItem::Insert(spec))).expect("insert");
     (c, ComponentGeometry::default())
@@ -111,7 +111,7 @@ fn stack_of(body: &str) -> Vec<AssemblyLink> {
 
 /// The fixture of the #3644 tests, landed through the commands: the four
 /// components, the two tools, and (`stacks`) their stacks.
-fn shop(h: &mut H, stacks: bool) {
+pub(super) fn shop(h: &mut H, stacks: bool) {
     let st = &mut h.state_mut().state;
     for (c, g) in [holder(), fly("fly-25", 12.5), fly("fly-32", 16.0), insert("CCMT09T304")] {
         let cmd = UpsertDocumentComponent::new(&st.world, c, g).expect("upsert");
@@ -129,31 +129,31 @@ fn shop(h: &mut H, stacks: bool) {
     h.run_steps(2);
 }
 
-fn shows(h: &H, text: &str) -> bool {
+pub(super) fn shows(h: &H, text: &str) -> bool {
     library_window(h).query_all_by_label(text).next().is_some()
 }
 
-fn done(h: &H) -> usize {
+pub(super) fn done(h: &H) -> usize {
     h.state().state.history.done_len()
 }
 
-fn undo(h: &mut H) {
+pub(super) fn undo(h: &mut H) {
     crate::actions::undo(&mut h.state_mut().state);
     h.run_steps(2);
 }
 
-fn redo(h: &mut H) {
+pub(super) fn redo(h: &mut H) {
     crate::actions::redo(&mut h.state_mut().state);
     h.run_steps(2);
 }
 
-fn open_library(h: &mut H) {
+pub(super) fn open_library(h: &mut H) {
     h.get_by_role_and_label(Role::Button, "Tools").click();
     h.run_steps(2);
     click_window_button(h, components::SOURCE);
 }
 
-fn pick(h: &mut H, id: &str) {
+pub(super) fn pick(h: &mut H, id: &str) {
     if let Some(v) = h.state_mut().state.tool_library.as_mut() {
         v.components.selected = Some(id.to_owned());
     }
@@ -371,13 +371,14 @@ fn a_still_frame_reads_no_library_and_builds_nothing() {
     let dir = lib_dir("still");
     let mut h = shell(&dir);
     open_library(&mut h);
-    let (loads, builds) = (crate::state::library_loads(), components::builds());
+    let views = |h: &H| h.state().state.component_views.builds();
+    let (loads, builds) = (crate::state::library_loads(), views(&h));
     h.run_steps(3);
     assert_eq!(crate::state::library_loads(), loads, "a still frame reads no library file");
-    assert_eq!(components::builds(), builds, "a still frame builds no derived set");
+    assert_eq!(views(&h), builds, "a still frame reads and builds no derived set");
     let add = ComponentAction::AddFromLibrary { id: "builtin:holder:BT40 ER32".into() };
     h.state_mut().state.pending.push_back(CommandKind::Component(add));
     h.run_steps(2);
-    assert!(components::builds() > builds, "a document change builds the sets again");
+    assert!(views(&h).rows > builds.rows, "a document change builds the sets again");
     assert!(ta::component(&h.state().state.world, "builtin:holder:BT40 ER32").is_some_and(|r| r.library_ref.is_some()), "the added row is linked");
 }

@@ -70,6 +70,9 @@ pub use components_ui::{
 #[cfg(test)]
 pub(crate) use components_ui::library_loads;
 pub(crate) use components_ui::{draft_of, gauge_of, group_of, holder_entry};
+#[path = "state_component_views.rs"]
+mod component_views;
+pub use component_views::{ComponentRow, ComponentViews, Derived as ComponentDerived, StackView, ViewBuilds, candidates};
 #[path = "state_setup_mount.rs"]
 mod setup_mount;
 #[path = "state_pockets.rs"]
@@ -2216,6 +2219,8 @@ pub struct State {
     /// #3898: the component library the tool library window reads (a
     /// cached read of the built-ins and the user's file).
     pub component_lib: ComponentLib,
+    /// #3898: the component pages' derived sets, keyed on their inputs.
+    pub component_views: ComponentViews,
     /// #2397: Properties is showing the blank new-tool form. The Tool
     /// target with the empty name is the destination; this says which of
     /// its two faces shows - the pointer to the library, or the draft.
@@ -2564,6 +2569,7 @@ impl State {
             tool_shape_editor: None,
             tool_library: None,
             component_lib: ComponentLib::default(),
+            component_views: ComponentViews::default(),
             new_tool_form: false,
             tool_body_ui: ToolBodyUi::default(),
             tool_profile_ui: ToolProfileUi::default(),

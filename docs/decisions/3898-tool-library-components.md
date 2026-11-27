@@ -61,9 +61,22 @@ contributor; each choice below is conservative and can be reversed.
   under its `builtin:` id: the user copies it as a user component first.
 - The window reads the library file once when it opens and after each
   write of it (`State::component_library`, a counter test pins that a
-  still frame reads nothing). The library status, the users and the
-  compatible set are cached on the document version, the library read and
-  the filter (counter test).
+  still frame reads nothing). The library status, the users, the
+  compatible set and the stack's "Add component" offer are cached in
+  State (`state_component_views`), not in a page (review of #4271). The
+  component table and the stacks that use each row are read once for each
+  document version; a set builds again only when that read differs, the
+  library read changes, or the filter or the stack draft changes. Chosen
+  over a page-owned thread-local keyed on the document version alone
+  (`crates/ui/AGENTS.md` "Frame cost"); dropped: a revision counter in the
+  app's component table, which would change the app crate for a view
+  cache. Counter tests pin a still frame, an unrelated document change
+  and each changed input.
+- "Copy as user component" of a document row copies the whole row (the
+  #3646 cutter facts and running data too) under the new `user:` id, with
+  no library link (`UpsertDocumentComponent::with_row`; review of #4271).
+  `camcraft_app` also re-exports `milling_cutter` for the test that pins
+  it.
 - The folder is `store::user_dir()` unless `State::component_lib.dir` is
   set (the tests set a temp folder, so no test writes the user's file).
 - App side, minimal and outside `commands/`: `camcraft_app` re-exports
