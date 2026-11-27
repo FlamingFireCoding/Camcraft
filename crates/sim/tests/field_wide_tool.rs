@@ -10,7 +10,8 @@
 //! Gate map (#4079): covers sim::stock_sim::field_cut (SdfField::subtract_batch's
 //! ceiling). Provenance: our own fixtures; synthetic sizes.
 
-use camcraft_sim::cl::{Move, MoveKind};
+use camcraft_sim::cl::{ArcMove, Move, MoveKind};
+use camcraft_sim::geo2d::Point2;
 use camcraft_sim::geometry::{cube, Point3};
 use camcraft_sim::stock_sim::{Backend, SdfField, SdfTool, SimOp, Stock, FIELD_BAND};
 use camcraft_tools::undercut::{Head, Undercut};
@@ -120,4 +121,37 @@ fn an_undercut_discs_6_mm_plunge_cuts_through_simulate_undercut() {
     assert!(f.distance(Point3::new(150.0, 100.0, 25.5)) > 0.0, "the head's path is air");
     assert!(f.distance(Point3::new(100.0, 100.0, 22.0)) < 0.0, "below the plunge is stock");
     assert!(f.distance(Point3::new(100.0, 170.0, 25.5)) < 0.0, "outside the head is stock");
+}
+
+/// #4179: an arc piece past the ceiling is cut in equal parts on its
+/// circle (`ArcPiece::split`). A 127 mm flat tool's helical entry: half a
+/// turn of radius 0.2 mm about (100, 100), 16 mm down from the top of a
+/// 200 x 200 x 30 mm block. At the chord tolerance that is two quarter
+/// turn pieces, each 8 mm deep - past the ceiling, as the 6 mm plunge is.
+/// A helical piece is searched cell by cell (`field_arc`), so the test
+/// takes about 22 min in debug and 5.5 min in release: heavy lane.
+#[test]
+#[ignore = "heavy lane (release, #4179): a helical piece past the ceiling, millions of searched cells - run with --release -- --ignored"]
+fn a_127_mm_tools_helical_entry_cuts_on_both_engines() {
+    let helix = |b| -> Result<Stock, String> {
+        let mut s = Stock::block(b, 0.0, 0.0, 200.0, 200.0, 30.0, CELL).map_err(|e| format!("block: {e}"))?;
+        let m = Move {
+            rotary: None,
+            kind: MoveKind::Feed,
+            from: Point3::new(100.2, 100.0, 30.0),
+            to: Point3::new(99.8, 100.0, 14.0),
+            feed: Some(500.0),
+            arc: Some(ArcMove::xy(Point2::new(100.0, 100.0), true)),
+            axis: None,
+        };
+        s.simulate(&[SimOp { moves: &[m], radius: 63.5, ball: false, cone: None, corner: None }])
+            .map_err(|e| e.to_string())?;
+        Ok(s)
+    };
+    assert!(helix(Backend::Column).is_ok(), "the column engine cuts it");
+    let s = helix(Backend::Field { band: FIELD_BAND }).unwrap_or_else(|e| panic!("the field engine refused the helix: {e}"));
+    let f = s.field().expect("a field");
+    assert!(f.distance(Point3::new(150.0, 100.0, 20.0)) > 0.0, "inside the tool is air");
+    assert!(f.distance(Point3::new(100.0, 100.0, 12.0)) < 0.0, "below the entry is stock");
+    assert!(f.distance(Point3::new(100.0, 170.0, 20.0)) < 0.0, "outside the tool is stock");
 }
