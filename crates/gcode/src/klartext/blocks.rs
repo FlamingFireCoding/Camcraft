@@ -5,7 +5,7 @@ use super::exec::Machine;
 use super::source::{Block, literal, q_index};
 use super::words::value;
 use crate::domain::check_feed;
-use crate::types::{GcodeError, StopEvent, StopKind};
+use crate::types::{GcodeError, SpindleDir, StopEvent, StopKind};
 
 impl Machine<'_> {
     /// `BLK FORM 0.1 Z X.. Y.. Z..` and `BLK FORM 0.2 X.. Y.. Z..`: checked, then
@@ -155,7 +155,10 @@ impl Machine<'_> {
         Ok(())
     }
 
-    /// `STOP` (optionally with M functions) is a programmed stop.
+    /// `STOP` (optionally with M functions) is a programmed stop. The block
+    /// records exactly one stop: `STOP` is unconditional, so an `M0` or `M1`
+    /// in the same block adds no second stop (an `M1` cannot weaken it). `M0`
+    /// keeps its modal effect (spindle stop, coolant off).
     pub fn stop_block(&mut self, b: &Block, toks: &[String]) -> Result<(), GcodeError> {
         let w = super::words::decode(b, toks, &self.q)?;
         if w.has_coords() || w.feed.is_some() || w.r0 {
@@ -169,6 +172,11 @@ impl Machine<'_> {
             section: self.current.index,
             after_move,
         });
-        self.post_m(b, &w.m, w.mb)
+        if w.m.contains(&0) {
+            self.modal.spindle_dir = SpindleDir::Off;
+            self.modal.coolant = Default::default();
+        }
+        let rest: Vec<u32> = w.m.iter().copied().filter(|&n| n != 0 && n != 1).collect();
+        self.post_m(b, &rest, w.mb)
     }
 }

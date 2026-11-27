@@ -174,3 +174,27 @@ fn klartext_m_functions_set_spindle_coolant_and_stops() {
     let m = moves(&p);
     assert_to(m[m.len() - 1], 7.0, 0.0, 30.0);
 }
+
+#[test]
+fn klartext_stop_with_m0_or_m1_records_one_program_stop() {
+    let p = ok(&pgm(&[
+        "TOOL CALL 1 Z S1000",
+        "L X+0 Y+0 Z+10 R0 FMAX M13",
+        "STOP M0",
+        "L X+5 FMAX M3",
+        "STOP M1",
+        "M30",
+    ]));
+    let kinds: Vec<_> = p.stops.iter().map(|s| (s.kind, s.line)).collect();
+    assert_eq!(kinds.len(), 2, "one stop per STOP block: {kinds:?}");
+    assert!(
+        p.stops.iter().all(|s| s.kind == StopKind::ProgramStop),
+        "STOP is unconditional, M1 does not weaken it: {kinds:?}"
+    );
+    assert_ne!(p.stops[0].line, p.stops[1].line);
+    let off = p
+        .sections
+        .iter()
+        .any(|x| x.spindle_dir == SpindleDir::Off || !x.coolant.flood);
+    assert!(off, "STOP M0 keeps the M0 spindle stop and coolant off");
+}
