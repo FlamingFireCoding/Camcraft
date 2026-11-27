@@ -157,11 +157,17 @@ fn rotary_contour_about(
         // #2774: keep the whole rings whose tip radius touches the band of
         // cylinders first: the select drops the other rings and their links,
         // and the relink below owns every link.
+        // #2774: keep the whole rings whose tip radius touches the band of
+        // cylinders first: the select drops the other rings and their links,
+        // and the relink below owns every link.
         if let Some(b) = band {
             base = radial_band::band_select(&base, b, &|x, y, _z| x.hypot(y) - r, "Rotary Contour")
                 .map_err(|e| to_world(e, &f, &ax, c, r))?;
         }
-        base = radial::radial_relink_z(&base, clear, hop, rho, p.feed, p.plunge_feed, "Rotary Contour")
+        // The stated radii are TIP radii; the relink places each link's ball
+        // center one ball radius outside it, so the posed tip stands at the
+        // stated radius (`radial.rs` - the parallel twin's own conversion).
+        base = radial::radial_relink_z(&base, r, clear, hop, rho, p.feed, p.plunge_feed, "Rotary Contour")
             .map_err(|e| to_world(e, &f, &ax, c, r))?;
     }
     posed(&f, &base, &ax, c, r)

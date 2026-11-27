@@ -38,13 +38,21 @@ impl RadialHeights {
 
 /// Rebuild a standing rotary ladder's links RADIAL about the axis (#2774).
 /// `base` is the contour's planning-frame path in its vertical-ball tip
-/// convention (the ball center stands `r` along the local z AXIS, so a point's
-/// tip radius about the axis is `hypot(x, y)`). `clear`/`hop` are TIP radii
-/// about that axis. Each link becomes a radial retract to the `hop` cylinder,
+/// convention: a stored point is the TIP, and its ball center stands `r` up
+/// the frame's own z (the axis), so a point's radius about the axis is
+/// `hypot(x, y)`. `clear`/`hop` are STATED TIP radii about that axis - the
+/// radii the operator named. The pose law of `posed` backs every emitted
+/// point off one ball radius along the pose it holds, so each link places
+/// the BALL CENTER one ball radius OUTSIDE the stated radius (the same
+/// tip-to-center conversion `rotary_links::radial_relink` applies to the
+/// parallel twin): the posed tip then stands at, never one ball under, the
+/// stated radius. Each link becomes a radial retract to the `hop` cylinder,
 /// an index on it, and a radial plunge into the next cut; the cut moves are
 /// kept verbatim. Refuses by name when a radius does not clear the work.
+#[allow(clippy::too_many_arguments)] // one relink's flat read
 pub(super) fn radial_relink_z(
     base: &Toolpath,
+    r: f64,
     clear: f64,
     hop: f64,
     rho_part: f64,
@@ -95,18 +103,18 @@ pub(super) fn radial_relink_z(
         return Err(GenError::Empty(format!("the {kind} ladder left no pass to link")));
     };
     let mut out: Vec<Move> = Vec::with_capacity(ms.len());
-    let start = lift(b0, clear)?;
+    let start = lift(b0, r, clear)?;
     out.push(Move::new(MoveKind::Plunge, start, b0, Some(plunge_feed)));
     for (k, run) in runs.iter().enumerate() {
         if k > 0
             && let (Some(a), Some(b)) = (out.last().map(|m| m.to), run.first().map(|m| m.from))
         {
-            link_into(&mut out, a, b, hop, feed, plunge_feed)
+            link_into(&mut out, a, b, r, hop, feed, plunge_feed)
                 .map_err(|e| e.with_ghost_moves(&out))?;
         }
         out.extend(run.iter().cloned());
     }
-    let exit = lift(end, clear).map_err(|e| e.with_ghost_moves(&out))?;
+    let exit = lift(end, r, clear).map_err(|e| e.with_ghost_moves(&out))?;
     out.push(Move::new(MoveKind::Rapid, end, exit, None));
     let mut path = Toolpath::new(out);
     path.notes = base.notes.clone();
@@ -114,14 +122,18 @@ pub(super) fn radial_relink_z(
 }
 
 /// Retract from tip `a` along its radial to the `hop` cylinder, index on it,
-/// then plunge along tip `b`'s radial into `b`.
-fn link_into(out: &mut Vec<Move>, a: Point3, b: Point3, hop: f64, feed: f64, plunge_feed: f64) -> Result<(), GenError> {
-    let ua = lift(a, hop)?;
-    let ub = lift(b, hop)?;
+/// then plunge along tip `b`'s radial into `b`. `hop` is the stated TIP
+/// radius: the index ring rides the ball CENTER one ball radius outside it,
+/// so the posed tips stand on the stated cylinder (`posed` backs each point
+/// off one ball radius along the pose).
+fn link_into(out: &mut Vec<Move>, a: Point3, b: Point3, r: f64, hop: f64, feed: f64, plunge_feed: f64) -> Result<(), GenError> {
+    let ua = lift(a, r, hop)?;
+    let ub = lift(b, r, hop)?;
     out.push(Move::new(MoveKind::Feed, a, ua, Some(feed)));
+    let rc = hop + r;
     let (pa, pb) = (polar(ua), polar(ub));
     let dphi = (pb.1 - pa.1 + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU) - std::f64::consts::PI;
-    let cap = 2.0 * (1.0 - (ARC_FIT_TOL / hop).min(2.0)).clamp(-1.0, 1.0).acos();
+    let cap = 2.0 * (1.0 - (ARC_FIT_TOL / rc).min(2.0)).clamp(-1.0, 1.0).acos();
     let n = if cap > 1e-12 { (dphi.abs() / cap).ceil() as usize } else { 1 };
     let n = n.clamp(1, 8192);
     let mut at = ua;
@@ -131,7 +143,7 @@ fn link_into(out: &mut Vec<Move>, a: Point3, b: Point3, hop: f64, feed: f64, plu
             ub
         } else {
             let (z, ph) = (pa.0 + (pb.0 - pa.0) * t, pa.1 + dphi * t);
-            Point3::new(hop * ph.cos(), hop * ph.sin(), z)
+            Point3::new(rc * ph.cos(), rc * ph.sin(), z)
         };
         if to != at {
             out.push(Move::new(MoveKind::Rapid, at, to, None));
@@ -142,15 +154,18 @@ fn link_into(out: &mut Vec<Move>, a: Point3, b: Point3, hop: f64, feed: f64, plu
     Ok(())
 }
 
-/// The tip whose radial distance from the axis is `rho`, keeping its station.
-fn lift(p: Point3, rho: f64) -> Result<Point3, GenError> {
+/// The stored point whose ball center stands one ball radius OUTSIDE tip
+/// radius `rho` about the axis: the center's radius is `rho + r`, so the
+/// posed tip (`posed` backs the point off `r` along its radial) stands at
+/// `rho` - the radius the operator stated, never one ball under it.
+fn lift(p: Point3, r: f64, rho: f64) -> Result<Point3, GenError> {
     let l = p.x.hypot(p.y);
     if !(l.is_finite() && l > 1e-9) {
         return Err(GenError::Invalid(format!(
             "a rotary pass ends on the axis line at {p:?} - no radius to retract along"
         )));
     }
-    let k = rho / l;
+    let k = (rho + r) / l;
     Ok(Point3::new(p.x * k, p.y * k, p.z))
 }
 

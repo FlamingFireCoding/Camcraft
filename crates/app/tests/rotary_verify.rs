@@ -541,6 +541,100 @@ fn a_band_at_the_clearance_cylinder_is_refused_by_name() {
 }
 
 #[test]
+fn a_stated_axis_resolves_the_radii_generation_judges() {
+    // #2774 review: the resolver must read the radii about the SAME axis
+    // generation turns about - a stated axis judged against the model's
+    // faces (`axis_stated::judged_any`), never the free fit alone. On the
+    // R5 sphere (12 latitudes, 24 longitudes) the fit refuses - every
+    // axis fits the model equally - but the op's stated Z axis is judged
+    // fine by the very law generation runs, so a stated clearance radius
+    // must resolve (and store), not refuse on a fit the generator never
+    // runs.
+    let world = new_world();
+    let mut h = History::default();
+    let tool = catalog().into_iter().find(|(n, _)| *n == "BN-0600").map(|(_, t)| t).expect("catalog ball");
+    h.execute(&world, AddTool::new(&world, "BN-0600", tool).expect("tool"));
+    h.execute(&world, ImportModel::from_mesh("ball", Mesh::from_facets(sphere(5.0, 24, 12))));
+    let mut p = params(Kind::Contour, 25.0);
+    if let OpParams::RotaryContour { stated_axis, clearance_r, .. } = &mut p {
+        *stated_axis = Some([0.0, 0.0, 1.0]);
+        *clearance_r = Some(RadialHeight::absolute(8.0));
+    }
+    CreateOperation::new(&world, "OP", "BN-0600", SrcRef::Entity("ball".into()), p)
+        .expect("the stated axis carries the radial resolution");
+}
+
+/// A UV sphere of radius `r` about the origin, `nlon` x `nlat` quads - the
+/// model whose free fit refuses ("every axis fits this model equally")
+/// while a stated axis through its centre is judged fine.
+fn sphere(r: f64, nlon: usize, nlat: usize) -> Vec<Triangle> {
+    let pt = |i: usize, j: usize| {
+        let ph = std::f64::consts::PI * (i as f64 / nlat as f64 - 0.5);
+        let th = std::f64::consts::TAU * j as f64 / nlon as f64;
+        Point3::new(r * ph.cos() * th.cos(), r * ph.cos() * th.sin(), r * ph.sin())
+    };
+    let mut s = Vec::new();
+    for i in 0..nlat {
+        for j in 0..nlon {
+            if i > 0 {
+                s.push(Triangle::new(pt(i, j), pt(i + 1, j), pt(i + 1, j + 1)));
+            }
+            if i + 1 < nlat {
+                s.push(Triangle::new(pt(i, j), pt(i + 1, j + 1), pt(i, j + 1)));
+            }
+        }
+    }
+    s
+}
+
+#[test]
+fn a_radial_radius_that_is_no_radius_is_refused_at_the_command() {
+    // #2774 review: every set radial field is validated before it is
+    // stored - on create, edit, paste and retype through the same
+    // `is_sane` door. A NaN offset and an absolute radius under the axis
+    // are no radius at all: refused here, never stored for Generate to
+    // trip over.
+    let world = bar_with_contour([None, None, None, None]);
+    let mut p = params(Kind::Contour, 25.0);
+    if let OpParams::RotaryContour { clearance_r, .. } = &mut p {
+        *clearance_r = Some(RadialHeight::of(RadialSource::StockOd, f64::NAN));
+    }
+    let e = CreateOperation::new(&world, "OP2", "BN-0600", SrcRef::Entity("bar".into()), p)
+        .map(|_| ())
+        .expect_err("a NaN radial offset must refuse the command");
+    assert!(e.to_string().contains("not usable"), "{e}");
+    let mut p = params(Kind::Contour, 25.0);
+    if let OpParams::RotaryContour { bottom_r, .. } = &mut p {
+        *bottom_r = Some(RadialHeight::absolute(-1.0));
+    }
+    let e = CreateOperation::new(&world, "OP2", "BN-0600", SrcRef::Entity("bar".into()), p)
+        .map(|_| ())
+        .expect_err("an absolute Bottom radius under the axis must refuse the command");
+    assert!(e.to_string().contains("not usable"), "{e}");
+}
+
+#[test]
+fn a_radial_radius_its_source_cannot_answer_is_refused_by_name() {
+    // #2774 review: the gate no longer discards a resolution failure - a
+    // stock-Od radius with no stock names the setup page at the command,
+    // never passes silent for the generator to refuse later.
+    let world = new_world();
+    let mut h = History::default();
+    let tool = catalog().into_iter().find(|(n, _)| *n == "BN-0600").map(|(_, t)| t).expect("catalog ball");
+    h.execute(&world, AddTool::new(&world, "BN-0600", tool).expect("tool"));
+    h.execute(&world, ImportModel::from_mesh("bar", Mesh::from_facets(revolve(16))));
+    let mut p = params(Kind::Contour, 25.0);
+    if let OpParams::RotaryContour { clearance_r, .. } = &mut p {
+        *clearance_r = Some(RadialHeight::of(RadialSource::StockOd, 5.0));
+    }
+    let e = CreateOperation::new(&world, "OP", "BN-0600", SrcRef::Entity("bar".into()), p)
+        .map(|_| ())
+        .expect_err("a stock-Od radius with no stock must refuse the command");
+    let msg = e.to_string();
+    assert!(msg.contains("Clearance radius") && msg.contains("no stock is set"), "{msg}");
+}
+
+#[test]
 fn a_band_that_crosses_no_skin_is_refused_by_name() {
     // #2774's Prime Directive door at the generator: the tool ball's
     // reach about this bar's axis spans 0..6.0 mm - its skin stands at
@@ -613,6 +707,58 @@ fn parallel_generate(radii: [Option<RadialHeight>; 4]) -> Result<World, String> 
     let g = GenerateOperation::new(&world, "OP").map_err(|e| e.to_string())?;
     h.execute(&world, g);
     Ok(world)
+}
+
+/// The standing bar with one Rotary Contour that STATES its radial
+/// heights (#2774), generated: the contour's link law is the one that
+/// converts stated TIP radii to the planning centers, so its envelope
+/// answers the reviewer's probe.
+fn contour_generate(radii: [Option<RadialHeight>; 4]) -> Result<World, String> {
+    let world = new_world();
+    let mut h = History::default();
+    let tool = catalog().into_iter().find(|(n, _)| *n == "BN-0600").map(|(_, t)| t).expect("catalog ball");
+    h.execute(&world, AddTool::new(&world, "BN-0600", tool).expect("tool"));
+    let loc = Location { pos: Point3::new(0.0, 0.0, -16.0), rot: IDENTITY_Q };
+    h.execute(&world, SetStock::new(&world, StockShape::Cylinder { diameter: 12.4, height: 32.0 }, loc).expect("bar stock"));
+    h.execute(&world, ImportModel::from_mesh("bar", Mesh::from_facets(revolve(16))));
+    let mut p = params(Kind::Contour, 25.0);
+    if let OpParams::RotaryContour { clearance_r, retract_r, top_r, bottom_r, .. } = &mut p {
+        *clearance_r = radii[0];
+        *retract_r = radii[1];
+        *top_r = radii[2];
+        *bottom_r = radii[3];
+    }
+    h.execute(&world, CreateOperation::new(&world, "OP", "BN-0600", SrcRef::Entity("bar".into()), p).expect("create"));
+    let g = GenerateOperation::new(&world, "OP").map_err(|e| e.to_string())?;
+    h.execute(&world, g);
+    Ok(world)
+}
+
+#[test]
+fn the_stated_contour_radii_clear_the_work() {
+    // #2774 review probe (the P1-class one): stated clearance R8 and
+    // retract R6.5 on the d12.4 bar used to emit the exit at
+    // R6.5 - one ball radius (the 3 mm BN-0600 ball): the verifier read
+    // `Envelope { gouge_mm: 2.5 }` into the r6 wall and RapidInStock
+    // warnings, and blocked the post. The link law converts each stated
+    // TIP radius to the planning center one ball OUTSIDE it, so the
+    // posed tips stand at the stated radii and the program verifies
+    // silent - the exit at R8, every rapid at or over R6.5.
+    let radii = [Some(RadialHeight::absolute(8.0)), Some(RadialHeight::absolute(6.5)), None, None];
+    let world = contour_generate(radii).expect("generate");
+    let c = cache(&world);
+    assert!(blocking(&c).is_empty(), "{:?}", blocking(&c));
+    let rho = |q: Point3| (q.x * q.x + q.y * q.y).sqrt();
+    for (i, m) in c.path.moves.iter().enumerate() {
+        if m.kind == MoveKind::Rapid {
+            assert!(rho(m.to) >= 6.5 - 1e-6, "rapid {i} ends at {}, under the stated hop 6.5", rho(m.to));
+        }
+    }
+    let last = c.path.moves.last().expect("the exit rapid");
+    assert_eq!(last.kind, MoveKind::Rapid);
+    assert!((rho(last.to) - 8.0).abs() < 1e-6, "the exit stands at the stated clearance radius 8, got {}", rho(last.to));
+    let opens = rho(c.path.moves.first().expect("the opening record").from);
+    assert!((opens - 8.0).abs() < 0.02, "the program opens at the stated clearance radius 8, got {opens:.3}");
 }
 
 #[test]

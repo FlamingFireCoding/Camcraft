@@ -532,11 +532,13 @@ fn the_contour_band_windows_its_rings_by_radius() {
     let c = control(0.0, 0.0, None);
     let (lo, hi) = (1.4, 2.35);
     let (clr, hop) = (6.0, 4.5);
-    let ball = p.tool_diameter * 0.5;
     let radial = RadialHeights { clearance: Some(clr), retract: Some(hop), top: Some(hi), bottom: Some(lo) };
     let got = rotary_contour_radial(&facets, &p, &c, radial).expect("the ring band");
     let rho = |q: Point3| (q.x * q.x + q.y * q.y).sqrt();
-    let (hop_t, clr_t) = (hop - ball, clr - ball);
+    // The stated radii are the TIP radii (the radii the operator named):
+    // the link law converts each to the ball center's radius, so the posed
+    // tip stands AT the stated cylinder, never one ball under it.
+    let (hop_t, clr_t) = (hop, clr);
     let mut cut_tips = 0usize;
     let mut tip_min = f64::MAX;
     let mut tip_max = f64::MIN;
@@ -612,11 +614,11 @@ fn the_radial_heights_hold_the_links_off_the_axis() {
     let radial = RadialHeights { clearance: Some(6.0), retract: Some(rho_hop), top: None, bottom: None };
     let got = rotary_contour_radial(&facets, &p, &c, radial).expect("the rings, linked radially");
     let rho = |q: Point3| (q.x * q.x + q.y * q.y).sqrt();
-    // The posed law (M13 pivot): a link's WORLD tip stands under its
-    // planning cylinder by one ball radius - the same shift the cut tips
-    // carry, so the hop stays clear of the posed skin by the same margin.
-    let ball = p.tool_diameter * 0.5;
-    let (hop_t, clr_t) = (rho_hop - ball, 6.0 - ball);
+    // The posed law (M13 pivot): the stated radii are the TIP radii, and
+    // the link law places each ball center one ball radius OUTSIDE its
+    // stated radius, so the posed tip stands AT the stated cylinder - the
+    // same radius the operator named, never one ball under it.
+    let (hop_t, clr_t) = (rho_hop, 6.0);
     let mut hops = 0usize;
     let mut radial_links = 0usize;
     let on = |r: f64, at: f64| (r - at).abs() < 1e-6;
@@ -631,10 +633,11 @@ fn the_radial_heights_hold_the_links_off_the_axis() {
             // A link retract: out to the hop cylinder. Ring chords (arc
             // fits at the pattern tolerance) wobble a little; only a
             // move that ENDS on the cylinder, without an arc, is one of
-            // the rebuilt links. (The world TIP rides one ball radius
-            // under the planning cylinder, and around a corner its
-            // azimuth follows the ball - the M13 pivot law - so the
-            // link law here is the cylinder, not a straight radius.)
+            // the rebuilt links. (The link law places the ball center one
+            // ball radius outside the stated radius, and around a corner
+            // its azimuth follows the ball - the M13 pivot law - so the
+            // link law here is the stated cylinder, not a straight
+            // radius.)
             MoveKind::Feed if m.arc.is_none() && on(rho(m.to), hop_t) && rho(m.from) < hop_t - 1e-3 => {
                 radial_links += 1;
             }
@@ -657,6 +660,125 @@ fn the_radial_heights_hold_the_links_off_the_axis() {
     assert_ne!(zed.moves, got.moves, "a radial switch that changed nothing is not a switch");
     let crossed = zed.moves.iter().any(|m| m.kind == MoveKind::Rapid && rho(m.to) < hop_t - 0.5);
     assert!(crossed, "the Z-plane ladder links across the hop cylinder's circle as before");
+}
+
+#[test]
+fn the_stated_radii_are_the_tips_radii_on_every_link() {
+    // #2774 review probe (the P1-class one): the stated radii are TIP
+    // radii, and the pose law backs every emitted point off one ball
+    // radius along its pose - so a link that places the planning point at
+    // the stated radius emits a tip one ball UNDER it. The conversion
+    // must place the ball center one ball OUTSIDE the stated radius, so
+    // the posed tip stands at the stated radius on every link and every
+    // rapid: the exit at the stated clearance, the retracts and indexes
+    // at the stated hop, never `stated - ball`.
+    let facets = lathe_bar(16);
+    let p = finish(28.0, 0.0);
+    let c = control(0.0, 0.0, None);
+    let (clr, hop) = (6.0, 4.5);
+    let radial = RadialHeights { clearance: Some(clr), retract: Some(hop), top: None, bottom: None };
+    let got = rotary_contour_radial(&facets, &p, &c, radial).expect("the rings, linked radially");
+    let rho = |q: Point3| (q.x * q.x + q.y * q.y).sqrt();
+    let on = |r: f64, at: f64| (r - at).abs() < 1e-6;
+    for (i, m) in got.moves.iter().enumerate() {
+        match m.kind {
+            // Every rapid END stands at or over the stated hop radius -
+            // a link that drops under it would sweep the ball through
+            // the stated cylinder's skin.
+            MoveKind::Rapid => {
+                assert!(rho(m.to) >= hop - 1e-6, "rapid {i} ends at {}, under the stated hop {hop}", rho(m.to));
+            }
+            // A retract feed ends exactly ON the stated hop cylinder;
+            // a plunge starts exactly on it (or on the clearance one).
+            MoveKind::Feed if m.arc.is_none() && on(rho(m.to), hop) && rho(m.from) < hop - 1e-3 => {}
+            MoveKind::Plunge if m.arc.is_none() && (on(rho(m.from), hop) || on(rho(m.from), clr)) => {}
+            _ => {}
+        }
+    }
+    // The exit stands at the STATED clearance radius, not one ball under
+    // it - the review's probe said R5 for a stated R6 with a 2 mm ball.
+    let last = got.moves.last().expect("the exit rapid");
+    assert_eq!(last.kind, MoveKind::Rapid);
+    assert!(on(rho(last.to), clr), "the exit stands at the stated clearance radius, got {}", rho(last.to));
+    // The program opens at the stated clearance radius too (the opening
+    // pose of M13.8 rides the same conversion).
+    let first = got.moves.first().expect("the opening record");
+    assert!(on(rho(first.from), clr), "the program opens at the stated clearance radius, got {}", rho(first.from));
+}
+
+#[test]
+fn a_bottom_only_band_windows_the_parallel_passes() {
+    // #2774 review probe: a Bottom radius with no Top radius must window
+    // the cut - the stated floor cylinder is the band's inner edge out to
+    // the skin's end - never be silently dropped (the old generator cut
+    // the same moves as an operation with no band at all).
+    let facets = laid_bar(16);
+    let p = finish(3.0, -3.0);
+    let c = control(0.0, 0.0, None);
+    let floor_only = RadialHeights { clearance: Some(9.0), retract: Some(7.0), top: None, bottom: Some(1.0) };
+    let got = rotary_parallel_radial(&facets, None, &p, &c, floor_only).expect("the bottom-only band");
+    let rho = |q: Point3| (q.y * q.y + q.z * q.z).sqrt();
+    // No cut tip stands under the stated floor.
+    let mut cut_tips = 0usize;
+    for m in &got.moves {
+        if m.kind == MoveKind::Feed && rho(m.to) < 4.0 {
+            assert!(rho(m.from) >= 1.0 - 0.05 && rho(m.to) >= 1.0 - 0.05, "a cut tip dips under the stated floor: {:?}", (m.from, m.to));
+            cut_tips += 1;
+        }
+    }
+    assert!(cut_tips >= 100, "the floor barely cut the r1.2 wall, got {cut_tips} tips");
+    // The stated floor is honored: the same operation without the band
+    // answers differently (the r2.0 and r2.5 walls it also finishes).
+    let zed = rotary_parallel_radial(&facets, None, &p, &c, RadialHeights { clearance: Some(9.0), retract: Some(7.0), top: None, bottom: None })
+        .expect("the same bar, no band");
+    assert_ne!(zed.moves, got.moves, "a stated floor that changed nothing is not a floor");
+    let wall = zed.moves.iter().any(|m| m.kind == MoveKind::Feed && (rho(m.to) - 2.5).abs() < 0.06);
+    assert!(wall, "the unband ladder finishes the r2.5 wall, the floored one leaves it");
+}
+
+#[test]
+fn a_top_only_band_windows_the_parallel_passes() {
+    // The mirror one-sided band: a Top radius with no Bottom radius keeps
+    // the cut at or under the stated ceiling cylinder.
+    let facets = laid_bar(16);
+    let p = finish(3.0, -3.0);
+    let c = control(0.0, 0.0, None);
+    let ceiling_only = RadialHeights { clearance: Some(9.0), retract: Some(7.0), top: Some(1.5), bottom: None };
+    let got = rotary_parallel_radial(&facets, None, &p, &c, ceiling_only).expect("the top-only band");
+    let rho = |q: Point3| (q.y * q.y + q.z * q.z).sqrt();
+    let mut cut_tips = 0usize;
+    for m in &got.moves {
+        if m.kind == MoveKind::Feed && rho(m.to) < 4.0 {
+            assert!(rho(m.from) <= 1.5 + 0.05 && rho(m.to) <= 1.5 + 0.05, "a cut tip climbs over the stated ceiling: {:?}", (m.from, m.to));
+            cut_tips += 1;
+        }
+    }
+    assert!(cut_tips >= 100, "the ceiling barely cut the r1.2 wall, got {cut_tips} tips");
+    let zed = rotary_parallel_radial(&facets, None, &p, &c, RadialHeights { clearance: Some(9.0), retract: Some(7.0), top: None, bottom: None })
+        .expect("the same bar, no band");
+    assert_ne!(zed.moves, got.moves, "a stated ceiling that changed nothing is not a ceiling");
+}
+
+#[test]
+fn a_bottom_only_contour_band_windows_its_rings() {
+    // The contour twin honors the one-sided floor too: rings under the
+    // stated floor drop whole, rings over it stay - the same bar's rings
+    // span r1.5..r2.5, so a stated floor of R2.0 leaves the lower cone
+    // rings standing.
+    let facets = lathe_bar(16);
+    let p = finish(28.0, 0.0);
+    let c = control(0.0, 0.0, None);
+    let floor_only = RadialHeights { clearance: Some(6.0), retract: Some(4.5), top: None, bottom: Some(2.0) };
+    let got = rotary_contour_radial(&facets, &p, &c, floor_only).expect("the bottom-only ring band");
+    let rho = |q: Point3| (q.x * q.x + q.y * q.y).sqrt();
+    for m in &got.moves {
+        if m.kind == MoveKind::Feed && rho(m.to) < 3.0 {
+            assert!(rho(m.from) >= 2.0 - 0.15 && rho(m.to) >= 2.0 - 0.15, "a ring tip dips under the stated floor: {:?}", (m.from, m.to));
+        }
+    }
+    let zed = rotary_contour_radial(&facets, &p, &c, RadialHeights { clearance: Some(6.0), retract: Some(4.5), top: None, bottom: None })
+        .expect("the same rings, no band");
+    assert_ne!(zed.moves, got.moves, "a stated floor that changed nothing is not a floor");
 }
 
 #[test]

@@ -15,8 +15,13 @@ use crate::machining2d::{GenError, ARC_FIT_TOL};
 use super::radial::RadialHeights;
 
 /// The radial cut band the op states, `None` when it states neither edge
-/// (#2774). The gate orders the two radii at the command; the generators
-/// say it again, because a path made straight through the API skips it.
+/// (#2774). Each supported one-sided band is honored: a Bottom radius alone
+/// runs from that floor cylinder out to the skin's end, a Top radius alone
+/// from the axis out to that ceiling cylinder - a stored radius the
+/// generation would ignore is never kept. Both edges stated order the band
+/// at the command (`radial_gate`); the generators say it again, because a
+/// path made straight through the API skips it. A stated radius that is not
+/// a distance above the axis refuses by name.
 pub(super) fn band_window(radial: &RadialHeights, kind: &str) -> Result<Option<(f64, f64)>, GenError> {
     if let Some(lo) = radial.bottom
         && !(lo.is_finite() && lo >= 0.0)
@@ -25,16 +30,22 @@ pub(super) fn band_window(radial: &RadialHeights, kind: &str) -> Result<Option<(
             "{kind} reads its bottom radius as a distance from the bar's axis: {lo:.3} mm is not a radius above it"
         )));
     }
-    let Some(hi) = radial.top else {
-        return Ok(None);
-    };
-    let lo = radial.bottom.unwrap_or(0.0);
-    if !(hi.is_finite() && lo < hi) {
+    if let Some(hi) = radial.top
+        && !(hi.is_finite() && hi >= 0.0)
+    {
         return Err(GenError::Invalid(format!(
-            "{kind} cuts between two cylinders about the bar's axis: the band {lo:.3}..{hi:.3} mm does not order above the axis"
+            "{kind} reads its top radius as a distance from the bar's axis: {hi:.3} mm is not a radius above it"
         )));
     }
-    Ok(Some((lo, hi)))
+    match (radial.bottom, radial.top) {
+        (None, None) => Ok(None),
+        (Some(lo), None) => Ok(Some((lo, f64::INFINITY))),
+        (None, Some(hi)) => Ok(Some((0.0, hi))),
+        (Some(lo), Some(hi)) if lo < hi => Ok(Some((lo, hi))),
+        (Some(lo), Some(hi)) => Err(GenError::Invalid(format!(
+            "{kind} cuts between two cylinders about the bar's axis: the band {lo:.3}..{hi:.3} mm does not order above the axis"
+        ))),
+    }
 }
 
 /// #2774: keep the whole cut STATIONS whose path touches the radial BAND
@@ -107,12 +118,23 @@ pub(super) fn band_select(
     }
     if !out.iter().any(|m| m.kind == MoveKind::Feed) {
         return Err(GenError::Empty(format!(
-            "{kind} cuts between cylinders at radius {lo:.3}..{hi:.3} mm about the bar's axis, but its path stands {all_min:.3}..{all_max:.3} mm out - the band crosses no part skin"
+            "{kind} cuts between cylinders at radius {} mm about the bar's axis, but its path stands {all_min:.3}..{all_max:.3} mm out - the band crosses no part skin",
+            band_text(lo, hi)
         )));
     }
     let mut path = Toolpath::new(out);
     path.notes = base.notes.clone();
     Ok(path)
+}
+
+/// The band as the refusals read it: an open-ended one-sided band names the
+/// skin's end, never an `inf`.
+fn band_text(lo: f64, hi: f64) -> String {
+    if hi.is_finite() {
+        format!("{lo:.3}..{hi:.3}")
+    } else {
+        format!("{lo:.3}..the skin's end")
+    }
 }
 
 /// #2774: trim a planning-frame ladder to the radial BAND `lo`..=`hi` about
@@ -237,7 +259,8 @@ pub(super) fn band_trim(
     }
     if !out.iter().any(|m| m.kind == MoveKind::Feed) {
         return Err(GenError::Empty(format!(
-            "{kind} cuts between cylinders at radius {lo:.3}..{hi:.3} mm about the bar's axis, but its path stands {min_r:.3}..{max_r:.3} mm out - the band crosses no part skin"
+            "{kind} cuts between cylinders at radius {} mm about the bar's axis, but its path stands {min_r:.3}..{max_r:.3} mm out - the band crosses no part skin",
+            band_text(lo, hi)
         )));
     }
     let mut path = Toolpath::new(out);
@@ -249,6 +272,14 @@ pub(super) fn band_trim(
 /// in `lo`..=`hi` (inclusive at the edges). A hypot of an affine map is
 /// convex along the chord, so the chord has one radial low point and at
 /// most two kept stretches, one on each side of it.
+///
+/// ONE closed-interval rule for every span shape (constant, tangent,
+/// crossing): a stretch is kept when the half's own low point stands at or
+/// under `hi` and its far endpoint stands at or above `lo`, and each edge
+/// is solved only where the chord strictly crosses it - a chord that
+/// STARTS or ENDS on a band cylinder (a constant-radius run on the bottom
+/// wall, a tangent touch at the top) keeps that whole edge, so a span
+/// never loses the end that stands inside its own stated band.
 fn each_band_span(
     a: &Point3,
     b: &Point3,
@@ -275,16 +306,21 @@ fn each_band_span(
     }
     let tm = (u + v) * 0.5;
     let (rm, ra, rb) = (r(tm), r(0.0), r(1.0));
-    if rm < hi && ra > lo {
-        let l0 = if ra >= hi { bisect_edge(a, b, 0.0, tm, hi, false, rho) } else { 0.0 };
-        let l1 = if rm >= lo { tm } else { bisect_edge(a, b, 0.0, tm, lo, false, rho) };
+    // The left half falls (weakly) from `ra` to the chord's low point
+    // `rm`; it is kept when its low point reaches under the ceiling and
+    // its start stands at or above the floor. Both edges are inclusive.
+    if rm <= hi && ra >= lo {
+        let l0 = if ra > hi { bisect_edge(a, b, 0.0, tm, hi, false, rho) } else { 0.0 };
+        let l1 = if rm < lo { bisect_edge(a, b, 0.0, tm, lo, false, rho) } else { tm };
         if l0 < l1 {
             f(l0, l1);
         }
     }
+    // The right half rises (weakly) from `rm` to `rb`, kept by the same
+    // closed rule read the other way.
     if rm <= hi && rb >= lo {
-        let r0 = if rm <= lo { bisect_edge(a, b, tm, 1.0, lo, true, rho) } else { tm };
-        let r1 = if rb >= hi { bisect_edge(a, b, tm, 1.0, hi, true, rho) } else { 1.0 };
+        let r0 = if rm < lo { bisect_edge(a, b, tm, 1.0, lo, true, rho) } else { tm };
+        let r1 = if rb > hi { bisect_edge(a, b, tm, 1.0, hi, true, rho) } else { 1.0 };
         if r0 < r1 {
             f(r0, r1);
         }
@@ -319,3 +355,7 @@ fn chord(a: &Point3, b: &Point3, t: f64) -> Point3 {
         Point3::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t)
     }
 }
+
+#[cfg(test)]
+#[path = "radial_band_tests.rs"]
+mod tests;
