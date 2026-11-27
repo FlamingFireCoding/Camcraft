@@ -16,7 +16,8 @@
 //! #3897: the holder list's used-by count (`used_by`). #3644: the
 //! component table and assembly commands (`assembly_cmds`). #3645: the
 //! table and stacks in the project file (`component_files`), the user
-//! component library and its sync (`component_sync`).
+//! component library and its sync (`component_sync`), the `.camtools`
+//! version 8 export and import of components and stacks (`camtools_v8`).
 //! Gate map (M4.4): covers app::tool_library, app::commands (tool_import, tool_assembly),
 //! app::mcp (import_tool_library), app::script (importTools), app::tool_body, app::tool_assembly,
 //! app::project (component_wire, assembly_wire), app::component_library, app::commands (component_sync).
@@ -47,6 +48,8 @@ mod assembly_cmds;
 mod component_files;
 #[path = "tool_library_holders/component_sync.rs"]
 mod component_sync;
+#[path = "tool_library_holders/camtools_v8.rs"]
+mod camtools_v8;
 
 const DRAWN: &str = "Six";
 const MESH: &str = "Four";
