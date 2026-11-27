@@ -168,7 +168,7 @@ pub struct SolidRanges {
 /// The SolidCraft source faces of a model's facets (#3915): the name of
 /// each face of the design's body and the facets it became. Valid only at
 /// the `Revision` and the facet count it was landed with (`rev`, `len`);
-/// any other landing makes it stale. In memory only: not saved. Written by
+/// any other landing makes it stale. Saved under `source_faces`. Written by
 /// the import, update and delete commands, read and written only through
 /// `source_faces::{of, set}`.
 #[derive(Component, Debug, Clone)]
