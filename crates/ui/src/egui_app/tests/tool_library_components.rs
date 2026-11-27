@@ -76,7 +76,7 @@ fn holder() -> (ToolComponent, ComponentGeometry) {
 }
 
 /// A single-seat cutter body with a CC seat `r` off the axis.
-fn fly(id: &str, r: f64) -> (ToolComponent, ComponentGeometry) {
+pub(super) fn fly(id: &str, r: f64) -> (ToolComponent, ComponentGeometry) {
     let seat = HolderDesignation::parse("SCLCR2020K09").expect("holder code").seat;
     let kind = ComponentKind::ToolItem { mcs: code("CYL 20"), seats: vec![InsertSeat { port: "CSW1".into(), spec: seat }] };
     let frame = Frame::new([r, 0.0, -60.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]).expect("seat frame");
@@ -84,7 +84,7 @@ fn fly(id: &str, r: f64) -> (ToolComponent, ComponentGeometry) {
     (ToolComponent::new(id, id, kind).expect("cutter body"), g)
 }
 
-fn insert(text: &str) -> (ToolComponent, ComponentGeometry) {
+pub(super) fn insert(text: &str) -> (ToolComponent, ComponentGeometry) {
     let spec = InsertSpec::parse(text).expect("insert code");
     let c = ToolComponent::new(INSERT, text, ComponentKind::CuttingItem(CuttingItem::Insert(spec))).expect("insert");
     (c, ComponentGeometry::default())
@@ -371,13 +371,14 @@ fn a_still_frame_reads_no_library_and_builds_nothing() {
     let dir = lib_dir("still");
     let mut h = shell(&dir);
     open_library(&mut h);
-    let (loads, builds) = (crate::state::library_loads(), components::builds());
+    let views = |h: &H| h.state().state.component_views.builds();
+    let (loads, builds) = (crate::state::library_loads(), views(&h));
     h.run_steps(3);
     assert_eq!(crate::state::library_loads(), loads, "a still frame reads no library file");
-    assert_eq!(components::builds(), builds, "a still frame builds no derived set");
+    assert_eq!(views(&h), builds, "a still frame reads and builds no derived set");
     let add = ComponentAction::AddFromLibrary { id: "builtin:holder:BT40 ER32".into() };
     h.state_mut().state.pending.push_back(CommandKind::Component(add));
     h.run_steps(2);
-    assert!(components::builds() > builds, "a document change builds the sets again");
+    assert!(views(&h).rows > builds.rows, "a document change builds the sets again");
     assert!(ta::component(&h.state().state.world, "builtin:holder:BT40 ER32").is_some_and(|r| r.library_ref.is_some()), "the added row is linked");
 }

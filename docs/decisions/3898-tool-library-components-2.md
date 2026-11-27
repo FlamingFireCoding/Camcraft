@@ -77,10 +77,12 @@ the one rule (no special case "an ER chuck takes a shank").
   not applied the menu is off ("apply or undo the stack edits first"), so
   that one undo step never lands edits that the user did not apply.
 - Frame cost: the "Add component" offer, the values and the swap offers
-  are built in one cache (`stack_view`), keyed on the tool name, the
-  document version and the shown links. A still frame builds nothing
-  (`a_still_frame_builds_no_stack_view`). This also takes the
-  `candidates` call out of each frame, where #4271 had it.
+  are built in one cache that State owns (`state_component_views`, from
+  the review of #4271), keyed on the component table and stacks as read
+  for the document version, the tool name, the tool's record and the
+  shown links. A still frame builds nothing
+  (`a_still_frame_builds_no_stack_view`). The page-owned `stack_view`
+  thread-local of the first version of this PR is gone.
 
 **Not done here (open on the issues).**
 - A turning tool stack: it needs the lathe resolver caller of #3643.

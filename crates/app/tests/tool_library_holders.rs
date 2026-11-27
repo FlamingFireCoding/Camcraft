@@ -18,7 +18,8 @@
 //! table and stacks in the project file (`component_files`), the user
 //! component library and its sync (`component_sync`). #3898: the
 //! built-in ER collets (`builtin_collets`). #3646: multi-seat
-//! indexable cutters in the document (`multi_seat`).
+//! indexable cutters in the document (`multi_seat`). #3643: a turning
+//! tool from linked lathe components (`lathe_stack`).
 //! Gate map (M4.4): covers app::tool_library, app::commands (tool_import, tool_assembly),
 //! app::mcp (import_tool_library), app::script (importTools), app::tool_body, app::tool_assembly,
 //! app::project (component_wire, assembly_wire), app::component_library, app::commands (component_sync).
@@ -53,6 +54,8 @@ mod component_sync;
 mod builtin_collets;
 #[path = "tool_library_holders/multi_seat.rs"]
 mod multi_seat;
+#[path = "tool_library_holders/lathe_stack.rs"]
+mod lathe_stack;
 
 const DRAWN: &str = "Six";
 const MESH: &str = "Four";

@@ -6,24 +6,19 @@
 //! library status of each row. A click on a name picks the row; the
 //! buttons act on the picked row. Each document change is one undoable
 //! command (`state_components`); the library file writes have no undo.
-//! Frame cost: the compatible set, the library status and the users of
-//! each row are built when the document, the library read or the filter
-//! change (`builds`); a still frame builds nothing.
+//! Frame cost: State keeps the compatible set, the library status and the
+//! users of each row (`state_component_views`), keyed on the component
+//! table, the stacks, the library read and the filter; a still frame
+//! builds nothing.
 //! Provenance: our own list over our own component records; no HSMWorks
 //! material involved.
-
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
 
 use egui::{RichText, Ui};
 
 use camcraft_app::component::{ComponentKind, CuttingItem, ToolComponent};
-use camcraft_app::component_fit::{compatible_children, compatible_parents};
-use camcraft_app::component_library::{SyncStatus, sync_status};
-use camcraft_app::schema::DocumentComponent;
-use camcraft_app::tool_assembly as ta;
+use camcraft_app::component_library::SyncStatus;
 
-use crate::state::{ComponentAction, ComponentGroup, ErrorScope, LoadedLibrary, State, group_of};
+use crate::state::{ComponentAction, ComponentDerived as Derived, ComponentGroup, ErrorScope, LoadedLibrary, State, group_of};
 
 /// The source's label in the list's source switch.
 pub(crate) const SOURCE: &str = "My library";
@@ -92,74 +87,12 @@ pub(crate) fn status_text(s: &SyncStatus) -> &'static str {
     }
 }
 
-/// What the page derives from the document and the library read.
-pub(crate) struct Derived {
-    /// The ids that fit the compatible filter's component (`None`: no filter).
-    pub compatible: Option<Vec<String>>,
-    /// Each document row with its library status and its users.
-    pub rows: Vec<(DocumentComponent, SyncStatus, Vec<String>)>,
-}
-
-#[derive(Clone, PartialEq)]
-struct Key {
-    doc: u64,
-    lib: u64,
-    compatible: Option<String>,
-}
-
-thread_local! {
-    static KEPT: RefCell<Option<(Key, Rc<Derived>)>> = const { RefCell::new(None) };
-    static BUILDS: Cell<u64> = const { Cell::new(0) };
-}
-
-/// The derived sets built on this thread - a still frame adds none.
-#[cfg(test)]
-pub(crate) fn builds() -> u64 {
-    BUILDS.with(Cell::get)
-}
-
-/// The derived sets for this document version, library read and filter.
-pub(crate) fn derived(state: &State, lib: &Rc<LoadedLibrary>, compatible: Option<&str>) -> Rc<Derived> {
-    let key = Key { doc: state.doc_version, lib: lib.generation, compatible: compatible.map(str::to_owned) };
-    KEPT.with(|k| {
-        let mut k = k.borrow_mut();
-        if let Some((kk, d)) = k.as_ref()
-            && *kk == key
-        {
-            return Rc::clone(d);
-        }
-        BUILDS.with(|b| b.set(b.get().saturating_add(1)));
-        let table = ta::components(&state.world);
-        let rows = table
-            .iter()
-            .map(|r| (r.clone(), sync_status(r, &lib.all), ta::users_of(&state.world, r.component.id())))
-            .collect();
-        let compatible = compatible.map(|id| {
-            let mut pool: Vec<&ToolComponent> = lib.all.iter().map(|c| &c.component).collect();
-            pool.extend(table.iter().map(|r| &r.component).filter(|c| !lib.all.iter().any(|l| l.component.id() == c.id())));
-            let Some(sel) = pool.iter().copied().find(|c| c.id() == id) else {
-                return Vec::new();
-            };
-            let mut ids: Vec<String> = compatible_parents(sel, pool.iter().copied())
-                .into_iter()
-                .chain(compatible_children(sel, pool.iter().copied()))
-                .map(|f| f.component.id().to_owned())
-                .collect();
-            ids.dedup();
-            ids
-        });
-        let d = Rc::new(Derived { compatible, rows });
-        *k = Some((key, Rc::clone(&d)));
-        d
-    })
-}
-
 pub(super) fn draw(ui: &mut Ui, state: &mut State) {
     let lib = state.component_library();
     let Some(view) = state.tool_library.as_ref().map(|v| v.components.clone()) else {
         return;
     };
-    let d = derived(state, &lib, view.compatible.as_deref());
+    let d = state.component_derived(view.compatible.as_deref());
     let mut next = view.clone();
     let mut asks: Vec<ComponentAction> = Vec::new();
     let mut edit = None;
@@ -367,7 +300,7 @@ fn document_rows(ui: &mut Ui, d: &Derived, view: &mut crate::state::ComponentsVi
             ui.label(RichText::new(h).strong());
         }
         ui.end_row();
-        for (r, status, users) in &d.rows {
+        for (r, status, users) in d.rows.iter() {
             let id = r.component.id();
             let sel = view.doc_selected.as_deref() == Some(id);
             if ui.selectable_label(sel, r.component.name()).on_hover_text(id).clicked() {

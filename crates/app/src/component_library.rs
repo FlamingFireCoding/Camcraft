@@ -53,12 +53,12 @@ impl LibraryComponent {
 
     /// The library copy of a document row (its library link dropped).
     /// Refused by name: a row with #3646 cutter facts or running data,
-    /// which a library component does not hold - a save never loses
-    /// them without a word.
+    /// or a #3643 lathe body, which a library component does not hold -
+    /// a save never loses them without a word.
     pub fn from_row(row: DocumentComponent) -> Result<Self, String> {
-        if row.milling.is_some() || row.running.is_some() {
+        if row.milling.is_some() || row.running.is_some() || row.lathe_body.is_some() {
             return Err(format!(
-                "tool component '{}' holds cutter facts or running data, which the component library does not hold",
+                "tool component '{}' holds cutter facts, running data or a lathe body, which the component library does not hold",
                 row.component.id()
             ));
         }
@@ -109,9 +109,9 @@ pub fn parse(text: &str) -> Result<Vec<LibraryComponent>, String> {
         if dto.library_ref.is_some() {
             return Err(format!("tool component {label}: a library component has no library link"));
         }
-        if dto.milling.is_some() || dto.running.is_some() {
+        if dto.milling.is_some() || dto.running.is_some() || dto.lathe_body.is_some() {
             return Err(format!(
-                "tool component {label}: a library component holds no cutter facts and no running data"
+                "tool component {label}: a library component holds no cutter facts, no running data and no lathe body"
             ));
         }
         if is_builtin_id(&dto.id) {

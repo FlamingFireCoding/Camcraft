@@ -67,18 +67,13 @@ pub(super) fn draw(ui: &mut Ui, state: &mut State) {
     let Some(mut d) = state.tool_library.as_ref().and_then(|v| v.component_edit.clone()) else {
         return;
     };
-    let Some(row) = ta::component(&state.world, &d.id) else {
+    // The row comes from State's cache: a still frame reads no table.
+    let derived = state.component_derived(None);
+    let Some((row, status, users)) = derived.rows.iter().find(|(r, _, _)| r.component.id() == d.id).cloned() else {
         // Deleted (or undone) under the editor: back to the list.
         close(state);
         return;
     };
-    let lib = state.component_library();
-    let derived = super::components::derived(state, &lib, None);
-    let (status, users) = derived
-        .rows
-        .iter()
-        .find(|(r, _, _)| r.component.id() == d.id)
-        .map_or((SyncStatus::NotLinked, Vec::new()), |(_, s, u)| (s.clone(), u.clone()));
     let mut back = false;
     let mut ask = None;
     ui.horizontal(|ui| {

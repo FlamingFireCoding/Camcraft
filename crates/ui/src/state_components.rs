@@ -243,18 +243,22 @@ impl State {
         id
     }
 
+    /// A document row copies whole - its cutter facts and running data
+    /// too - under the new id, with no library link; a library entry has
+    /// no such facts.
     fn copy_as_user(&mut self, id: &str) -> Result<String, String> {
-        let (component, geometry) = match ta::component(&self.world, id) {
-            Some(row) => (row.component, row.geometry),
+        let row = match ta::component(&self.world, id) {
+            Some(row) => row,
             None => {
                 let e = self.library_copy(id)?;
-                (e.component, e.geometry)
+                DocumentComponent::new(e.component, e.geometry)
             }
         };
-        let kind = kind_word(&component);
-        let new_id = self.free_user_id(component.name(), kind);
-        let copy = ToolComponent::new(&new_id, component.name(), component.kind().clone()).map_err(|e| e.to_string())?;
-        let add = UpsertDocumentComponent::new(&self.world, copy, geometry).map_err(|e| e.to_string())?;
+        let kind = kind_word(&row.component);
+        let new_id = self.free_user_id(row.component.name(), kind);
+        let copy = ToolComponent::new(&new_id, row.component.name(), row.component.kind().clone()).map_err(|e| e.to_string())?;
+        let add = UpsertDocumentComponent::with_row(&self.world, DocumentComponent { component: copy, library_ref: None, ..row })
+            .map_err(|e| e.to_string())?;
         self.history.execute(&self.world, add);
         // The new copy opens in the window's component editor.
         if let Some(row) = ta::component(&self.world, &new_id)

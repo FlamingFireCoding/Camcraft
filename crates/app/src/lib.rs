@@ -209,8 +209,10 @@ pub mod tool_assembly;
 // #3644: the records the table holds, for the callers outside this crate.
 pub use camcraft_tools::{component, component_geometry, connection_code};
 // #3898: the fit queries and the records a component is built from, for the
-// tool library window (the UI reaches the tools crate through app only).
-pub use camcraft_tools::{component_fit, frame, insert_iso1832, insert_seat};
+// tool library window (the UI reaches the tools crate through app only);
+// `milling_cutter` for a row's #3646 cutter facts, `lathe_assembly` for its
+// #4278 lathe body.
+pub use camcraft_tools::{component_fit, frame, insert_iso1832, insert_seat, lathe_assembly, milling_cutter};
 // #371: the editor's placement preview and picks, the sim's posed body.
 pub mod tool_body_view;
 // #369: lathe-held tool bodies (the turning tool frame).

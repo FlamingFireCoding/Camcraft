@@ -14,21 +14,22 @@
 //! diameter and the corner radius, or its refusal by name. "Swap" on an
 //! applied stack offers, for one row, only the parts with which the whole
 //! stack still resolves, and lands the new stack as one undoable
-//! `SetToolAssembly` (`stack_view` builds both when the stack changes).
+//! `SetToolAssembly`. Frame cost: State keeps the offer, the values, the
+//! swap lists and the rows (`state_component_views`), keyed on the
+//! component table, the stacks, the library read, the tool's record and
+//! the draft; a still frame builds nothing.
 //! Provenance: our own group over our own component commands; no
 //! HSMWorks material involved.
 
 use egui::{RichText, Ui};
 
-use camcraft_app::component::{ComponentKind, CuttingItem, ToolComponent};
-use camcraft_app::component_fit::compatible_children;
 use camcraft_app::model;
-use camcraft_app::schema::{AssemblyLink, DocumentComponent};
-use camcraft_app::tool_assembly::{self as ta, Mount};
+use camcraft_app::schema::AssemblyLink;
+use camcraft_app::tool_assembly as ta;
 
-use crate::state::{ComponentAction, StackDraft, State, is_spun_kind};
-
-use super::stack_view::StackValues;
+#[cfg(test)]
+pub(crate) use crate::state::candidates;
+use crate::state::{ComponentAction, StackDraft, StackValues, State, SwapOffer, is_spun_kind};
 
 pub(crate) const HEADING: &str = "Component stack";
 pub(crate) const ADD: &str = "Add component";
@@ -46,41 +47,6 @@ pub(crate) fn swap_label(name: &str) -> String {
     format!("Swap {name}…")
 }
 const HEADS: [&str; 6] = ["#", "Component", "Port", "Turn (°)", "Stick-out (mm)", "Library"];
-
-/// The parts that can go on the stack next, with the link each one adds:
-/// the holding parts for an empty stack, else the parts that fit the last
-/// holding part (a cutting item holds nothing).
-#[must_use]
-pub(crate) fn candidates(links: &[AssemblyLink], table: &[DocumentComponent]) -> Vec<(String, AssemblyLink)> {
-    let comps: Vec<&ToolComponent> = table.iter().map(|r| &r.component).collect();
-    if links.is_empty() {
-        return comps
-            .into_iter()
-            .filter(|c| !matches!(c.kind(), ComponentKind::CuttingItem(CuttingItem::Insert(_))))
-            .map(|c| (c.name().to_owned(), AssemblyLink { component: c.id().to_owned(), mount: None }))
-            .collect();
-    }
-    let parent = links.iter().enumerate().rev().find_map(|(i, l)| {
-        comps.iter().copied().find(|c| c.id() == l.component).filter(|c| !matches!(c.kind(), ComponentKind::CuttingItem(_))).map(|c| (i, c))
-    });
-    let Some((at, parent)) = parent else {
-        return Vec::new();
-    };
-    compatible_children(parent, comps.iter().copied())
-        .into_iter()
-        .filter(|f| f.component.insert().is_some() || !links.iter().any(|l| l.component == f.component.id()))
-        .map(|f| {
-            // A solid tool on a shank mount needs a stated stick-out: it
-            // starts at the tool's own (flute plus shank length).
-            let projection_mm = match f.component.kind() {
-                ComponentKind::CuttingItem(CuttingItem::Solid { tool, .. }) => Some(tool.flute_len + tool.shank_len),
-                _ => None,
-            };
-            let mount = Mount { parent: at, port: Some(f.port.clone()), z_rot_deg: 0.0, projection_mm };
-            (format!("{} in {} {}", f.component.name(), parent.name(), f.port), AssemblyLink { component: f.component.id().to_owned(), mount: Some(mount) })
-        })
-        .collect()
-}
 
 pub(super) fn draw(ui: &mut Ui, state: &mut State) {
     ui.add_space(6.0);
@@ -100,11 +66,9 @@ pub(super) fn draw(ui: &mut Ui, state: &mut State) {
         Some(d) if d.tool == name && d.synced == doc => d,
         _ => StackDraft { tool: name.clone(), synced: doc, links: stored.clone().unwrap_or_default() },
     };
-    let table = ta::components(&state.world);
-    let lib = state.component_library();
-    let derived = super::components::derived(state, &lib, None);
+    let derived = state.component_derived(None);
     let current = model::tool_of(&state.world, &entity);
-    let view = super::stack_view::view(&name, current.as_ref(), doc, &draft.links, &table);
+    let view = state.component_stack_view(&name, current.as_ref(), &draft.links);
     // A swap lands a whole stack: it is offered on the applied stack only.
     let applied = stored.as_ref() == Some(&draft.links);
     let mut edit = None;
@@ -210,7 +174,7 @@ pub(super) fn draw(ui: &mut Ui, state: &mut State) {
 
 /// Row `name`'s swap menu: the replacements with which the stack still
 /// resolves; a pick sets `swap` to the whole new stack.
-fn swap_menu(ui: &mut Ui, name: &str, applied: bool, offers: &[super::stack_view::SwapOffer], swap: &mut Option<Vec<AssemblyLink>>) {
+fn swap_menu(ui: &mut Ui, name: &str, applied: bool, offers: &[SwapOffer], swap: &mut Option<Vec<AssemblyLink>>) {
     let enabled = applied && !offers.is_empty();
     ui.add_enabled_ui(enabled, |ui| {
         ui.menu_button(swap_label(name), |ui| {

@@ -173,8 +173,7 @@ pub(super) fn draw(ui: &mut Ui, state: &mut State) {
 /// with its library status and the tools whose stack uses it. A click on
 /// a name opens it in the component editor. Gives the id to edit.
 fn user_holders(ui: &mut Ui, state: &mut State, filter: &str) -> Option<String> {
-    let lib = state.component_library();
-    let d = super::components::derived(state, &lib, None);
+    let d = state.component_derived(None);
     let f = filter.to_lowercase();
     let shown: Vec<_> = d
         .rows

@@ -17,7 +17,7 @@ use egui_kittest::kittest::{NodeT, Queryable};
 
 use super::tool_library_components::{A, INSERT, done, lib_dir, open_library, pick, redo, shell, shop, shows, undo};
 use super::tool_library_editor::{H, click_window_button, library_window, open_in_window, tool};
-use crate::egui_app::tool_library_dialog::{components, stack, stack_view};
+use crate::egui_app::tool_library_dialog::{components, stack};
 
 fn assembly(h: &H, name: &str) -> Option<Vec<AssemblyLink>> {
     let w = &h.state().state.world;
@@ -102,11 +102,8 @@ fn a_swap_offers_only_parts_that_resolve_and_is_one_undo_step() {
     let mut h = shell(&dir);
     shop(&mut h, true);
     open_in_window(&mut h, A);
-    let (links, table, current, doc) = {
-        let st = &h.state().state;
-        (assembly(&h, A).unwrap_or_default(), ta::components(&st.world), tool(&h, A), st.doc_version)
-    };
-    let view = stack_view::view(A, Some(&current), doc, &links, &table);
+    let (links, current) = (assembly(&h, A).unwrap_or_default(), tool(&h, A));
+    let view = h.state_mut().state.component_stack_view(A, Some(&current), &links);
     let offered: Vec<Vec<&str>> = view.swaps.iter().map(|s| s.iter().map(|(t, _)| t.as_str()).collect()).collect();
     assert_eq!(offered[0], Vec::<&str>::new(), "no other part takes the spindle side with this stack");
     assert_eq!(offered[1], vec!["fly-32 in BT40 CYL 20 CSW"], "only the other cutter body fits in its place");
@@ -138,11 +135,12 @@ fn a_still_frame_builds_no_stack_view() {
     let mut h = shell(&dir);
     shop(&mut h, true);
     open_in_window(&mut h, A);
-    let builds = stack_view::builds();
+    let builds = |h: &H| h.state().state.component_views.builds().stack;
+    let b0 = builds(&h);
     h.run_steps(3);
-    assert_eq!(stack_view::builds(), builds, "a still frame builds no stack view");
+    assert_eq!(builds(&h), b0, "a still frame builds no stack view");
     click_window_button(&mut h, stack::REMOVE);
-    assert!(stack_view::builds() > builds, "a changed stack builds the view again");
+    assert!(builds(&h) > b0, "a changed stack builds the view again");
 }
 
 #[test]
