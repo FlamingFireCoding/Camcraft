@@ -49,7 +49,7 @@ the one rule (no special case "an ER chuck takes a shank").
   law of `ConnectionCode`, which the safety floor puts at effort:high on
   its own, with its own tests. With exact bores, a 6.35 mm (1/4 in) or a
   3.175 mm shank and the odd drill shanks of the starter catalogue find no
-  built-in collet. Follow-up issue filed (see the PR).
+  built-in collet. Follow-up issue #4274.
 - Inch collets (1/8, 1/4, 1/2 in): dropped. DIN 6499 is metric, and the
   clamping-range follow-up covers the inch shanks better than a second set.
 - Half-millimetre bores: dropped. The common sets step by 1 mm, and 89
