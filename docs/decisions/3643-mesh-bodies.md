@@ -98,3 +98,19 @@
   facets without the pad. It finds a wrong hand or seat frame, and it
   is not a clearance law.
 - The boring-bar overhang in a sleeve is not in this slice.
+
+**Merge with #4278 (`ResolvedLathe.placed`).** Main added
+`ResolvedLathe.placed`: the app builds the lathe body and its bands
+again from these facets (`crates/app/src/tool_assembly_lathe.rs`).
+- Chosen: `placed` stays the bare facets, as on main. A facet set
+  cannot grow by a distance, and the equivalence pin of #4278 compares
+  the facets one to one. A new field `ResolvedLathe.pad` carries the
+  largest pad of the stack. The app grows the bands that it reads from
+  `placed` by `pad`, so the collision check reads the same grown bands
+  as `ResolvedLathe.clearance`, never the smaller bands of the bare
+  facets.
+- Pinned by `a_padded_holder_body_keeps_the_grown_bands_in_the_app`
+  (`camcraft-app`, `tool_library_holders`).
+- Dropped: `placed` as grown facets (no exact facet grow exists); the
+  app reading `r.clearance` in place of its own bands (it changes
+  `tool_body_lathe::build`, which other callers use).

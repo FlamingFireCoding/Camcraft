@@ -153,11 +153,12 @@ pub struct EditDocumentComponent {
 
 impl EditDocumentComponent {
     /// Replace the catalog fact and the geometry of a held row; its
-    /// cutter facts and running data stay.
+    /// cutter facts, running data and lathe body stay.
     pub fn new(world: &World, component: ToolComponent, geometry: ComponentGeometry) -> Result<Self, CommandError> {
         let held = ta::component(world, component.id());
         let row = DocumentComponent {
             milling: held.as_ref().and_then(|r| r.milling),
+            lathe_body: held.as_ref().and_then(|r| r.lathe_body.clone()),
             running: held.and_then(|r| r.running),
             ..DocumentComponent::new(component, geometry)
         };

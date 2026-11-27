@@ -930,6 +930,8 @@ pub struct WcsUi {
     /// `sync_setup_ui` zero the readout when an origin is undone without
     /// wiping typing into a never-placed slot.
     pub(crate) placed: bool,
+    /// Display-only refusal, shared by the flip status and the WCS page.
+    pub(crate) flip_note: wcs_ui::FlipNote,
 }
 
 /// Editable fields of the Setups page (M3.2 A). Transient like [`StockUi`]:
@@ -4995,15 +4997,15 @@ impl State {
                 }
             },
         };
-        let mesh = match self.stock_mesh.get(&fv) {
-            Ok(m) => m,
+        let (bytes, n) = match self.stock_mesh.get(&fv).and_then(|m| camcraft_app::stock_export::file_bytes(&m)) {
+            Ok(b) => b,
             Err(err) => {
                 self.status = format!("stock export refused: {err}");
                 return;
             }
         };
-        match std::fs::write(&path, camcraft_app::stock_export::stl_bytes(&mesh)) {
-            Ok(()) => self.status = format!("machined stock: {} facets written to {}", mesh.len(), path.display()),
+        match std::fs::write(&path, bytes) {
+            Ok(()) => self.status = format!("machined stock: {n} facets written to {}", path.display()),
             Err(err) => self.status = format!("stock export write failed: {err}"),
         }
     }

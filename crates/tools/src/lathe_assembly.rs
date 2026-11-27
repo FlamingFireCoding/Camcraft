@@ -177,6 +177,15 @@ pub struct ResolvedLathe {
     /// The clearance bands of every body but the insert's; `None` when
     /// no component has a body.
     pub clearance: Option<LatheClearance>,
+    /// The facets the bands were read from: every body but the insert's,
+    /// placed in the turning frame (empty when no component has one).
+    /// These are the facets as given, not grown: a consumer that reads
+    /// bands from them grows the bands by `pad` (#3643).
+    pub placed: Vec<Tri>,
+    /// How far (mm) the steel may stand outside `placed`: the largest
+    /// pad of the stack's bodies (a meshed body's chord deviation; 0 for
+    /// boxes and given facets). `clearance` is already grown by it.
+    pub pad: f64,
 }
 
 /// Resolve `nodes` on `station` (the module's law). `orientation`
@@ -256,7 +265,7 @@ pub fn resolve_lathe(
         clearance_deg: spec.clearance.degrees(),
         ic_mm,
     };
-    Ok(ResolvedLathe { params, placement, crp: [r * ox, 0.0, r * oz], clearance })
+    Ok(ResolvedLathe { params, placement, crp: [r * ox, 0.0, r * oz], clearance, placed: all, pad })
 }
 
 /// The part of facet `t` within one insert of the nose centre in the
