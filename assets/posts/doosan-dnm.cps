@@ -135,6 +135,7 @@ var coolantOp = "";        // the section's OperationName, for refusals (#150)
 var sectionOpen = false;   // preamble written (a legacy .cl carries no SECTION)
 var wcsFlip = "";          // #1649: the flipped WCS axes ("X", "Y", "XY") - the engine mirrored the section
 var tcpmOn = false;        // G43.4 armed (stage D RTCP): re-armed at tool change
+var tcpmLeft = false;      // #4348: the last section ended with G43.4 still active (no G49 written since)
 var lastA = null, lastB = null, lastC = null; // angle words the last block commanded (deg); null: none written yet, so the next A is written (#950)
 var tiltRefused = false;   // a refusal the gate counts once, not per line
 var rotAt = { A: null, B: null, C: null }; // #885: the angles the control holds (null: not known) - never reset, a tool change turns nothing
@@ -972,6 +973,7 @@ function endPreamble() {
   probeSection = false;
   kindProbe = false;         // the next section states its own tool kind
   afterOp();
+  tcpmLeft = tcpmOn;         // #4348: onClose reads it - no next preamble writes G49 there
   tcpmOn = false;
   lastA = null; lastB = null; lastC = null; // #950: never assume A0 - the first A after this is written
 }
@@ -1504,6 +1506,9 @@ function onClose() {
     chipConveyorStarted = false;
   }
   if (!uprightAtEnd() && linesWritten() !== homedAt) {
+    // #4348: a reference return is not permitted in G43.4 mode (FANUC
+    // 30i B-63944EN/02): a section that tilted back to zero left TCPM on.
+    if (tcpmLeft) block(["G49"]);
     retractHome(true);
   }
   var u = endUnitsWord();
