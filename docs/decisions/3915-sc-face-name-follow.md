@@ -17,8 +17,12 @@
 
 **Why.**
 - The `solids` precedent (#917): "an old reader that drops it reads the soup". Here an old reader drops the key and reads the model exactly as today. It loses only the follow by name at the next re-import, which is today's behaviour.
-- A version step lands only at a cut. It makes every older build refuse every file that this build saves. `PROJECT_VERSION` also moves often (PR #4173 is a `feat!` on the project file), so a step must be numbered again at each rebase.
+- A version step lands only at a cut. It makes every older build refuse every file that this build saves. `PROJECT_VERSION` also moves often (PR #4173 is a `feat!` on the project file, and its v83 step must now take a number past 84), so a step must be numbered again at each rebase.
 - The record must be saved, not only held in memory: a headless run and every reopened project load the old mesh from the file, and a new revision often arrives while the project is closed.
+
+**The versions on 2026-11-27.** The last release, v0.27.0, writes v82. `main` writes v84 (#3645). Neither v83 nor v84 is in a release yet. The decision holds in the two cases:
+- This change merges before the cut that ships v84. Then each released build that opens the file knows `source_faces`, and v0.27.0 refuses the file for its version. A step of its own adds nothing for a released build.
+- It merges after that cut. Then a released v84 build drops the key and reads the model as today: the `solids` case above.
 
 **Considered and dropped.**
 - A version step (the `source` precedent). See above.
