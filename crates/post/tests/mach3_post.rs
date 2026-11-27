@@ -128,8 +128,8 @@ fn mach3_work_offsets_g54_through_g59_and_extended_g59_p() {
         );
     }
 
-    // Extended offsets: 7 posts as G59 P7, 255 posts as G59 P255
-    for offset in [7, 8, 54, 100, 254, 255] {
+    // Extended offsets: 7 posts as G59 P7, 254 posts as G59 P254
+    for offset in [7, 8, 54, 100, 254] {
         let stream = format!(
             "PARAM SetupName Fixture\nPARAM OperationName Op1\nPARAM OperationKind Contour\n{}",
             SIMPLE_STREAM.replace("PARAM WorkOffset 1", &format!("PARAM WorkOffset {offset}"))
@@ -149,15 +149,18 @@ fn mach3_work_offsets_g54_through_g59_and_extended_g59_p() {
         );
     }
 
-    // Offsets above 255 are refused
-    let stream_over = SIMPLE_STREAM.replace("PARAM WorkOffset 1", "PARAM WorkOffset 256");
-    let out_over = engine::run(&cps, &mch, &stream_over).expect("mach3 runs");
-    assert!(
-        out_over
-            .warnings
-            .iter()
-            .any(|w| w.contains("work offset 256") || w.contains("uses work offset 256")),
-        "must refuse offset > 255: {:?}",
-        out_over.warnings
-    );
+    // Offsets above 254 are refused (255 and 256 per Using Mach3Mill section 10.7.18)
+    for offset in [255, 256] {
+        let stream_over =
+            SIMPLE_STREAM.replace("PARAM WorkOffset 1", &format!("PARAM WorkOffset {offset}"));
+        let out_over = engine::run(&cps, &mch, &stream_over).expect("mach3 runs");
+        assert!(
+            out_over.warnings.iter().any(|w| {
+                w.contains(&format!("work offset {offset}"))
+                    || w.contains(&format!("uses work offset {offset}"))
+            }),
+            "must refuse offset {offset} > 254: {:?}",
+            out_over.warnings
+        );
+    }
 }
