@@ -392,8 +392,10 @@ fn viewport_panel(
         } else if !sc.is_empty()
             && let Some(sim) = &state.sim
         {
-            let f = sc.at(sim.t);
-            sim_marker = Some(([f.pos.x, f.pos.y, f.pos.z], f.axis));
+            // #4266: ONE display frame - the marker sits on the carried
+            // tip, the same pose the tool body draws from
+            // (`world::sim_tool_tris`), not the original program point.
+            sim_marker = sim_marker_pose(&sc, sim.t);
         }
         ui.separator();
     }
@@ -1005,6 +1007,18 @@ pub(crate) fn cached_script(state: &mut State) -> std::sync::Arc<camcraft_app::s
     let sc = std::sync::Arc::new(sim_script(state));
     state.sim_script_cache = Some((state.doc_version, std::sync::Arc::clone(&sc)));
     sc
+}
+
+/// The playback marker's pose: the frame's program point and axis,
+/// carried by the frame's work turn when it has one (#4266) - the same
+/// pose the tool body draws from, one display frame. `None` past the
+/// timeline (the caller draws no marker).
+pub(crate) fn sim_marker_pose(sc: &camcraft_app::sim::Script, t: f64) -> Option<([f64; 3], [f64; 3])> {
+    let f = sc.at(t);
+    f.work
+        .as_ref()
+        .and_then(|w| camcraft_app::sim_machine_view::posed_tool([f.pos.x, f.pos.y, f.pos.z], f.axis, w))
+        .or(Some(([f.pos.x, f.pos.y, f.pos.z], f.axis)))
 }
 
 /// Rebuild the timeline from the live world (`cached_script` is the

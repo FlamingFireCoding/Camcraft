@@ -122,5 +122,5 @@ pub fn turn_verts(verts: &mut [[f32; 3]], origin: [f64; 3], dir: [f64; 3], t: f6
 }
 
 #[cfg(test)]
-#[path = "sim_machine_view_tests.rs"]
+#[path = "machine_view_tests.rs"]
 mod tests;

@@ -22,8 +22,10 @@
 //! refuse to draw is a plane this shell does not draw either.
 //! Provenance: our own code, mirrored from app.rs.
 
+use std::sync::Arc;
+
 use camcraft_app::commands::ImportModel;
-use camcraft_app::geometry::{Point3, cube, feature};
+use camcraft_app::geometry::{Point3, Triangle, cube, feature};
 use camcraft_app::machining2d::{Lead, Side};
 use camcraft_app::model;
 use camcraft_app::operation::{FeatureSel, GeoSel, Height, HeightReference, OpParams, SrcRef};
@@ -34,7 +36,7 @@ use crate::shade_cache::ModelSrc;
 use crate::state::{CommandKind, State, UiTarget};
 use crate::viewport::GpuPart;
 
-use super::world_verts::{model_src, world_verts};
+use super::world_verts::model_src;
 
 /// The shell's whole scene for one frame: what `View3D::set_document` and
 /// `set_overlay` take.
@@ -204,10 +206,14 @@ fn collect_parts(state: &State) -> (Vec<GpuPart>, Vec<ModelSrc>) {
     // tinted (display only - the classes ride the vertex, nothing else).
     let models = crate::frame_cost::span("scene/parts.models");
     let struck = state.fixture_highlight();
-    // #4266: the playhead's work turn - the part, the stock and the
-    // steel ride the rotary table about its line; the tool below opts
-    // out (it poses itself, upright).
-    let work_view = sim_work_view(state);
+    // #4266: the playhead's work turn - ONE display transform for every
+    // work-side scene element (`crate::work_turn::play_view`). The
+    // membership rule (`work_turn::turns_with_work`) keeps fixed steel
+    // in the machine frame: only the part, the stock and the steel
+    // that TURNS with the work ride it, the same split
+    // `fixture::workholding_for` judges; the tool below opts out (it
+    // poses itself, upright).
+    let work_view = crate::work_turn::play_view(state);
     let mut bodies = Vec::new();
     let mut parts: Vec<GpuPart> = model::model_entities(&state.world)
         .into_iter()
@@ -215,8 +221,20 @@ fn collect_parts(state: &State) -> (Vec<GpuPart>, Vec<ModelSrc>) {
         .map(|(name, entity)| {
             let by = crate::move_drag::preview_offset(state, &name).unwrap_or([0.0; 3]);
             let src = model_src(state, &entity, by);
-            let verts = turned(src.as_ref().map(|s| (*s.verts).clone()).unwrap_or_default(), &work_view);
-            bodies.extend(src);
+            let view =
+                if crate::work_turn::turns_with_work(state, &entity) { work_view.as_ref() } else { None };
+            let (verts, body) = match src {
+                Some(s) => {
+                    let turned = turned_cached(state, &s.verts, view);
+                    // The shadow and the occlusion read the body's
+                    // source: the shadow mesh is built from the TURNED
+                    // vertices (one display frame), the occlusion from
+                    // the facets (turn-invariant, same vertex order).
+                    (turned.as_ref().clone(), Some(ModelSrc { view: view_bits(view), verts: turned, ..s }))
+                }
+                None => (Vec::new(), None),
+            };
+            bodies.extend(body);
             let classes =
                 if struck.contains(&name) { vec![crate::viewport::STRUCK_CLASS; verts.len()] } else { Vec::new() };
             GpuPart { verts, selected: model::is_selected(&state.world, &entity), stock: false, fill: false, classes }
@@ -234,7 +252,7 @@ fn collect_parts(state: &State) -> (Vec<GpuPart>, Vec<ModelSrc>) {
             // `machined::vertex_classes`; plain material until judged), and
             // the GPU eye, when it traces, still paints over the slot.
             (_, Some(mesh)) => parts.push(GpuPart {
-                verts: turned(mesh.iter().flat_map(|t| [t.a, t.b, t.c].map(|p| [ftoz(p.x), ftoz(p.y), ftoz(p.z)])).collect(), &work_view),
+                verts: turned_tris(state, &mesh, Some((Arc::as_ptr(&mesh) as u64, mesh.len())), work_view.as_ref()),
                 selected: false,
                 stock: true,
                 fill: false,
@@ -244,9 +262,11 @@ fn collect_parts(state: &State) -> (Vec<GpuPart>, Vec<ModelSrc>) {
             // it IS the stock's surface after the program, judged - same
             // blend law, and the solid it replaces would only veil it.
             (Some(ps), None) => parts.push(GpuPart {
-                verts: turned(
-                    ps.surface.verts.iter().map(|p| [ftoz(p.x), ftoz(p.y), ftoz(p.z)]).collect(),
-                    &work_view,
+                verts: turned_points(
+                    state,
+                    &ps.surface.verts,
+                    Some((ps.surface.verts.as_ptr() as u64, ps.surface.verts.len())),
+                    work_view.as_ref(),
                 ),
                 selected: false,
                 stock: true,
@@ -264,8 +284,17 @@ fn collect_parts(state: &State) -> (Vec<GpuPart>, Vec<ModelSrc>) {
                 if let Some(entity) = model::find_by_name(&state.world, &stock_name)
                     && model::is_stock(&state.world, &entity)
                 {
+                    // The stock IS the operation's source material: it
+                    // turns with the work. Its cached world vertices are
+                    // the turn cache's source, so a still frame copies
+                    // them and computes nothing again.
+                    let src = model_src(state, &entity, [0.0; 3]);
+                    let verts = match &src {
+                        Some(s) => turned_cached(state, &s.verts, work_view.as_ref()).as_ref().clone(),
+                        None => Vec::new(),
+                    };
                     parts.push(GpuPart {
-                        verts: turned(world_verts(state, &entity), &work_view),
+                        verts,
                         selected: model::is_selected(&state.world, &entity),
                         stock: true,
                         fill: false,
@@ -280,27 +309,25 @@ fn collect_parts(state: &State) -> (Vec<GpuPart>, Vec<ModelSrc>) {
     // page is open - a stock-slot part painted teal (`INCOMING_CLASS`),
     // apart from the setup's own Stock node.
     if let Some(mesh) = crate::incoming_view::mesh(state) {
-        let verts: Vec<[f32; 3]> = turned(
-            mesh.iter().flat_map(|t| [t.a, t.b, t.c].map(|p| [ftoz(p.x), ftoz(p.y), ftoz(p.z)])).collect(),
-            &work_view,
-        );
+        let id = (mesh.as_ptr() as u64, mesh.len());
+        let verts = turned_tris(state, mesh, Some(id), work_view.as_ref());
         let classes = vec![crate::incoming_view::INCOMING_CLASS; verts.len()];
         parts.push(GpuPart { verts, selected: false, stock: true, fill: false, classes });
     }
     let fills = crate::frame_cost::span("scene/parts.region_fills");
-    for (z, region) in crate::interact::shown_regions(state) {
+    for (z, region, fill_id) in crate::interact::shown_regions(state) {
         let Some(region) = region else { continue };
         let Ok(tris) = crate::frame_cost::time("scene/parts.region_fills.triangulate", || region.triangles()) else { continue };
         if tris.is_empty() {
             continue;
         }
-        let mut verts = Vec::with_capacity(tris.len() * 3);
-        for t in &tris {
-            for p in t {
-                verts.push([ftoz(p.x), ftoz(p.y), ftoz(z)]);
-            }
-        }
-        parts.push(GpuPart { verts: turned(verts, &work_view), selected: false, stock: false, fill: true, classes: Vec::new() });
+        // #4266: the fill rides the work turn, cached under its kept
+        // region's own id (frame_memo's, the input itself - a still
+        // frame computes nothing again). An unkept region (its stamp
+        // cannot resolve) is rebuilt every frame like the region itself.
+        let id = fill_id.map(|i| (i, tris.len()));
+        let verts = turned_flat(state, &tris, z, id, work_view.as_ref());
+        parts.push(GpuPart { verts, selected: false, stock: false, fill: true, classes: Vec::new() });
     }
     drop(fills);
     // The Boundary group's preview of the area the draft machines (M11.5
@@ -308,7 +335,8 @@ fn collect_parts(state: &State) -> (Vec<GpuPart>, Vec<ModelSrc>) {
     let _preview = crate::frame_cost::span("scene/parts.boundary_preview");
     // #2246: the triangles were made with the preview; a frame reads them.
     if let Some((z, tris)) = crate::boundary_viz::preview_fill(state) {
-        let verts = turned(tris.iter().flat_map(|t| t.iter().map(|p| [ftoz(p.x), ftoz(p.y), ftoz(z)])).collect(), &work_view);
+        let id = (tris.as_ptr() as u64, tris.len());
+        let verts = turned_flat(state, tris, z, Some(id), work_view.as_ref());
         parts.push(GpuPart { verts, selected: false, stock: false, fill: true, classes: Vec::new() });
     }
     (parts, bodies)
@@ -361,30 +389,124 @@ fn sim_tool_pose(state: &State) -> ToolPose<'_> {
     Some((op.as_str(), [f.pos.x, f.pos.y, f.pos.z], f.axis, f.work))
 }
 
-/// #4266: the playhead's work turn as the scene draw reads it - the
-/// rotary line and the angle that stands the frame's tool axis upright
-/// about it. `None` when the transport is down, no line is carried, or
-/// the pose will not stand upright under it: the fallback draw.
-fn sim_work_view(state: &State) -> Option<([f64; 3], [f64; 3], f32)> {
-    let sim = state.sim?;
-    let (version, sc) = state.sim_script_cache.as_ref()?;
-    if *version != state.doc_version || sc.is_empty() {
-        return None;
-    }
-    let f = sc.at(sim.t);
-    let w = f.work?;
-    let t = camcraft_app::sim_machine_view::frame_turn(&w, f.axis)?;
-    Some((w.origin, w.dir, t as f32))
+/// The work-side vertices under the playhead's turn, cached by their
+/// actual inputs (the "Frame cost" law): the source's allocation
+/// (`src`'s Arc), its length, its ends and the turn's bits. `view:
+/// None` (no playhead turn, or fixed steel) passes the cached source
+/// through untouched.
+fn turned_cached(
+    state: &State,
+    src: &Arc<Vec<[f32; 3]>>,
+    view: Option<&crate::work_turn::TurnView>,
+) -> Arc<Vec<[f32; 3]>> {
+    let Some(v) = view else { return Arc::clone(src) };
+    // #4266 item 3 (the "Frame cost" law): the turn's vertices are an
+    // answer keyed on its actual inputs - the source's allocation, its
+    // length, its ends' bit patterns and the turn's bits - built once
+    // and read on every other frame, a paused playhead included. No
+    // document counter is part of the key.
+    let probe = crate::frame_cache::probe3(
+        src.first().copied().unwrap_or_default(),
+        src.last().copied().unwrap_or_default(),
+    );
+    let view = *v;
+    state.frame_cache.turned_verts.turned(
+        Arc::as_ptr(src) as u64,
+        src.len(),
+        view.bits,
+        probe,
+        || {
+            let mut verts = src.as_ref().clone();
+            crate::work_turn::turn_verts(&mut verts, Some(&view));
+            verts
+        },
+    )
 }
 
-/// The work-side vertices turned about the line - the part, the stock
-/// and the steel ride the rotary table while the spindle stays put.
-/// Display only; the unturned draw with no playhead turn.
-fn turned(mut verts: Vec<[f32; 3]>, view: &Option<([f64; 3], [f64; 3], f32)>) -> Vec<[f32; 3]> {
-    if let Some((origin, dir, t)) = view {
-        camcraft_app::sim_machine_view::turn_verts(&mut verts, *origin, *dir, f64::from(*t));
+/// The vertices of a facet list (stock meshes, the incoming preview)
+/// under the turn, converted and turned in one cached answer. `src`
+/// names the facets' allocation; `None` (or no turn) rebuilds each
+/// frame as before.
+fn turned_tris(
+    state: &State,
+    tris: &[Triangle],
+    src: Option<(u64, usize)>,
+    view: Option<&crate::work_turn::TurnView>,
+) -> Vec<[f32; 3]> {
+    let build = || {
+        let mut verts: Vec<[f32; 3]> =
+            tris.iter().flat_map(|t| [t.a, t.b, t.c].map(|p| [ftoz(p.x), ftoz(p.y), ftoz(p.z)])).collect();
+        crate::work_turn::turn_verts(&mut verts, view);
+        verts
+    };
+    match (view, src) {
+        (Some(v), Some((ptr, len))) => {
+            let probe = crate::frame_cache::probe3(
+                tris.first().map(|t| [ftoz(t.a.x), ftoz(t.a.y), ftoz(t.a.z)]).unwrap_or_default(),
+                tris.last().map(|t| [ftoz(t.c.x), ftoz(t.c.y), ftoz(t.c.z)]).unwrap_or_default(),
+            );
+            state.frame_cache.turned_verts.turned(ptr, len, v.bits, probe, build).as_ref().clone()
+        }
+        _ => build(),
     }
-    verts
+}
+
+/// The vertices of a point list (the Deviate sheet) under the turn.
+fn turned_points(
+    state: &State,
+    pts: &[Point3],
+    src: Option<(u64, usize)>,
+    view: Option<&crate::work_turn::TurnView>,
+) -> Vec<[f32; 3]> {
+    let build = || {
+        let mut verts: Vec<[f32; 3]> = pts.iter().map(|p| [ftoz(p.x), ftoz(p.y), ftoz(p.z)]).collect();
+        crate::work_turn::turn_verts(&mut verts, view);
+        verts
+    };
+    match (view, src) {
+        (Some(v), Some((ptr, len))) => {
+            let probe = crate::frame_cache::probe3(
+                pts.first().map(|p| [ftoz(p.x), ftoz(p.y), ftoz(p.z)]).unwrap_or_default(),
+                pts.last().map(|p| [ftoz(p.x), ftoz(p.y), ftoz(p.z)]).unwrap_or_default(),
+            );
+            state.frame_cache.turned_verts.turned(ptr, len, v.bits, probe, build).as_ref().clone()
+        }
+        _ => build(),
+    }
+}
+
+/// A triangulated plane (a region or boundary fill at plane height `z`)
+/// turned with the work. `id` is the plane's kept identity (frame_memo's
+/// fill id, or the preview slice's allocation); a cached answer is built
+/// once and read on every other frame.
+fn turned_flat(
+    state: &State,
+    tris: &[[camcraft_app::geo2d::Point2; 3]],
+    z: f64,
+    id: Option<(u64, usize)>,
+    view: Option<&crate::work_turn::TurnView>,
+) -> Vec<[f32; 3]> {
+    let build = || {
+        let mut verts: Vec<[f32; 3]> =
+            tris.iter().flat_map(|t| t.iter().map(|p| [ftoz(p.x), ftoz(p.y), ftoz(z)])).collect();
+        crate::work_turn::turn_verts(&mut verts, view);
+        verts
+    };
+    match (view, id) {
+        (Some(v), Some((src, len))) => {
+            let probe = crate::frame_cache::probe3(
+                tris.first().map(|t| [ftoz(t[0].x), ftoz(t[0].y), ftoz(z)]).unwrap_or_default(),
+                tris.last().map(|t| [ftoz(t[2].x), ftoz(t[2].y), ftoz(z)]).unwrap_or_default(),
+            );
+            state.frame_cache.turned_verts.turned(src, len, v.bits, probe, build).as_ref().clone()
+        }
+        _ => build(),
+    }
+}
+
+/// The turn's bit pattern as the caches key it (`NO_TURN` when none).
+fn view_bits(view: Option<&crate::work_turn::TurnView>) -> crate::frame_cache::TurnBits {
+    view.map(|v| v.bits).unwrap_or(crate::work_turn::NO_TURN)
 }
 
 /// [`sim_tool_tris`] as a model part (depth-tested, shaded).
