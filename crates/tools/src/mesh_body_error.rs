@@ -24,6 +24,10 @@ pub enum MeshBodyError {
     NoMount { found: String },
     /// More than one mounting frame.
     TwoMounts(Vec<String>),
+    /// A mounting frame, port or cutting point that the file states but
+    /// the reader refused (degenerate, non-finite or ambiguous): never
+    /// read as absent, so no default takes its place.
+    RefusedFrame { name: String, why: String },
     /// More than one cutting point (CIP).
     TwoCutPoints(Vec<String>),
     /// A workpiece-side port or the cutting point is not below the
@@ -60,6 +64,11 @@ impl core::fmt::Display for MeshBodyError {
                 "the body has {} mounting coordinate systems ({}) - one only",
                 names.len(),
                 names.join(", ")
+            ),
+            Self::RefusedFrame { name, why } => write!(
+                f,
+                "the body states the coordinate system '{name}', but it cannot be read ({why}) - correct it in the \
+                 file or remove it; a default does not take its place"
             ),
             Self::TwoCutPoints(names) => write!(
                 f,

@@ -27,6 +27,9 @@ use crate::spun::{SpunProfile, MAX_POINTS, MIN_SEGMENT};
 #[path = "mesh_body_error.rs"]
 mod error;
 pub use error::MeshBodyError;
+#[cfg(test)]
+#[path = "mesh_body_safety_tests.rs"]
+mod safety_tests;
 
 /// The chord (mm) a STEP body is meshed at, or coarser when that does
 /// not fit the facet budget. The certified deviation is added back.
@@ -84,8 +87,17 @@ pub struct MeshParts {
 pub struct MeshBody {
     tris: Vec<Tri>,
     frames: Vec<NamedFrame>,
-    refused: Vec<String>,
+    refused: Vec<RefusedFrame>,
     deviation_mm: f64,
+}
+
+/// A coordinate system the file states but the reader refused (degenerate,
+/// non-finite, ambiguous): its role by name, and why, for the refusal.
+#[derive(Clone, Debug, PartialEq)]
+struct RefusedFrame {
+    name: String,
+    role: CsysRole,
+    said: String,
 }
 
 impl MeshBody {
@@ -131,7 +143,15 @@ impl MeshBody {
                 Ok(NamedFrame { name: c.name.trim().to_ascii_uppercase(), role: c.role, frame })
             })
             .collect::<Result<_, MeshBodyError>>()?;
-        body.refused = report.refused.iter().map(|r| format!("{} (#{}): {}", r.name, r.entity, r.reason)).collect();
+        body.refused = report
+            .refused
+            .iter()
+            .map(|r| RefusedFrame {
+                role: CsysRole::classify(&r.name),
+                name: r.name.trim().to_ascii_uppercase(),
+                said: format!("{} (#{}): {}", r.name, r.entity, r.reason),
+            })
+            .collect();
         Ok(body)
     }
 
@@ -188,9 +208,19 @@ impl MeshBody {
     }
 
     /// The facets, ports and cutting point in the mounting frame.
-    /// Refused by name: no mounting frame or two, two cutting points, or
-    /// a port or cutting point that is not below the mounting frame.
+    /// Refused by name: no mounting frame or two, two cutting points, a
+    /// port or cutting point that is not below the mounting frame, or a
+    /// mounting frame, port or cutting point that the file states but the
+    /// reader refused (a stated frame is never read as an absent one).
     pub fn parts(&self) -> Result<MeshParts, MeshBodyError> {
+        let used = |r: &CsysRole| matches!(r, CsysRole::Mounting | CsysRole::InProcess | CsysRole::WorkpieceSide { .. });
+        let has_mount = self.frames.iter().any(|f| f.role == CsysRole::Mounting);
+        // With no mount at all, NoMount lists the refused frames instead.
+        if has_mount {
+            if let Some(r) = self.refused.iter().find(|r| used(&r.role)) {
+                return Err(MeshBodyError::RefusedFrame { name: r.name.clone(), why: r.said.clone() });
+            }
+        }
         let mounts: Vec<&NamedFrame> = self.frames.iter().filter(|f| f.role == CsysRole::Mounting).collect();
         let mcs = match mounts.as_slice() {
             [one] => one.frame,
@@ -244,7 +274,7 @@ impl MeshBody {
     /// What the file names in place of a mounting frame, for the refusal.
     fn found(&self) -> String {
         let mut said: Vec<String> = self.frames.iter().map(|f| f.name.clone()).collect();
-        said.extend(self.refused.iter().map(|r| format!("refused {r}")));
+        said.extend(self.refused.iter().map(|r| format!("refused {}", r.said)));
         if said.is_empty() { "it names no coordinate systems".into() } else { format!("it names {}", said.join(", ")) }
     }
 }
@@ -259,30 +289,61 @@ fn spun_body(tris: &[Tri], pad: f64) -> Result<ComponentBody, MeshBodyError> {
     }
     let lifted: Vec<Tri> = tris.iter().map(|t| t.map(|p| [p[0], p[1], p[2] - z0])).collect();
     let env = HolderProfile::envelope(&lifted).map_err(MeshBodyError::Envelope)?;
-    let bands = outline_bands(env.bands(), pad);
+    let grown = grown_bands(env.bands(), pad);
+    let bands = outline_bands(&grown);
     let profile = SpunProfile::from_bands(&bands).ok_or(MeshBodyError::Outline)?;
     let drawn = profile.bands();
-    // The safety net: every envelope band, grown by the pad, lies inside
-    // the drawn outline over its whole length.
-    if !env.bands().iter().all(|b| covers(&drawn, b.above + pad, b.above + pad + b.len, b.r + pad)) {
+    // The safety net: every envelope band, grown by the pad outward and
+    // at BOTH axial ends (so an internal shoulder grows along the axis
+    // too), lies inside the drawn outline over its whole grown length.
+    if !grown.iter().all(|b| covers(&drawn, b.above, b.above + b.len, b.r)) {
         return Err(MeshBodyError::Outline);
     }
     ComponentBody::new(profile.points().to_vec(), z0 - pad).map_err(MeshBodyError::Geometry)
 }
 
-/// The envelope bands grown by `pad` (outward and at both ends, so the
-/// first band starts at 0), at least [`TIDY`] from the axis, joined
-/// until no step is shorter than [`TIDY`] and at most [`OUTLINE_BANDS`]
-/// remain. Each join takes the larger radius: it only grows.
-fn outline_bands(env: &[HolderBand], pad: f64) -> Vec<HolderBand> {
-    let mut b: Vec<HolderBand> =
-        env.iter().map(|x| HolderBand { above: x.above + pad, len: x.len, r: (x.r + pad).max(TIDY) }).collect();
-    if let Some(first) = b.first_mut() {
-        first.above -= pad;
-        first.len += pad;
+/// Each envelope band grown by `pad`: its radius by `pad`, and its axial
+/// interval by `pad` at both ends. The heights shift up by `pad`, so the
+/// lowest grown band starts at 0 (the body's lowest point less the pad).
+/// A point within `pad` of the steel is inside one of these bands.
+fn grown_bands(env: &[HolderBand], pad: f64) -> Vec<HolderBand> {
+    env.iter().map(|x| HolderBand { above: x.above, len: x.len + 2.0 * pad, r: x.r + pad }).collect()
+}
+
+/// The union of the `grown` bands as one stepped outline (each step at
+/// the largest radius that reaches over it, at least [`TIDY`] from the
+/// axis), joined until no step is shorter than [`TIDY`] and at most
+/// [`OUTLINE_BANDS`] remain. Each join takes the larger radius: it only
+/// grows.
+fn outline_bands(grown: &[HolderBand]) -> Vec<HolderBand> {
+    const EPS: f64 = 1e-12;
+    let mut src: Vec<HolderBand> = grown.to_vec();
+    src.sort_by(|a, b| a.above.total_cmp(&b.above));
+    let mut cuts: Vec<f64> = src.iter().flat_map(|x| [x.above, x.above + x.len]).collect();
+    cuts.sort_by(f64::total_cmp);
+    cuts.dedup_by(|a, b| (*a - *b).abs() <= EPS);
+    // The running largest top of src[..=i]: every band before the first
+    // index whose running top passes `lo` ends at or below `lo`.
+    let mut tops = Vec::with_capacity(src.len());
+    let mut top = f64::NEG_INFINITY;
+    for x in &src {
+        top = top.max(x.above + x.len);
+        tops.push(top);
     }
-    if let Some(last) = b.last_mut() {
-        last.len += pad;
+    let mut start = 0;
+    let mut b = Vec::with_capacity(cuts.len());
+    for w in cuts.windows(2) {
+        let (lo, hi) = (w[0], w[1]);
+        while start < src.len() && tops[start] <= lo + EPS {
+            start += 1;
+        }
+        let r = src[start..]
+            .iter()
+            .take_while(|x| x.above < hi - EPS)
+            .filter(|x| x.above + x.len > lo + EPS)
+            .map(|x| x.r)
+            .fold(TIDY, f64::max);
+        b.push(HolderBand { above: lo, len: hi - lo, r });
     }
     tidy(&mut b);
     let mut b = merge(b, OUTLINE_BANDS);

@@ -18,8 +18,6 @@
 //!   tool assembled are one record.
 //! - **Every resolver refusal is a refusal by name**, with the tool.
 
-use std::sync::Arc;
-
 use camcraft_tools::connection_code::ConnectionCode;
 use camcraft_tools::lathe_assembly::{LatheNode, LatheStation, resolve_lathe};
 use camcraft_tools::orientation;
@@ -27,7 +25,6 @@ use camcraft_tools::tool_assembly::AssemblyNode;
 
 use crate::geometry::{Point3, Triangle};
 use crate::schema::DocumentComponent;
-use crate::tool_body::BodyFrame;
 use crate::tools::{Tool, ToolKind};
 
 use super::{ASSEMBLY_SOURCE, Derived};
@@ -68,14 +65,11 @@ pub(super) fn derive(
     } else {
         let pt = |v: [f64; 3]| Point3::new(v[0], v[1], v[2]);
         let tris = r.placed.iter().map(|t| Triangle::new(pt(t[0]), pt(t[1]), pt(t[2]))).collect();
-        let mut body = crate::tool_body_lathe::build(ASSEMBLY_SOURCE, r.placement, None, tris).map_err(refused)?;
         // #3643: the bands read from the facets grow by the stack's pad
         // (a meshed body's chord deviation), so they are never smaller
         // than the steel - the same bands as the resolver's clearance.
-        if let BodyFrame::Lathe { clearance, .. } = &mut body.frame {
-            *clearance = Arc::new(clearance.padded(r.pad));
-        }
-        Some(body)
+        // The body keeps the pad, so a rebuild and the file keep it too.
+        Some(crate::tool_body_lathe::build_padded(ASSEMBLY_SOURCE, r.placement, None, tris, r.pad).map_err(refused)?)
     };
     Ok(Derived { tool, body, gauge_len: 0.0 })
 }

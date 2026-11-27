@@ -130,3 +130,65 @@ bands of the bare facets.
   `a_corrupt_lathe_body_refuses_the_file_and_a_library_save_refuses_the_row`.
 - Dropped: a refusal to save a padded body (no app path makes one yet,
   but a refusal would block the mesh wiring later).
+
+**Review of PR #4323 (three SAFETY blockers).**
+
+1. A spindle body grows by its pad across an internal shoulder.
+   - Found: the outline grew each band's radius by the pad, but only the
+     first and the last band grew along the axis. Below an internal
+     shoulder, a point within the pad of the steel stood outside the
+     drawn body. The safety check read the bands at their old heights,
+     so it did not see the gap.
+   - Chosen: each envelope band grows by the pad at both axial ends and
+     in radius (`grown_bands`). The outline is the union of the grown
+     bands: each step takes the largest radius that reaches over it
+     (`outline_bands`). The safety check reads the grown bands, not the
+     old ones. A sweep with a running top keeps the union near linear
+     in the band count.
+   - Pinned by `a_spindle_body_grows_by_the_pad_across_an_internal_shoulder`
+     (`camcraft-tools` lib, `mesh_body::safety_tests`).
+   - Dropped: a grow of the first and last band only (the defect); a
+     grow of each band downward only (a shoulder that faces up needs
+     the grow upward too).
+
+2. An assembled lathe tool keeps its pad through save and open.
+   - Found: the app grew the effective body's bands in memory, but the
+     tool body was saved as bare facets. On open the bands came back
+     from the bare facets, smaller by the pad.
+   - Chosen: the pad is part of the lathe body (`BodyFrame::Lathe.pad`).
+     `tool_body_lathe::build_padded` grows the bands and refuses a
+     negative or non-finite pad by name. Each rebuild keeps the pad:
+     the assembly derive, the modular-piece rebuild and the insert-zone
+     command. The tool body on file gets an optional `pad` key, written
+     only when the pad is above 0, so each other file stays byte for
+     byte the same. The reader is strict: a `null` or a text pad is
+     refused (never read as no pad), a negative pad is refused by name,
+     and a pad on a spindle body is refused by name.
+   - An older build cannot open such a file: the padded component row
+     of the same file has a `pad` key, and its strict row reader refuses
+     it. So no older build reads the smaller bands.
+   - Pinned by `an_assembled_padded_lathe_tool_keeps_its_bands_through_save_and_open`
+     (`camcraft-app`, `tool_library_holders`): a padded PCLNR with a
+     CNMG has the same bands and pad before save and after open, and a
+     second save is byte-stable.
+   - Dropped: a re-derive of the pad from the stack on open. The file
+     states the derived body (the module law of `assembly_wire`), and
+     a key on the body keeps that law. A hand edit that removes the key
+     is the same case as a hand edit of the facets.
+
+3. A stated but malformed frame is refused, never read as absent.
+   - Found: the STEP reader kept a refused CIP as a reason, but
+     `parts()` read it only when no mounting frame existed. A file with
+     a broken CIP then used the default cutting point (another gauge
+     length).
+   - Chosen: one rule for the whole class. When the body has a mounting
+     frame, each refused frame with a role that `parts()` uses (a
+     mounting frame, a workpiece-side port or the cutting point) refuses
+     the body by name (`MeshBodyError::RefusedFrame`). Without a
+     mounting frame, `NoMount` lists the refused frames, as before.
+   - Pinned by `a_stated_but_malformed_cip_is_refused_by_name`
+     (`camcraft-tools` lib, `mesh_body::safety_tests`), with a broken
+     CIP and a broken CSW in our STEP box.
+   - Dropped: a refusal of the CIP only (a broken port is the same
+     class); a refusal of a broken `PCS` or other frame that `parts()`
+     does not use.

@@ -60,6 +60,8 @@ mod camtools_v8;
 mod multi_seat;
 #[path = "tool_library_holders/lathe_stack.rs"]
 mod lathe_stack;
+#[path = "tool_library_holders/lathe_stack_pad.rs"]
+mod lathe_stack_pad;
 #[path = "tool_library_holders/builtin_shrink.rs"]
 mod builtin_shrink;
 

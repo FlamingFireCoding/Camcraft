@@ -21,7 +21,7 @@ fn frame(origin: [f64; 3], z: [f64; 3], x: [f64; 3]) -> Frame {
 
 /// An `n`-sided prism about the Z axis, corners `r` from it, from `z0`
 /// up to `z1`, closed at both ends, each point mapped by `place`.
-fn prism(n: usize, r: f64, z0: f64, z1: f64, place: &Frame) -> Vec<Tri> {
+pub(crate) fn prism(n: usize, r: f64, z0: f64, z1: f64, place: &Frame) -> Vec<Tri> {
     let c = |k: usize, z: f64| {
         let a = std::f64::consts::TAU * (k % n) as f64 / n as f64;
         place.map_point([r * a.cos(), r * a.sin(), z])
@@ -84,7 +84,7 @@ fn step_fixture() -> String {
 
 /// Our STEP box (20 x 20 mm, 40 mm tall, z -40..0) with its MCS moved to
 /// the top face and its one port, `CSW`, on the axis at the bottom face.
-fn step_holder(mount_name: &str) -> String {
+pub(crate) fn step_holder(mount_name: &str) -> String {
     let swap = |s: String, a: &str, b: &str| {
         assert!(s.contains(a), "the fixture has {a}");
         s.replacen(a, b, 1)
