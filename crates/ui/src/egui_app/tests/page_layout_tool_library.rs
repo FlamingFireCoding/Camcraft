@@ -171,7 +171,12 @@ fn layout_window_tool_editor() {
     assert!(beside || flutes.top() >= holder.bottom() - 1.0, "Flutes {flutes:?} follows Holder {holder:?}");
     assert!(win.expand(1.0).contains_rect(flutes), "the Flutes toggle {flutes:?} stays in the window {win:?}");
     let rail = rect("All tools");
-    let row = rect(&name);
+    // #4334: the name shows twice - in the header and as the rail's row.
+    let row = node
+        .query_all_by_label(&name)
+        .map(|n| n.rect())
+        .max_by(|a, b| a.top().total_cmp(&b.top()))
+        .unwrap_or_else(|| panic!("the rail has no row {name}"));
     assert!(rail.right() < rect("Diameter").left() && row.top() > rect(&heading).bottom(), "the rail {rail:?} stands left of the editor, under the header");
     assert!(node.query_all_by_label("Import library…").next().is_none(), "the file row folds away with the list");
     let Some(props) = super::layout::leaf_rect(&h.state().dock, &Tab::Properties) else {
