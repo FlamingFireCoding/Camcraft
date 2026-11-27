@@ -4,13 +4,14 @@
 //! from `CAMCRAFT_COMPONENTS` first; the built-ins are read-only; a sync
 //! pulls a newer library copy into both assemblies in one undo step and
 //! undo restores the exact state; a library copy that differs from the
-//! document's after an open is reported, never applied. Provenance: our
-//! own tests over our own format and commands.
+//! document's after an open is reported, never applied; a hand edit
+//! keeps the link and the status reports the difference. Provenance:
+//! our own tests over our own format and commands.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use camcraft_app::commands::{History, SyncDocumentComponent};
+use camcraft_app::commands::{EditDocumentComponent, History, SyncDocumentComponent};
 use camcraft_app::component_library::store::{self, ENV_VAR};
 use camcraft_app::component_library::{self as lib, LibraryComponent, SyncStatus, sync_status};
 use camcraft_app::operation::OpStatus;
@@ -178,4 +179,16 @@ fn a_library_copy_that_differs_after_an_open_is_reported_never_applied() {
     let SyncStatus::UpdateAvailable { library_hash } = sync_status(&row, &other) else { panic!("the change is reported") };
     assert_ne!(Some(library_hash), row.library_ref.map(|r| r.content_hash));
     assert_eq!(sync_status(&component(&w2, INSERT).expect("row"), &lib::builtins()), SyncStatus::MissingFromLibrary);
+}
+
+#[test]
+fn a_hand_edit_keeps_the_link_and_the_status_reports_the_difference() {
+    let (w, mut h, library) = linked();
+    let link = component(&w, INSERT).expect("row").library_ref;
+    assert!(link.is_some(), "linked");
+    let (c, g) = insert("CCMT09T308");
+    h.execute(&w, EditDocumentComponent::new(&w, c, g).expect("a hand edit"));
+    let row = component(&w, INSERT).expect("row");
+    assert_eq!(row.library_ref, link, "the hand edit keeps the library link");
+    assert!(matches!(sync_status(&row, &library), SyncStatus::UpdateAvailable { .. }), "the document copy now differs");
 }
