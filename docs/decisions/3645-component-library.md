@@ -127,3 +127,30 @@ built-in rows do not change in a merge.
 - Save a document row with the facts to the library and drop them.
   Dropped: a silent loss. `LibraryComponent::from_row` refuses such a
   row by name, and each save path (MCP, UI) goes through it.
+
+## The #3643 lathe body on file (merge of #4278)
+
+**Chosen.** #4278 (#3643) gave `DocumentComponent` a `lathe_body`
+field: a lathe component's body as facets in its own frame. The v84
+component row carries it as an optional key, `lathe_body`, with one key
+`facets` (`[[x, y, z]; 3]` each). The key is strict: an unknown key is
+refused, the facets are built again through `LatheBody::mesh` (no
+facet, or a non-finite corner, is refused by the row's name), and the
+reader applies the same row law as the component commands
+(`row_refusal`). A `.camtools` v8 row uses the same wire form. The user
+component library (`camcraft-components/1`) does not hold the key: it
+refuses a library file row that states it, and
+`LibraryComponent::from_row` refuses a document row with a lathe body by
+name. Follow-up #4295 covers adding these row facts to the library. A
+sync keeps the document row's own lathe body, as a hand edit does. The
+content hash stays over the name, the item and the geometry.
+
+**Why.** The #4278 PR body asks this PR to save and load `lathe_body`
+with the other row fields. Without it, a saved turning stack loses its
+holder body on reopen, and the next derive gives a different body.
+
+**Considered and dropped.**
+- Write the boxes that made the body. Dropped: `LatheBody` keeps only
+  its facets, so the boxes are not known at save time. The facets give
+  the same value back, and the file is byte-stable.
+- Accept and drop the key in a library file. Dropped: a silent loss.
