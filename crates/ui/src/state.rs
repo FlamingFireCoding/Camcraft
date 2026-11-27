@@ -1308,6 +1308,7 @@ impl ToolUi {
                 ToolKind::Dovetail => 20,
                 ToolKind::Lollipop => 21,
                 ToolKind::FormMill => 22,
+                ToolKind::Laser => 23,
             },
             diameter: t.diameter,
             corner_r: t.corner_r,
@@ -1371,6 +1372,7 @@ impl ToolUi {
             20 => ToolKind::Dovetail,
             21 => ToolKind::Lollipop,
             22 => ToolKind::FormMill,
+            23 => ToolKind::Laser,
             _ => ToolKind::EndMill,
         }
     }
