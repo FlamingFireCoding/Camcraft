@@ -136,6 +136,8 @@ mod page_layout_windows;
 mod page_layout_tool_library;
 // #3893: the tool editor in the tool library window.
 mod tool_library_editor;
+// #4334: the frame (header and footer) of the tool library window.
+mod tool_library_frame;
 // #3894: the 3D and side preview of the tool library window's editor.
 mod tool_library_preview;
 // #3895: the holder, gauge length and stick-out in the tool library window.
