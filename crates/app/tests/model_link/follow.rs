@@ -338,14 +338,17 @@ fn a_do_not_touch_pick_that_cannot_follow_is_refused_at_generate() {
 fn a_followed_pick_holds_the_post_until_the_operation_is_marked_reviewed() {
     let world = part_world(Some(plain(&block(40.0))));
     let mut h = History::default();
+    // A facing pass on the top face at its own height: the area suite's
+    // law for a top-face pick ("the facing stays on the picked face").
+    // A 2D Pocket would read the picked face as its floor.
     let create = CreateOperation::new(
         &world,
         OP,
         TOOL,
         sel(PART, face(&world, TOP)),
-        pocket(10.0, 5.0),
+        super::area_support::face(10.0),
     )
-    .expect("a pocket on the top");
+    .expect("a facing pass on the top");
     h.execute(&world, create);
     let needs_review = |w: &flecs_ecs::prelude::World| {
         posting::verification_gate(w)
