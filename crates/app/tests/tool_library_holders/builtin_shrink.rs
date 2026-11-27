@@ -44,6 +44,15 @@ fn every_holder_with_a_taper_is_a_built_in_and_a_shrink_fit_bore_is_plain() {
         let Some(taper) = e.taper else { continue };
         let id = format!("builtin:holder:{}", e.name());
         // No entry with a taper drops out of the catalogue in silence.
+        // ISO30 (the router name of DIN 69871 size 30, the SK30 steel)
+        // is the one library taper that is not a connection code yet, so
+        // its entries are not built-ins (main since #4233); a new taper
+        // outside the table fails here.
+        if ConnectionCode::parse(taper.name).is_err() {
+            assert_eq!(taper.name, "ISO30", "'{id}': its taper is not a connection code");
+            assert!(all.iter().all(|c| c.component.id() != id), "{id}");
+            continue;
+        }
         let c = all.iter().find(|c| c.component.id() == id).unwrap_or_else(|| panic!("'{id}' is not a built-in"));
         let Clamp::Shrink { bore, .. } = e.clamp else { continue };
         let ComponentKind::AdaptiveItem { mcs, csw } = c.component.kind() else { panic!("'{id}' is not an adaptive item") };
