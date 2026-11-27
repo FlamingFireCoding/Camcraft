@@ -136,6 +136,8 @@ mod page_layout_windows;
 mod page_layout_tool_library;
 // #3893: the tool editor in the tool library window.
 mod tool_library_editor;
+// #4334: the frame (header and footer) of the tool library window.
+mod tool_library_frame;
 // #3894: the 3D and side preview of the tool library window's editor.
 mod tool_library_preview;
 // #3895: the holder, gauge length and stick-out in the tool library window.
@@ -794,7 +796,7 @@ fn post_cell_queues_and_the_file_arm_runs_the_gate() {
     let text = std::fs::read_to_string(&path).expect("a posted program");
     assert!(
         text.starts_with('%')
-            && text.contains("G90 G54")
+            && text.contains("G94 G54")
             && text.contains("T01 M6")
             && text.trim_end().ends_with('%'),
         "one wrapped Fanuc program for the skim: {text}"
