@@ -221,6 +221,10 @@ pub mod tool_body_lathe_view;
 pub mod tool_body_assembly;
 // #743: the simulated tool as the collision laws read it, revolved.
 pub mod sim_tool_body;
+// #4266: the sim playback's machine-frame view - the math lives in
+// camcraft-sim (pure vectors, no document concern); `app` re-exports it
+// for the UI ("app holds the document, nothing else").
+pub use camcraft_sim::machine_view as sim_machine_view;
 // #1038: a lathe-held body drawn as modelled in the holder law's frame.
 pub mod sim_lathe_body;
 pub mod units;
