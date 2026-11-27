@@ -1,4 +1,4 @@
-## #3915 - D4: the source face record is saved under `source_faces`, with no version step
+## #4213 - D4: the source face record is saved under `source_faces`, with no version step
 
 **Decided.** A model imported from a `.sc` file saves its source face record (SolidCraft's name for each record face, and the facets each record face became) under the optional entity key `source_faces`. `PROJECT_VERSION` does not change. The key is in `project/source_faces_dto.rs`. The hooks are one line each in `entity.rs`, `wire.rs` and `apply.rs`.
 
@@ -30,7 +30,7 @@
 
 **Cost to change later.** A version step is one line in `project/file.rs` and the log entry. The DTO does not change.
 
-## #3915 - D5: picks follow automatically at re-import, with a review line that holds the post
+## #4213 - D5: picks follow automatically at re-import, with a review line that holds the post
 
 **Decided.** When a `.sc` model imports again, a face or patch pick that the geometry hash no longer finds follows the face with the same SolidCraft names, in the update's own undo step (`commands/update_model_follow.rs`). Each operation with a followed pick gets one `needs_review` line, for example: `face 'F2:side:b' of 'part' followed by its SolidCraft name after the model was imported again`.
 
@@ -52,7 +52,7 @@
 
 **Cost to change later.** The review line is one function (`review_line`). An accept step would reuse `Follow::plan` and `Follow::write` behind a new command.
 
-## #3915 - D6: a pick that cannot follow is named at re-import, and the pick format does not change
+## #4213 - D6: a pick that cannot follow is named at re-import, and the pick format does not change
 
 **Decided.** Each face or patch pick that could not follow stays as it was, so generation refuses it exactly as before. It is named in the re-import report, with its operation, its SolidCraft names and the reason:
 
@@ -67,9 +67,9 @@
 - Keep the old name on a pick that failed to follow (a pick format change).
 - Name every lost pick in the window. A large model can lose hundreds; MCP has them all.
 
-**Cost to change later.** The report is `FollowReport` (`describe`, `to_json`). PR 3's `changes` key sits beside `picks` in the same answer.
+**Cost to change later.** The report is `FollowReport` (`describe`, `to_json`). the `changes` key of #4214 sits beside `picks` in the same answer.
 
-## #3915 - D7: which pick stores follow
+## #4213 - D7: which pick stores follow
 
 **Decided.** The follow covers every pick stored inside an operation. The list comes from the project files that save picks (`commands/update_model_follow/stores.rs`):
 
@@ -95,7 +95,7 @@
 
 **Cost to change later.** Each new store is one arm in `stores.rs`. Setup and fixture picks need their own snapshot in the same command.
 
-## #3915 - D8: a follow happens only when the names leave no doubt
+## #4213 - D8: a follow happens only when the names leave no doubt
 
 **Decided.** The match is in `camcraft_geometry::source_follow` (pure: features and records in, an id or a reason out). A pick follows only when all of these are true:
 
@@ -118,7 +118,7 @@ The two revisions' features are built from their facets in `update_model_follow.
 
 **Cost to change later.** One function, `source_follow::follow`, with its table tests beside it.
 
-## #3915 - D9: where the code lives
+## #4213 - D9: where the code lives
 
 **Decided.**
 - The match is in `crates/geometry/src/source_follow.rs`: it reads no world, project file, command, MCP or CLI, so by the crate law it is not app code.
@@ -131,7 +131,7 @@ The two revisions' features are built from their facets in `update_model_follow.
 
 **Cost to change later.** None beyond moving the hook lines.
 
-## #3915 - D10: a review line is cleaned and cut so the project file always loads
+## #4213 - D10: a review line is cleaned and cut so the project file always loads
 
 **Decided.** A review line has no control characters (each is a space), each SolidCraft name in it is cut to 60 bytes, and the whole line is cut to 240 bytes on a character boundary.
 

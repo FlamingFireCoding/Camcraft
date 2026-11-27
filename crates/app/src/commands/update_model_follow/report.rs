@@ -1,7 +1,7 @@
 //! The re-import report of the name follow (#3915): the picks that
 //! followed, each pick that could not, the window's phrase, the import
 //! answer's `picks` key, and the `needs_review` line of an operation.
-//! Provenance: our own wording and format (C13, D5, D6, D10).
+//! Provenance: our own wording and format (#4213, D5, D6, D10).
 
 use serde_json::{Value, json};
 

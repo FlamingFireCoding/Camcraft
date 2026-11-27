@@ -1,7 +1,7 @@
 //! Picks follow their faces by SolidCraft name when a model imports again
 //! (#3915): the undoable half of the follow, inside `UpdateModel`.
 //!
-//! Provenance: our own design (C13, `docs/decisions/3915-sc-face-name-follow.md`);
+//! Provenance: our own design (#4213, `docs/decisions/4213-sc-face-name-follow.md`);
 //! the match itself is `camcraft_geometry::source_follow`. No vendor
 //! material consulted.
 //!

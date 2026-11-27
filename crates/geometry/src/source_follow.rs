@@ -4,7 +4,7 @@
 //! the SolidCraft names of a face or patch whose geometry-hash id went
 //! missing.
 //!
-//! Provenance: our own design (C13, `docs/decisions/3915-sc-face-name-follow.md`).
+//! Provenance: our own design (#4213, `docs/decisions/4213-sc-face-name-follow.md`).
 //! The names are SolidCraft's own face identity, read from its published
 //! model cache (SolidCraft `crates/doc/src/model_cache.rs`, v0.50.0); the
 //! match is plain set equality. No vendor material consulted.
