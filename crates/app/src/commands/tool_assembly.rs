@@ -186,8 +186,11 @@ impl EditDocumentComponent {
         if prev[at] == row {
             return Err(CommandError::Invalid(format!("the tool component '{id}' is already so")));
         }
-        // A change of the library link alone derives nothing again.
-        let content_changed = prev[at].component != row.component || prev[at].geometry != row.geometry;
+        // A change of the library link alone derives nothing again; a
+        // change of anything else (the #3646 cutter facts and running
+        // data included) derives every user again.
+        let content_changed = DocumentComponent { library_ref: None, ..prev[at].clone() }
+            != DocumentComponent { library_ref: None, ..row.clone() };
         let mut next = prev.clone();
         next[at] = row;
         let mut updates = Vec::new();
