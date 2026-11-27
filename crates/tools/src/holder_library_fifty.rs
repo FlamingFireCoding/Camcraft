@@ -7,7 +7,7 @@
 //! `holder_library.rs` (full flange cylinder, 45-degree flare, the
 //! profile stops at the gauge line), not any vendor's model.
 
-use super::{family, HolderEntry, Taper, ER16, ER20, ER25, ER32, ER40, INCH_BORES, METRIC_BORES};
+use super::{family, HolderEntry, Taper, ER16, ER20, ER25, ER32, ER40, ER50, INCH_BORES, METRIC_BORES};
 
 /// JIS B 6339 / MAS 403 BT50: Ø69.85 gauge, Ø100 flange, 3 from the
 /// gauge line to the flange's back face, a 35 thick flange (its front
@@ -23,10 +23,10 @@ pub const CAT50: Taper = Taper { name: "CAT50", ring: "flange", gauge_d: 69.85, 
 const GAUGE: f64 = 100.0;
 
 /// The BT50 and CAT50 entries, in the editor's order: each taper's ER
-/// chucks (ER16-ER40, the whole ER table but ER11), then every Weldon
+/// chucks (ER16-ER50, the whole ER table but ER11), then every Weldon
 /// bore - a 50-taper body carries the largest of them.
 pub(super) fn entries() -> Vec<HolderEntry> {
-    let ers = [(ER16, GAUGE), (ER20, GAUGE), (ER25, GAUGE), (ER32, GAUGE), (ER40, GAUGE)];
+    let ers = [(ER16, GAUGE), (ER20, GAUGE), (ER25, GAUGE), (ER32, GAUGE), (ER40, GAUGE), (ER50, GAUGE)];
     let mut v = family(BT50, &ers, METRIC_BORES.iter().chain(INCH_BORES.iter()), GAUGE);
     v.extend(family(CAT50, &ers, INCH_BORES.iter().chain(METRIC_BORES.iter()), GAUGE));
     v

@@ -2,7 +2,8 @@
 //! and BT40 (JIS B 6339 / MAS 403 BT), CAT40 (ASME B5.50) - in ER collet
 //! chuck (ISO 15488 / DIN 6499 collets and nuts) and Weldon side-lock
 //! (DIN 1835 form B / DIN 6359 bores) versions, plus standalone
-//! (straight-shank) ER11-ER40 collet chucks, plus the Tormach TTS
+//! (straight-shank) ER11-ER40 collet chucks (ER50 on the 40 and 50
+//! tapers only), plus the Tormach TTS
 //! straight-shank holders (#794, `holder_library_tts.rs`), plus the HSK
 //! (`holder_library_hsk.rs`) and DIN 69871 SK / router ISO30
 //! (`holder_library_din.rs`) holders, the BT50 / CAT50 tapers
@@ -103,10 +104,13 @@ pub const ER32: ErSize = ErSize { name: "ER32", min_bore: 2.0, max_bore: 20.0, n
 /// ER40: Ø3-26 collets, M50×1.5 nut; Ø63 round nut at its longest
 /// common length.
 pub const ER40: ErSize = ErSize { name: "ER40", min_bore: 3.0, max_bore: 26.0, nut_d: 63.0, nut_len: 29.0 };
+/// ER50 (#3919): Ø5-34 collets, M64×2 nut; the Ø78 round nut drawn 40
+/// long (its makers list 35-39).
+pub const ER50: ErSize = ErSize { name: "ER50", min_bore: 5.0, max_bore: 34.0, nut_d: 78.0, nut_len: 40.0 };
 
 /// The one ER table every chuck in the library draws from - the
 /// taper-mounted ones and the standalone ones alike.
-pub const ER_SIZES: [ErSize; 6] = [ER11, ER16, ER20, ER25, ER32, ER40];
+pub const ER_SIZES: [ErSize; 7] = [ER11, ER16, ER20, ER25, ER32, ER40, ER50];
 
 /// The radius (mm) a Weldon body is drawn wider than its catalog
 /// diameter: the side-lock clamp screw's head can stand proud of the
@@ -279,7 +283,8 @@ impl HolderEntry {
 
 /// The standalone chucks' default gauge lengths (mm, nose face to the
 /// body's back face), ER11 to ER40: typical straight-shank chuck heads,
-/// rounded up - a longer body draws more steel, never less.
+/// rounded up - a longer body draws more steel, never less. ER50 has
+/// no standalone chuck: the zip with [`ER_SIZES`] stops at ER40.
 const STANDALONE_GAUGE: [f64; 6] = [30.0, 40.0, 45.0, 50.0, 55.0, 65.0];
 
 /// Every built-in holder, in the editor's order: by taper, ER chucks
@@ -311,8 +316,11 @@ pub fn library() -> Vec<HolderEntry> {
     v.extend(sizes("ER16", "ER32").map(|e| er(Some(BT40), e, 70.0)));
     // ER40's Ø63 nut is the BT40 flange's width: a longer default gauge.
     v.extend(sizes("ER40", "ER40").map(|e| er(Some(BT40), e, 80.0)));
+    // #3919: the Ø78 ER50 nut stands wider than the flange.
+    v.extend(sizes("ER50", "ER50").map(|e| er(Some(BT40), e, 100.0)));
     v.extend(METRIC_BORES.iter().chain(INCH_BORES.iter()).map(|b| weldon(BT40, b, 63.0)));
     v.extend(sizes("ER32", "ER32").map(|e| er(Some(CAT40), e, 70.0)));
+    v.extend(sizes("ER50", "ER50").map(|e| er(Some(CAT40), e, 100.0)));
     v.extend(INCH_BORES.iter().chain(METRIC_BORES.iter()).map(|b| weldon(CAT40, b, 63.5)));
     // #792: the standalone straight-shank chucks, nose face to the
     // body's back face (where the shank goes into the spindle).
@@ -356,7 +364,7 @@ pub use tts::{TTS, TTS_BODY_D};
 
 #[path = "holder_library_din.rs"]
 mod din;
-pub use din::{ISO30, SK30, SK40};
+pub use din::{ISO30, SK30, SK40, SK50};
 
 #[path = "holder_library_hsk.rs"]
 mod hsk;

@@ -28,6 +28,7 @@ fn the_tapers_and_nuts_match_the_recorded_table() {
             ("ER25", 1.0, 16.0, 42.0, 20.0),
             ("ER32", 2.0, 20.0, 50.0, 22.5),
             ("ER40", 3.0, 26.0, 63.0, 29.0),
+            ("ER50", 5.0, 34.0, 78.0, 40.0),
         ]
     );
     assert_eq!((WELDON_SCREW, FLARE), (1.0, 1.0), "1 mm screw allowance, 45-degree flare");

@@ -34,14 +34,14 @@ fn the_50_tapers_match_the_recorded_table() {
     assert!((CAT50.front_face() - 19.05).abs() < 1e-9, "0.750 in");
 }
 
-/// Each taper lists ER16-ER40, then every Weldon bore, at 100 mm.
+/// Each taper lists ER16-ER50, then every Weldon bore, at 100 mm.
 #[test]
 fn the_50_taper_entries_are_listed() {
     for t in ["BT50", "CAT50"] {
         let n = names(t);
-        assert_eq!(n.len(), 5 + 11, "{t}");
-        let ers: Vec<String> = ["ER16", "ER20", "ER25", "ER32", "ER40"].iter().map(|e| format!("{t} {e}")).collect();
-        assert_eq!(n[..5], ers[..], "{t}");
+        assert_eq!(n.len(), 6 + 11, "{t}");
+        let ers: Vec<String> = ["ER16", "ER20", "ER25", "ER32", "ER40", "ER50"].iter().map(|e| format!("{t} {e}")).collect();
+        assert_eq!(n[..6], ers[..], "{t}");
         for want in ["Weldon 6 mm", "Weldon 20 mm", "Weldon 1/4 in", "Weldon 3/4 in"] {
             assert!(n.iter().any(|x| *x == format!("{t} {want}")), "{t} {want}");
         }

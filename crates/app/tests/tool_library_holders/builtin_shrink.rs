@@ -4,7 +4,8 @@
 //! plain bore of its own size (no collet), a solid tool of that shank mounts in it and a
 //! tool of another shank is refused by name, and its geometry is the
 //! holder library's own outline at the library gauge length - never
-//! smaller than the steel. Provenance: our own tests over our own
+//! smaller than the steel. The SK50 holders and ER50 chucks of slice 3
+//! take the same conversion. Provenance: our own tests over our own
 //! holder table and commands.
 
 use camcraft_app::commands::{AddTool, History, SetToolAssembly, UpsertDocumentComponent};
@@ -96,4 +97,21 @@ fn a_built_in_shrink_fit_chuck_takes_its_own_shank_and_refuses_another() {
     assert!(body_of(&w, &e).is_some(), "the chuck outline is the tool's body");
     let Err(err) = SetToolAssembly::new(&w, "Other", stack(&other)) else { panic!("another shank is refused") };
     assert!(err.to_string().contains("Other"), "refused by name: {err}");
+}
+
+/// #3919 slice 3: the SK50 entries (ER and Weldon, with the ER50 chucks)
+/// take the same conversion: SK50 on the machine side, the collet or
+/// the Weldon bore on the workpiece side.
+#[test]
+fn the_sk50_holders_and_the_er50_chucks_are_built_ins() {
+    let sk50: Vec<LibraryComponent> =
+        lib::builtins().into_iter().filter(|c| c.component.id().starts_with("builtin:holder:SK50 ")).collect();
+    assert!(!sk50.is_empty(), "SK50 built-ins");
+    let sides = |c: &LibraryComponent| match c.component.kind() {
+        ComponentKind::AdaptiveItem { mcs, csw } => (mcs.clone(), csw.clone()),
+        _ => panic!("'{}' is not an adaptive item", c.component.id()),
+    };
+    assert!(sk50.iter().all(|c| sides(c).0 == code("SK50")));
+    assert!(sk50.iter().any(|c| sides(c).1 == code("ER50")), "an SK50 ER50 chuck");
+    assert!(sk50.iter().any(|c| matches!(sides(c).1, ConnectionCode::Weldon { .. })), "an SK50 Weldon holder");
 }

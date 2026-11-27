@@ -46,8 +46,8 @@ fn the_din_entries_are_listed() {
     assert_eq!(names("SK30"), thirty("SK30"));
     assert_eq!(names("ISO30"), thirty("ISO30"));
     let sk40 = names("SK40");
-    assert_eq!(sk40.len(), 5 + 11);
-    for want in ["SK40 ER40", "SK40 ER32", "SK40 Weldon 20 mm", "SK40 Weldon 3/4 in"] {
+    assert_eq!(sk40.len(), 6 + 11);
+    for want in ["SK40 ER40", "SK40 ER50", "SK40 ER32", "SK40 Weldon 20 mm", "SK40 Weldon 3/4 in"] {
         assert!(sk40.iter().any(|n| n == want), "{want}");
     }
     assert_eq!(entry("SK40 ER40").gauge_len, 80.0);
