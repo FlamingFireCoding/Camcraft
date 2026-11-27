@@ -158,14 +158,15 @@ pub struct EditDocumentComponent {
 
 impl EditDocumentComponent {
     /// Replace the catalog fact and the geometry of a held row; its
-    /// cutter facts, running data and library link stay. A hand edit
-    /// keeps the link (#3645): the sync status then shows that the
-    /// document copy differs from the library.
+    /// cutter facts, running data, lathe body and library link stay. A
+    /// hand edit keeps the link (#3645): the sync status then shows that
+    /// the document copy differs from the library.
     pub fn new(world: &World, component: ToolComponent, geometry: ComponentGeometry) -> Result<Self, CommandError> {
         let held = ta::component(world, component.id());
         let row = DocumentComponent {
             library_ref: held.as_ref().and_then(|r| r.library_ref.clone()),
             milling: held.as_ref().and_then(|r| r.milling),
+            lathe_body: held.as_ref().and_then(|r| r.lathe_body.clone()),
             running: held.and_then(|r| r.running),
             ..DocumentComponent::new(component, geometry)
         };

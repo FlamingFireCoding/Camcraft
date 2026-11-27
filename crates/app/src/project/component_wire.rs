@@ -11,7 +11,8 @@
 //! is refused, and each refusal names the row by its id. #3646: a
 //! multi-seat cutter body's catalog facts (`milling`) and an insert's
 //! running data (`running`) are optional keys; a fact on the wrong kind
-//! of row is refused by the row law of the component commands.
+//! of row is refused by the row law of the component commands. #3643: a
+//! lathe component's body (`lathe_body`) is an optional key too.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -28,6 +29,9 @@ use camcraft_tools::spun::SpunPoint;
 use camcraft_tools::milling_cutter::MillingBody;
 
 use super::{CuttingRowDto, ToolMaterialDto};
+#[path = "component_wire_lathe.rs"]
+mod lathe;
+pub use lathe::LatheBodyDto;
 use crate::schema::{DocumentComponent, InsertRunning, LibraryRef};
 
 /// One tool component on file.
@@ -48,6 +52,9 @@ pub struct ComponentDto {
     /// #3646: an insert's own tool material and cutting rows (an insert only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub running: Option<RunningDto>,
+    /// #3643: a lathe component's body (facets in its own frame).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lathe_body: Option<LatheBodyDto>,
 }
 
 /// #3646: the catalog facts of a multi-seat cutter body - `DC`, `KAPR`
@@ -245,6 +252,7 @@ pub fn component_to_dto(row: &DocumentComponent) -> ComponentDto {
             .map(|r| LibraryRefDto { id: r.id.clone(), content_hash: r.content_hash.clone() }),
         milling: row.milling.as_ref().map(milling_dto),
         running: row.running.as_ref().map(running_dto),
+        lathe_body: row.lathe_body.as_ref().map(lathe::lathe_body_dto),
     }
 }
 
@@ -253,8 +261,9 @@ pub fn component_to_dto(row: &DocumentComponent) -> ComponentDto {
 /// content gives the same hash in each build and on each machine. The
 /// id and the library link are not content: a document row and its
 /// library copy can have different ids. The #3646 cutter facts and
-/// running data are not in the hash either: a library copy does not
-/// hold them, and a sync keeps the document row's own.
+/// running data and the #3643 lathe body are not in the hash either: a
+/// library copy does not hold them, and a sync keeps the document row's
+/// own.
 #[must_use]
 pub fn content_hash(component: &ToolComponent, geometry: &ComponentGeometry) -> String {
     let content = (component.name(), item_dto(component.kind()), geometry_dto(geometry));
@@ -373,6 +382,7 @@ pub fn component_from_dto(dto: &ComponentDto) -> Result<DocumentComponent, Strin
             seat_count: m.seat_count,
         }),
         running: dto.running.as_ref().map(running),
+        lathe_body: dto.lathe_body.as_ref().map(lathe::lathe_body).transpose().map_err(named)?,
     };
     if let Some(why) = crate::commands::tool_assembly::row_refusal(&row) {
         return Err(why);
