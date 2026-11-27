@@ -1,7 +1,7 @@
 //! #3919: the holder library's shrink-fit chucks as built-in components
-//! (`component_library::builtins`). Pinned: each shrink-fit entry with a
-//! taper is a built-in holder, its workpiece side is a plain bore of its
-//! own size (no collet), a solid tool of that shank mounts in it and a
+//! (`component_library::builtins`). Pinned: each holder entry with a
+//! taper is a built-in holder, a shrink-fit chuck's workpiece side is a
+//! plain bore of its own size (no collet), a solid tool of that shank mounts in it and a
 //! tool of another shank is refused by name, and its geometry is the
 //! holder library's own outline at the library gauge length - never
 //! smaller than the steel. Provenance: our own tests over our own
@@ -37,13 +37,15 @@ fn solid(shank_12: bool) -> LibraryComponent {
 }
 
 #[test]
-fn every_shrink_fit_chuck_with_a_taper_is_a_built_in_with_a_plain_bore_of_its_size() {
+fn every_holder_with_a_taper_is_a_built_in_and_a_shrink_fit_bore_is_plain() {
     let all = lib::builtins();
     let mut n = 0;
     for e in holder_library::library() {
-        let (Some(taper), Clamp::Shrink { bore, .. }) = (e.taper, e.clamp) else { continue };
+        let Some(taper) = e.taper else { continue };
         let id = format!("builtin:holder:{}", e.name());
+        // No entry with a taper drops out of the catalogue in silence.
         let c = all.iter().find(|c| c.component.id() == id).unwrap_or_else(|| panic!("'{id}' is not a built-in"));
+        let Clamp::Shrink { bore, .. } = e.clamp else { continue };
         let ComponentKind::AdaptiveItem { mcs, csw } = c.component.kind() else { panic!("'{id}' is not an adaptive item") };
         assert_eq!(*mcs, code(taper.name), "{id}");
         assert_eq!(*csw, ConnectionCode::Cylindrical { d: bore }, "{id}: a shrink-fit bore, no collet");
