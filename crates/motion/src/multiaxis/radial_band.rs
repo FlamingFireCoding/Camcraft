@@ -218,20 +218,19 @@ pub(super) fn band_trim(
                     return;
                 }
                 // Two stretches touch when one ends where the next starts:
-                // they are one cut, and the join is glued, never a link.
-                // Only a real gap - a band edge or a dropped link move -
-                // takes a Rapid that the relink below rebuilds.
-                let glued = open && out.last().is_some_and(|m| m.to == s);
-                if !glued && let Some(prev) = out.last().map(|m| m.to) {
+                // they are one cut. Consecutive Feed records keep them one
+                // run for the relink below - never a link between them, and
+                // never one straight chord across the polyline's corner
+                // (#3490: extending the previous move's end cut every wrap
+                // arc's corner straight through the skin, a 1.5 mm gouge
+                // the envelope law rightly refused). Only a real gap - a
+                // band edge or a dropped link move - takes a Rapid that
+                // the relink below rebuilds.
+                let touch = open && out.last().is_some_and(|m| m.to == s);
+                if !touch && let Some(prev) = out.last().map(|m| m.to) {
                     out.push(Move::new(MoveKind::Rapid, prev, s, None));
                 }
-                if glued {
-                    if let Some(m) = out.last_mut() {
-                        m.to = e;
-                    }
-                } else {
-                    out.push(Move::new(MoveKind::Feed, s, e, ms[i].feed));
-                }
+                out.push(Move::new(MoveKind::Feed, s, e, ms[i].feed));
                 open = true;
             });
         }
