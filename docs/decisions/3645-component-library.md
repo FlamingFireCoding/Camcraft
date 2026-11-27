@@ -124,3 +124,6 @@ built-in rows do not change in a merge.
   Dropped for now: it changes `LibraryComponent` and every caller in
   the stacked PRs (#4268, #4271, #4280). A follow-up issue can add it.
 - Accept and drop the keys in a library file. Dropped: a silent loss.
+- Save a document row with the facts to the library and drop them.
+  Dropped: a silent loss. `LibraryComponent::from_row` refuses such a
+  row by name, and each save path (MCP, UI) goes through it.

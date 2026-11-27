@@ -60,6 +60,11 @@ fn the_store_round_trips_and_refuses_a_bad_file_whole_by_name() {
     assert!(e.contains(INSERT) && e.contains("library link"), "{e}");
     let e = with(&|v| v["components"][2]["running"] = json!({ "tool_material": "carbide" }));
     assert!(e.contains(INSERT) && e.contains("no running data"), "#3646 data stays in the document: {e}");
+    let (c, g) = insert("CCMT09T304");
+    let running = camcraft_app::schema::InsertRunning::default();
+    let row = camcraft_app::schema::DocumentComponent { running: Some(running), ..camcraft_app::schema::DocumentComponent::new(c, g) };
+    let e = LibraryComponent::from_row(row).err().unwrap_or_default();
+    assert!(e.contains(INSERT) && e.contains("running data"), "a save never drops the data silently: {e}");
     let e = with(&|v| v["components"][0]["id"] = json!("builtin:holder:mine"));
     assert!(e.contains("built-in"), "{e}");
     let e = with(&|v| v["version"] = json!(2));

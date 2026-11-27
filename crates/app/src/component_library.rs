@@ -51,6 +51,20 @@ impl LibraryComponent {
         content_hash(&self.component, &self.geometry)
     }
 
+    /// The library copy of a document row (its library link dropped).
+    /// Refused by name: a row with #3646 cutter facts or running data,
+    /// which a library component does not hold - a save never loses
+    /// them without a word.
+    pub fn from_row(row: DocumentComponent) -> Result<Self, String> {
+        if row.milling.is_some() || row.running.is_some() {
+            return Err(format!(
+                "tool component '{}' holds cutter facts or running data, which the component library does not hold",
+                row.component.id()
+            ));
+        }
+        Ok(Self { component: row.component, geometry: row.geometry })
+    }
+
     /// Is this a built-in, read-only component?
     #[must_use]
     pub fn is_builtin(&self) -> bool {
