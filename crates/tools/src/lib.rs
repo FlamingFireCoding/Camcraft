@@ -51,6 +51,7 @@ pub mod catalog_fields;
 // #890: a tool's cutting data per workpiece material.
 pub mod cutting_rows;
 pub mod waterjet;
+pub mod laser;
 // #1521: a torch's cut-data recipe per material and plate thickness.
 pub mod plasma_cut;
 pub mod wire;
