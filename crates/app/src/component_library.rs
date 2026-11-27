@@ -51,6 +51,20 @@ impl LibraryComponent {
         content_hash(&self.component, &self.geometry)
     }
 
+    /// The library copy of a document row (its library link dropped).
+    /// Refused by name: a row with #3646 cutter facts or running data,
+    /// which a library component does not hold - a save never loses
+    /// them without a word.
+    pub fn from_row(row: DocumentComponent) -> Result<Self, String> {
+        if row.milling.is_some() || row.running.is_some() {
+            return Err(format!(
+                "tool component '{}' holds cutter facts or running data, which the component library does not hold",
+                row.component.id()
+            ));
+        }
+        Ok(Self { component: row.component, geometry: row.geometry })
+    }
+
     /// Is this a built-in, read-only component?
     #[must_use]
     pub fn is_builtin(&self) -> bool {
@@ -95,6 +109,11 @@ pub fn parse(text: &str) -> Result<Vec<LibraryComponent>, String> {
         if dto.library_ref.is_some() {
             return Err(format!("tool component {label}: a library component has no library link"));
         }
+        if dto.milling.is_some() || dto.running.is_some() {
+            return Err(format!(
+                "tool component {label}: a library component holds no cutter facts and no running data"
+            ));
+        }
         if is_builtin_id(&dto.id) {
             return Err(format!("tool component {label}: the id space '{BUILTIN_PREFIX}' is for the built-in components"));
         }
@@ -111,7 +130,7 @@ pub fn parse(text: &str) -> Result<Vec<LibraryComponent>, String> {
 pub fn to_text(entries: &[LibraryComponent]) -> Result<String, String> {
     let rows: Vec<ComponentDto> = entries
         .iter()
-        .map(|e| component_to_dto(&DocumentComponent { component: e.component.clone(), geometry: e.geometry.clone(), library_ref: None }))
+        .map(|e| component_to_dto(&DocumentComponent::new(e.component.clone(), e.geometry.clone())))
         .collect();
     let doc = json!({ "format": FORMAT, "version": VERSION, "units": "mm", "components": rows });
     serde_json::to_string_pretty(&doc).map_err(|e| format!("component library not written: {e}"))

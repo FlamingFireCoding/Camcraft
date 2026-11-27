@@ -296,7 +296,7 @@ impl State {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| format!("the user component library folder is not made: {e}"))?;
         }
-        let entry = LibraryComponent { component: row.component, geometry: row.geometry };
+        let entry = LibraryComponent::from_row(row)?;
         store::put(&path, entry).map_err(|e| format!("not saved to My library: {e}"))?;
         self.reload_component_library();
         // The document row now links to the copy it was saved as.

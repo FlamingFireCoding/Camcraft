@@ -72,7 +72,7 @@ fn a_built_in_chuck_collet_and_tool_resolve_to_the_tool_with_its_gauge() {
         .iter()
         .map(|id| {
             let c = get(&all, id);
-            DocumentComponent { component: c.component.clone(), geometry: c.geometry.clone(), library_ref: None }
+            DocumentComponent::new(c.component.clone(), c.geometry.clone())
         })
         .collect();
     let ComponentKind::CuttingItem(CuttingItem::Solid { tool, .. }) = get(&all, TOOL).component.kind() else { panic!("solid") };
