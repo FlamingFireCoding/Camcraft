@@ -42,9 +42,12 @@ mod tests {
         assert_eq!(t.kind.to_string(), "laser head");
     }
 
+    /// A refusal's words and the change that breaks the head.
+    type Case = (&'static str, fn(&mut Tool));
+
     #[test]
     fn a_bad_laser_head_is_refused_by_name() {
-        let cases: [(&str, fn(&mut Tool)); 5] = [
+        let cases: [Case; 5] = [
             ("rpm must be 0", |t| t.rpm = 1000.0),
             ("kerf (diameter) must be finite", |t| t.diameter = 0.0),
             ("kerf (diameter) must be finite", |t| t.diameter = f64::NAN),
