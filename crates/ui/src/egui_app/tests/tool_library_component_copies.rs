@@ -1,6 +1,6 @@
 //! #3898 (U7 of #3663), the review of PR #4271: "Copy as user component"
 //! of a document row keeps the whole row - its #3646 cutter facts and
-//! running data - under the new id, without the library link, in one
+//! running data, its #4278 lathe body - under the new id, without the library link, in one
 //! undo step; "Add to document" by a click is one undo step that undo
 //! takes back with its link and redo lands again; the component pages'
 //! caches in State build only when their input changes.
@@ -9,6 +9,7 @@
 //! command history; no HSMWorks material involved.
 
 use camcraft_app::commands::UpsertDocumentComponent;
+use camcraft_app::lathe_assembly::{BodyBox, LatheBody};
 use camcraft_app::milling_cutter::MillingBody;
 use camcraft_app::schema::{DocumentComponent, InsertRunning, LibraryRef};
 use camcraft_app::tool_assembly as ta;
@@ -32,8 +33,8 @@ fn views(h: &H) -> crate::state::ViewBuilds {
     h.state().state.component_views.builds()
 }
 
-/// Two linked document rows with #3646 data: a cutter body with its
-/// facts, an insert with its running data.
+/// Three linked document rows: a cutter body with its #3646 facts, an
+/// insert with its running data, a turning holder with its lathe body.
 fn rows_with_facts(h: &mut H) {
     let link = Some(LibraryRef { id: "user:body:Shop".into(), content_hash: "0".into() });
     let st = &mut h.state_mut().state;
@@ -42,8 +43,12 @@ fn rows_with_facts(h: &mut H) {
     let body = DocumentComponent { milling: Some(milling), library_ref: link.clone(), ..DocumentComponent::new(c, g) };
     let (c, g) = insert("CCMT09T304");
     let running = InsertRunning { tool_material: Some(ToolMaterial::Carbide), cutting: Vec::new() };
-    let ins = DocumentComponent { running: Some(running), library_ref: link, ..DocumentComponent::new(c, g) };
-    for r in [body, ins] {
+    let ins = DocumentComponent { running: Some(running), library_ref: link.clone(), ..DocumentComponent::new(c, g) };
+    let (c, g) = fly("turn-holder", 0.0);
+    let boxes = [BodyBox { lo: [-10.0, -10.0, -60.0], hi: [10.0, 10.0, 0.0] }];
+    let lathe_body = LatheBody::boxes(&boxes).unwrap_or_else(|e| panic!("lathe body: {e:?}"));
+    let turn = DocumentComponent { lathe_body: Some(lathe_body), library_ref: link.clone(), ..DocumentComponent::new(c, g) };
+    for r in [body, ins, turn] {
         let cmd = UpsertDocumentComponent::with_row(&st.world, r).unwrap_or_else(|e| panic!("row: {e}"));
         st.history.execute(&st.world, cmd);
     }
@@ -52,21 +57,23 @@ fn rows_with_facts(h: &mut H) {
 }
 
 /// A copy of a document row keeps every field but its id and its library
-/// link: the cutter body's facts and the insert's running data too. The
+/// link: the cutter body's facts, the insert's running data and the
+/// turning holder's lathe body too. The
 /// copy is one undo step; undo removes it and redo lands it whole again.
 #[test]
 fn a_copy_of_a_document_row_keeps_its_facts_and_running_data() {
     let dir = lib_dir("copy-row");
     let mut h = shell(&dir);
     rows_with_facts(&mut h);
-    for (src, copy) in [("fly-25", "user:body:fly-25"), (INSERT, "user:insert:CCMT09T304")] {
+    let pairs = [("fly-25", "user:body:fly-25"), (INSERT, "user:insert:CCMT09T304"), ("turn-holder", "user:body:turn-holder")];
+    for (src, copy) in pairs {
         let before = done(&h);
         queue(&mut h, ComponentAction::CopyAsUser { id: src.into() });
         assert_eq!(done(&h), before + 1, "the copy of {src} is one undo step");
         let (Some(old), Some(new)) = (row(&h, src), row(&h, copy)) else {
             panic!("the document holds {src} and its copy {copy}");
         };
-        assert!(old.milling.is_some() || old.running.is_some(), "{src} has #3646 data");
+        assert!(old.milling.is_some() || old.running.is_some() || old.lathe_body.is_some(), "{src} has row data");
         assert_eq!(new.component.id(), copy);
         assert_eq!(new.library_ref, None, "the copy has no library link");
         let want = DocumentComponent { component: new.component.clone(), library_ref: None, ..old };
