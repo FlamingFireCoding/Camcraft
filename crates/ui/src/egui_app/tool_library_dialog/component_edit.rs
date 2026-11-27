@@ -136,7 +136,7 @@ pub(super) fn draw(ui: &mut Ui, state: &mut State) {
             .on_hover_text("write this draft to the component and each tool built from it (one undo step)")
             .clicked()
         {
-            ask = Some(build(&d, &row).map(|(component, geometry)| ComponentAction::Edit { component, geometry }));
+            ask = Some(build(&d, &row).map(|edit| ComponentAction::Edit(Box::new(edit))));
         }
         let differs = matches!(status, SyncStatus::UpdateAvailable { .. });
         if ui

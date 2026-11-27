@@ -121,7 +121,7 @@ pub enum ComponentAction {
     /// document component `id` under a new `user:` id, not linked.
     CopyAsUser { id: String },
     /// Replace a document component (the live update of its tools).
-    Edit { component: ToolComponent, geometry: ComponentGeometry },
+    Edit(Box<(ToolComponent, ComponentGeometry)>),
     /// Pull the library copy of document component `id`.
     Sync { id: String },
     DeleteFromDocument { id: String },
@@ -173,7 +173,10 @@ impl State {
         let out = match action {
             ComponentAction::AddFromLibrary { id } => self.add_from_library(&id),
             ComponentAction::CopyAsUser { id } => self.copy_as_user(&id),
-            ComponentAction::Edit { component, geometry } => self.edit_component(component, geometry),
+            ComponentAction::Edit(edit) => {
+                let (component, geometry) = *edit;
+                self.edit_component(component, geometry)
+            }
             ComponentAction::Sync { id } => self.sync_component(&id),
             ComponentAction::DeleteFromDocument { id } => DeleteDocumentComponent::new(&self.world, &id)
                 .map(|c| {
