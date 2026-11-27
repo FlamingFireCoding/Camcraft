@@ -5,8 +5,12 @@
 //! shared insert updates two holder assemblies in one undo step, their
 //! turning operations go Stale, and undo and redo are exact; a kind,
 //! a root or a stack that the lathe resolver does not take is refused
-//! by name and changes nothing. Provenance: our own tests over our own
-//! commands.
+//! by name and changes nothing. #3645: the rows with their lathe bodies
+//! save in the `.camproj` and open again identically, byte for byte, and
+//! the reopened document derives the same records and bodies; a corrupt
+//! lathe body refuses the file by name; a component library save of a
+//! row with a lathe body is refused by name. Provenance: our own tests
+//! over our own commands and format.
 
 use camcraft_app::commands::{
     AddTool, CreateOperation, EditDocumentComponent, GenerateOperation, History, ImportModel, LoadMachine,
@@ -280,4 +284,59 @@ fn a_kind_a_root_or_a_stack_the_lathe_resolver_does_not_take_is_refused_by_name(
         let e = model::find_by_name(&w, n).expect("tool");
         assert!(assembly_of(&w, &e).is_none() && body_of(&w, &e).is_none(), "{n} is bare");
     }
+}
+
+fn reopen(text: &str) -> World {
+    let w = camcraft_app::world::new_world();
+    camcraft_app::project::open(&w, text).expect("open");
+    w
+}
+
+#[test]
+fn a_linked_turning_stack_with_its_lathe_body_reopens_identically() {
+    let (w, _h) = lathe_shop();
+    let text = camcraft_app::project::save_text(&w).expect("save");
+    let file: serde_json::Value = serde_json::from_str(&text).expect("json");
+    let row = |id: &str| file["components"].as_array().and_then(|r| r.iter().find(|c| c["id"] == id)).cloned();
+    let facets = row(HOLDER_M).and_then(|r| r["lathe_body"]["facets"].as_array().map(Vec::len));
+    assert_eq!(facets, Some(24), "two boxes, twelve facets each: {:?}", row(HOLDER_M));
+    assert!(row(INSERT).is_some_and(|r| r.get("lathe_body").is_none()), "an insert row writes no lathe body");
+
+    let w2 = reopen(&text);
+    assert_eq!(snapshot(&w2), snapshot(&w), "the rows, the lathe bodies, the Turning records and the bodies");
+    assert_eq!(camcraft_app::project::save_text(&w2).expect("save"), text, "save -> open -> save is byte-stable");
+
+    // The reopened rows derive again: the same edit gives the same result.
+    let mut h1 = History::default();
+    let mut h2 = History::default();
+    h1.execute(&w, EditDocumentComponent::with_row(&w, insert("CNMG120404")).expect("edit"));
+    h2.execute(&w2, EditDocumentComponent::with_row(&w2, insert("CNMG120404")).expect("edit"));
+    assert_eq!(snapshot(&w2), snapshot(&w), "the reopened lathe body derives the same records and bodies");
+}
+
+#[test]
+fn a_corrupt_lathe_body_refuses_the_file_and_a_library_save_refuses_the_row() {
+    let (w, _h) = lathe_shop();
+    let text = camcraft_app::project::save_text(&w).expect("save");
+    let refused = |f: &dyn Fn(&mut serde_json::Value)| {
+        let mut v: serde_json::Value = serde_json::from_str(&text).expect("json");
+        if let Some(r) = v["components"].as_array_mut().and_then(|r| r.iter_mut().find(|c| c["id"] == HOLDER_M)) {
+            f(&mut r["lathe_body"]);
+        }
+        let w = camcraft_app::world::new_world();
+        let Err(e) = camcraft_app::project::open(&w, &v.to_string()) else { panic!("a corrupt lathe body opened") };
+        assert!(components(&w).is_empty(), "no row landed");
+        e.to_string()
+    };
+    let e = refused(&|b| b["facets"] = serde_json::json!([]));
+    assert!(e.contains(HOLDER_M) && e.contains("no facets"), "{e}");
+    let e = refused(&|b| b["facets"][0][0][0] = serde_json::json!("x"));
+    assert!(!e.is_empty(), "a facet that is not a number: {e}");
+    let e = refused(&|b| b["boxes"] = serde_json::json!([]));
+    assert!(e.contains("boxes"), "an unknown key: {e}");
+
+    let Err(e) = camcraft_app::component_library::LibraryComponent::from_row(holder_m()) else {
+        panic!("a library save took a lathe body")
+    };
+    assert!(e.contains(HOLDER_M) && e.contains("lathe body"), "{e}");
 }
