@@ -3,7 +3,7 @@
 //! Verifies:
 //! - G54.1 P<n> for extended work offsets (10..500) and standard G54..G59.3 (1..9).
 //! - Reverse spindle (PARAM MillSpindle reverse) emits M4.
-//! - Left-hand tap emits G74.
+//! - Left-hand tap is refused by name (G74 unsupported).
 //! - Right-hand programs remain unchanged (M3 and G84).
 //! - Control cutter compensation (G41/G42 with D word and G40 cancel).
 //!
@@ -108,7 +108,7 @@ ENDSECTION
 }
 
 #[test]
-fn tormach_left_hand_tap_emits_g74() {
+fn tormach_left_hand_tap_is_refused() {
     let stream = "\
 PARAM ClearancePlane 25.0
 PARAM RetractPlane 5.0
@@ -125,10 +125,13 @@ Feed X 10000 Y 20000 Z 2000 F 600000
 ENDSECTION
 ";
     let out = post(stream);
-    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
-    assert!(out.program.contains("G74"), "expected G74 left-hand tap cycle:\n{}", out.program);
-    assert!(!out.program.contains("G84"), "must not contain G84:\n{}", out.program);
-    assert!(out.program.contains("S600 M4"), "expected S600 M4:\n{}", out.program);
+    assert!(
+        out.warnings.iter().any(|w| w.contains("left-hand rigid tapping (G74) is not supported")),
+        "expected refusal warning:\n{:?}",
+        out.warnings
+    );
+    assert!(!out.program.contains("G74"), "must not emit G74:\n{}", out.program);
+    assert!(!out.program.contains("G84"), "must not emit G84:\n{}", out.program);
 }
 
 #[test]

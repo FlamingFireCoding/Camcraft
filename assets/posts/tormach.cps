@@ -124,14 +124,13 @@ function fw(v) { return has(v) ? "F" + ff(v) : ""; }
 // inch decimals; a tap whose written F and S do not hold the pitch to 0.01
 // percent is refused by name.
 function tapFeed(v) { return fu(v); }
-function tapPitchHolds(feed, gWord) {
-  var gName = gWord || "G84";
+function tapPitchHolds(feed) {
   var speed = Math.round(sRpm);
   var written = Number(fu(feed)) * (inch ? 25.4 : 1);
   var want = sRpm > 0 ? feed / sRpm : 0;
   var got = speed > 0 ? written / speed : 0;
   if (!(want > 0 && Math.abs(got - want) / want <= 1e-4)) {
-    msg("canned cycle " + gName + " (tap)" + inOp() + " feed " + feed + " mm/min at " + sRpm +
+    msg("canned cycle G84 (tap)" + inOp() + " feed " + feed + " mm/min at " + sRpm +
       " rpm posts as F" + tapFeed(feed) + " S" + speed + " - refused: the written pitch differs by more than 0.01 percent");
     return false;
   }
@@ -287,6 +286,16 @@ function planeWord(g) {  // "" while modal; the word (and the new state) on chan
   return "G" + g;
 }
 function restorePlane() { var pw = planeWord(17); if (pw) block([pw]); }
+// #391: a control offsets the cutter in the ACTIVE plane, and every mill
+// generator compensates in XY - so the block that writes G41/G42/G40
+// states G17 when an XZ/YZ arc left G18/G19 modal, and no arc leaves
+// G17 while compensation is engaged (refused by name, see onCircular).
+function compPlaneWord(cg) { return cg ? planeWord(17) : ""; }
+function compPlaneRefuse(g) {
+  if (!compOn || g === 17) return false;
+  msg("an " + (g === 18 ? "XZ (G18)" : "YZ (G19)") + " arc while cutter compensation is engaged - the control would compensate in that plane; cancel compensation (G40) first");
+  return true;
+}
 // The center words of the arc's plane as increments from the start
 // point (G91.1, stated in the header): a shared translation cancels in
 // an increment, so the origin must NOT enter them.
@@ -1166,7 +1175,10 @@ function onLinear() {
   if (!startXY(properties)) return;  // #1614: refused - the move is not written
   var cg = compG, cd = compD;
   compG = ""; compD = "";
-  var words = ["G1"];
+  var cp = compPlaneWord(cg);
+  var words = [];
+  if (cp) words.push(cp);
+  words.push("G1");
   if (cg) words.push(cg);
   words = words.concat(xyz(properties));
   if (cd) words.push(cd);
@@ -1181,6 +1193,7 @@ function onCircular() {
   if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   if (chainCut() || !motionFor(properties, "arc move")) return;
   var p = properties;
+  if (compPlaneRefuse(planeOf(p))) return;
   if (indexed()) {  // #785: a tilted path is chords; an arc here is unstated
     aRefuse("arc on an indexed A" + inOp() + " - the indexed frame posts lines only");
     return;
@@ -1362,17 +1375,21 @@ function onCycle() {
   // bottom dwell itself, and the MX mills tap from the spindle encoder.
   else if (p.CycleType === "TAP") {
     var isLeftTap = spinRev || p.CycleType === "LEFT_TAP" || String(p.TappingDirection || "") === "reverse" || String(p.CycleDirection || "") === "reverse" || String(p.ThreadHand || "") === "left";
-    var tapCode = isLeftTap ? "G74" : "G84";
+    if (isLeftTap) {
+      if (!tapRefused) tapRefused = true; else return;
+      msg("left-hand rigid tapping (G74) is not supported on PathPilot - use thread milling");
+      return;
+    }
     // A machine that says it cannot rigid-tap (the R8 770M, 1100M, PCNC 440
     // and the Mach3-era PCNC 770 / 1100: tapping heads, tension/compression
     // holders and thread milling only) refuses the
     // cycle by name rather than posting a G84 its spindle cannot follow.
     if (typeof machine !== "undefined" && machine.rigidTapping === false) {
       if (!tapRefused) tapRefused = true; else return;
-      msg("rigid tapping (" + tapCode + ") is not available on " + (machine.name || "this machine") + " - use a tapping head or thread milling");
+      msg("rigid tapping (G84) is not available on " + (machine.name || "this machine") + " - use a tapping head or thread milling");
       return;
     }
-    g = tapCode;
+    g = "G84";
   }
   else {
     // #1445: a cycle kind this post does not know is refused by name,
@@ -1403,7 +1420,7 @@ function onCycle() {
     return;
   }
   if (spindleStopped("canned cycle " + g)) return;
-  if ((g === "G84" || g === "G74") && !tapPitchHolds(Number(p.FeedRate), g)) return;
+  if (g === "G84" && !tapPitchHolds(Number(p.FeedRate))) return;
   if (!xyFirst(p.X, p.Y)) return;  // a cycle as the first move: its first hole (#1614: refused - not written)
   cycleSeat(p);
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
@@ -1423,7 +1440,7 @@ function onCycle() {
     // #2362: LinuxCNC / PathPilot requires a non-negative P on the first
     // G86 block of a cycle, even when the dwell is 0 (P0).
     if (g === "G86" || (dwell > 0 && (g === "G82" || g === "G89"))) words.push("P" + secs(dwell));
-    words.push((g === "G84" || g === "G74") ? "F" + tapFeed(p.FeedRate) : fw(p.FeedRate));
+    words.push(g === "G84" ? "F" + tapFeed(p.FeedRate) : fw(p.FeedRate));
     block(words);
     cycleSig = sig;
   }
