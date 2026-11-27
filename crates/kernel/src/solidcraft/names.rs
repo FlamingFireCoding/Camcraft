@@ -18,7 +18,7 @@
 use serde_json::Value;
 
 /// The model-cache format whose face names are read
-/// (docs/decisions/3915-sc-face-names.md, D1).
+/// (docs/decisions/4212-sc-face-names.md, D1).
 pub const NAMES_FORMAT: &str = "solidcraft-model-cache/10";
 
 /// The longest face name kept, in bytes: our own bound. SolidCraft's names

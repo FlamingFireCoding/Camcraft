@@ -1,4 +1,4 @@
-## #3915 - D1: SolidCraft face names are read from model cache format 10 only
+## #4212 - D1: SolidCraft face names are read from model cache format 10 only
 
 **Decided.** The `.sc` reader reads the face names of the final body only when the cache manifest's `format` is `solidcraft-model-cache/10` (`camcraft_kernel::solidcraft::NAMES_FORMAT`). The names are `model.names[n]`, where `n` is the final model body's `names` field: `faces[i]` is the name of record face `i`, and `info[i]` is `[aliases, bounds, verified, synonyms]` with an optional fifth item, the former name of a Split Face piece. Only `faces`, `verified` and `former` are kept. A cache of another format (the format-8 sample) gives no names and no note, and imports exactly as before.
 
@@ -10,7 +10,7 @@
 
 **Cost to change later.** One constant (a list of formats) and one pin in `solidcraft_import/names.rs`.
 
-## #3915 - D2: The import never fails because of names
+## #4212 - D2: The import never fails because of names
 
 **Decided.** Names that do not fit give no names and one note, never a refusal. A misfit is: no names list, no or a bad index, a record without `faces` or `info`, a count of names or info items that is not the record's face count, a name that is not a text of 1 to `MAX_NAME_BYTES` (16 KiB) bytes, or an info item that is not four or five items of the right kinds. The note starts "Solidcraft: the face names were not read:" and says which. It goes with the import notes (the status line, the MCP result), only for a format-10 cache. In geometry, a record whose ranges do not tile the facets is dropped with the note "Solidcraft: the face names do not fit the mesh's facets; they were not kept". In the app, `source_faces::set` drops a record that does not tile the model's facets, with a logged warning.
 
@@ -22,7 +22,7 @@
 
 **Cost to change later.** Low: `names::read` returns the note, and the callers only carry it.
 
-## #3915 - D3: The face names are held in memory only in this PR
+## #4212 - D3: The face names are held in memory only in this PR
 
 **Decided.** A model imported from a `.sc` design carries `schema::SourceFaces { rev, len, record }`, written and read only through `source_faces::{set, of}`. It is not saved: the project file does not change, and a reopened project has no names. `of` gives the record only at the revision and facet count it was landed with, and only when its ranges tile the facets (the `SolidRanges` guard, #917). `ImportModel` lands it. `UpdateModel::with_source_faces` states it, and the update trades it on undo; an update that does not state it drops it, so `RepairModel` (through `keeping_fidelity`, which does not keep it), an update from a file that is not `.sc`, and the vise, accessory and plate rebuilds drop the names. `DeleteEntity` puts it back on undo. The window's re-import, the script and MCP `import_model`, and the fixture re-import state it.
 
