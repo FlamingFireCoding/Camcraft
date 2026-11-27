@@ -216,10 +216,8 @@ impl MeshBody {
         let used = |r: &CsysRole| matches!(r, CsysRole::Mounting | CsysRole::InProcess | CsysRole::WorkpieceSide { .. });
         let has_mount = self.frames.iter().any(|f| f.role == CsysRole::Mounting);
         // With no mount at all, NoMount lists the refused frames instead.
-        if has_mount {
-            if let Some(r) = self.refused.iter().find(|r| used(&r.role)) {
-                return Err(MeshBodyError::RefusedFrame { name: r.name.clone(), why: r.said.clone() });
-            }
+        if has_mount && let Some(r) = self.refused.iter().find(|r| used(&r.role)) {
+            return Err(MeshBodyError::RefusedFrame { name: r.name.clone(), why: r.said.clone() });
         }
         let mounts: Vec<&NamedFrame> = self.frames.iter().filter(|f| f.role == CsysRole::Mounting).collect();
         let mcs = match mounts.as_slice() {
