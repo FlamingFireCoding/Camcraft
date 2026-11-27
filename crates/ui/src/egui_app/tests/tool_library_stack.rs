@@ -13,7 +13,7 @@
 use camcraft_app::schema::AssemblyLink;
 use camcraft_app::tool_assembly as ta;
 use egui::accesskit::Role;
-use egui_kittest::kittest::NodeT;
+use egui_kittest::kittest::{NodeT, Queryable};
 
 use super::tool_library_components::{A, INSERT, done, lib_dir, open_library, pick, redo, shell, shop, shows, undo};
 use super::tool_library_editor::{H, click_window_button, library_window, open_in_window, tool};
