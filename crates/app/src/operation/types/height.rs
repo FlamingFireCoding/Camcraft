@@ -211,11 +211,14 @@ impl RadialHeight {
         RadialHeight { source, offset }
     }
 
-    /// Structural sanity, no world: a finite offset. Ordering lives on
-    /// resolved radii ([`crate::operation::radial_gate`]).
+    /// Structural sanity, no world: a finite offset, and an ABSOLUTE
+    /// radius that is a distance above the axis (a negative absolute
+    /// radius is no radius at all - the stored expression is the radius
+    /// there). Ordering lives on resolved radii
+    /// ([`crate::operation::radial_gate`]).
     #[must_use]
     pub fn is_sane(&self) -> bool {
-        self.offset.is_finite()
+        self.offset.is_finite() && (!self.is_absolute() || self.offset >= 0.0)
     }
 
     #[must_use]

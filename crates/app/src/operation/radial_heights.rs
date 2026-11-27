@@ -120,11 +120,38 @@ pub struct RadialContext {
     pub stock_rho: Option<f64>,
 }
 
-/// Read the source and stock facets and fit the axis. Err names the missing
-/// geometry (the same refusals `material_of` gives) or the axis fit's own.
-pub fn radial_context(world: &World, setup: Option<&str>, src: &super::types::SrcRef) -> Result<RadialContext, String> {
+/// Read the source and stock facets and take the axis line the radii are
+/// measured about - the SAME axis generation turns about (#2772): a stated
+/// rotation axis (the op's own direction, else the mounted machine's
+/// stated rotary lines, each anchored through the work offset origin) is
+/// judged against the source's faces exactly as `generate` judges it; a
+/// work with nothing stated keeps the free fit. The viewport ring and the
+/// toolpath answer for one and the same line.
+pub fn radial_context(
+    world: &World,
+    setup: Option<&str>,
+    src: &super::types::SrcRef,
+    params: &OpParams,
+) -> Result<RadialContext, String> {
+    radial_context_about(world, setup, src, crate::rotary_stated::op_stated(params))
+}
+
+/// [`radial_context`] from the op's own statement alone - what the
+/// viewport's ring overlay reads of the open draft (a display-only read of
+/// the same resolver; the machine's lines and the offset are read from the
+/// world here too).
+pub fn radial_context_about(
+    world: &World,
+    setup: Option<&str>,
+    src: &super::types::SrcRef,
+    stated: Option<[f64; 3]>,
+) -> Result<RadialContext, String> {
     let part = super::material::source_facets(world, setup, src)?;
-    let ax = axis::fit(&part).map_err(|e| e.to_string())?;
+    let ax = match crate::rotary_stated::axis_lines_of(world, setup, stated) {
+        Some(Ok(lines)) => crate::multiaxis::axis_stated::judged_any(&part, &lines).map_err(|e| e.to_string())?,
+        Some(Err(e)) => return Err(e.to_string()),
+        None => axis::fit(&part).map_err(|e| e.to_string())?,
+    };
     let part_rho = rho_max(&part, &ax).ok_or_else(|| "the model has no radius about its axis".to_string())?;
     let stock = crate::model::find_by_name(world, &crate::setup::stock_entity_name(world, setup))
         .and_then(|e| crate::model::world_facets(world, &e));
@@ -147,7 +174,7 @@ pub fn resolve_radial(
         return Ok(ResolvedRadial::default());
     }
     let src = src.ok_or_else(|| "the operation has no source to read its radii about".to_string())?;
-    let c = radial_context(world, setup, src)?;
+    let c = radial_context(world, setup, src, params)?;
     let one = |name: &str, h: Option<RadialHeight>| -> Result<Option<f64>, String> {
         h.map(|h| resolve_one(name, h, c.part_rho, c.stock_rho)).transpose()
     };
@@ -159,33 +186,56 @@ pub fn resolve_radial(
     })
 }
 
-/// The radial gate (#2774): a clearance or retract radius that stands inside
-/// the stock's or the part's own radius would drive the tool through metal on
-/// a rapid. Refused by name at the command, in the generators' own words. The
-/// cut band must also order: the top cylinder above the bottom one, and the
-/// top under the clearance cylinder. Open when no radial
-/// field is set, or when the axis cannot be fitted (the generator names that
-/// one), so an old Z-plane op and a non-turning model never gain a new wall.
+/// The radial gate (#2774): every SET radial field is validated before the
+/// parameters are stored - its source resolves (a stock radius with no
+/// stock names the setup page), the resolved radius is a distance above
+/// the axis, and a clearance or retract radius that stands inside the
+/// stock's or the part's own radius about the fitted axis would drive the
+/// tool through metal on a rapid. The cut band must also order: the top
+/// cylinder above the bottom one (and above the axis when it stands
+/// alone), and the top under the clearance cylinder. Refused by name at
+/// the command, in the generators' own words. Open when no radial field is
+/// set, or when the axis itself cannot be read (the generator names that
+/// one), so an old Z-plane op and a non-turning model never gain a new
+/// wall.
 pub fn radial_gate(world: &World, setup: Option<&str>, src: &super::types::SrcRef, params: &OpParams) -> Option<String> {
     let [clearance, retract, top, bottom] = radial_fields(params)?;
     if clearance.is_none() && retract.is_none() && top.is_none() && bottom.is_none() {
         return None;
     }
-    let c = radial_context(world, setup, src).ok()?;
+    let c = radial_context(world, setup, src, params).ok()?;
     let floor = c.part_rho.max(c.stock_rho.unwrap_or(0.0));
-    for (name, h) in [("Clearance radius", clearance), ("Retract radius", retract)] {
+    // Every SET field resolves and stands in range before anything is
+    // stored: a resolution failure (a stock radius with no stock, a
+    // result that is not finite) refuses by name - never silently
+    // skipped - and a resolved radius is a distance above the axis.
+    let mut resolved = [None; 4];
+    for (i, (name, h)) in
+        [("Clearance radius", clearance), ("Retract radius", retract), ("Top radius", top), ("Bottom radius", bottom)]
+            .into_iter()
+            .enumerate()
+    {
         let Some(h) = h else { continue };
-        let Ok(v) = resolve_one(name, h, c.part_rho, c.stock_rho) else { continue };
-        if v < floor {
+        let v = match resolve_one(name, h, c.part_rho, c.stock_rho) {
+            Ok(v) => v,
+            Err(why) => return Some(why),
+        };
+        if let Some(why) = radius_range(name, v) {
+            return Some(why);
+        }
+        resolved[i] = Some(v);
+    }
+    let (cl_v, re_v, t_v, b_v) = (resolved[0], resolved[1], resolved[2], resolved[3]);
+    for (name, v) in [("Clearance radius", cl_v), ("Retract radius", re_v)] {
+        if let Some(v) = v
+            && v < floor
+        {
             return Some(format!(
                 "{name} {v:.3} mm stands inside the work's {floor:.3} mm radius about the bar's axis - raise it past the stock"
             ));
         }
     }
-    let pick = |name: &str, h: Option<RadialHeight>| -> Option<f64> {
-        h.and_then(|h| resolve_one(name, h, c.part_rho, c.stock_rho).ok())
-    };
-    if let (Some(t), Some(b)) = (pick("Top radius", top), pick("Bottom radius", bottom))
+    if let (Some(t), Some(b)) = (t_v, b_v)
         && t <= b
     {
         return Some(format!(
@@ -194,12 +244,37 @@ pub fn radial_gate(world: &World, setup: Option<&str>, src: &super::types::SrcRe
     }
     // The band must sit under the rapids: a top radius at or above the
     // clearance radius would put a cut where the hop travels.
-    if let (Some(t), Some(cl)) = (pick("Top radius", top), pick("Clearance radius", clearance))
+    if let (Some(t), Some(cl)) = (t_v, cl_v)
         && t >= cl
     {
         return Some(format!(
             "Top radius {t:.3} mm stands at or above Clearance radius {cl:.3} mm - the rapids would run through the band - lower the top or raise the clearance"
         ));
     }
+    // The one-sided band's own range: a top radius with no bottom states
+    // the band 0..top, which is empty unless the top stands over the axis.
+    if let Some(t) = t_v
+        && bottom.is_none()
+        && t <= 0.0
+    {
+        return Some(format!(
+            "Top radius {t:.3} mm stands at or under the bar's axis - the band it states is empty - raise it"
+        ));
+    }
     None
+}
+
+/// A resolved radius is a distance above the axis: a negative one is no
+/// radius at all. Zero stands (a band floor at the axis is the checkbox
+/// default); a negative radius refuses by name.
+fn radius_range(name: &str, v: f64) -> Option<String> {
+    if v.is_finite() && v >= 0.0 {
+        None
+    } else if v.is_finite() {
+        Some(format!(
+            "{name} {v:.3} mm stands under the bar's axis - a radius is a distance above it, never negative"
+        ))
+    } else {
+        Some(format!("{name} resolves to a radius that is not finite"))
+    }
 }
