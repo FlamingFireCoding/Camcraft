@@ -351,6 +351,8 @@ fn a_corrupt_lathe_body_refuses_the_file_and_a_library_save_refuses_the_row() {
     assert!(e.contains(HOLDER_M) && e.contains("no facets"), "{e}");
     let e = refused(&|b| b["facets"][0][0][0] = serde_json::json!("x"));
     assert!(!e.is_empty(), "a facet that is not a number: {e}");
+    let e = refused(&|b| b["pad"] = serde_json::json!(-0.5));
+    assert!(e.contains(HOLDER_M) && e.contains("lathe body"), "a negative pad: {e}");
     let e = refused(&|b| b["boxes"] = serde_json::json!([]));
     assert!(e.contains("boxes"), "an unknown key: {e}");
 
@@ -358,4 +360,20 @@ fn a_corrupt_lathe_body_refuses_the_file_and_a_library_save_refuses_the_row() {
         panic!("a library save took a lathe body")
     };
     assert!(e.contains(HOLDER_M) && e.contains("lathe body"), "{e}");
+}
+
+/// #3643: a meshed body's pad saves with its row and opens again, so a
+/// save and an open never shrink the bands to the bare facets.
+#[test]
+fn a_padded_lathe_body_keeps_its_pad_through_save_and_open() {
+    let w = camcraft_app::world::new_world();
+    let mut h = History::default();
+    upsert(&w, &mut h, holder_m_padded(0.05));
+    let text = camcraft_app::project::save_text(&w).expect("save");
+    let file: serde_json::Value = serde_json::from_str(&text).expect("json");
+    let row = file["components"].as_array().and_then(|r| r.iter().find(|c| c["id"] == HOLDER_M)).cloned();
+    assert_eq!(row.as_ref().and_then(|r| r["lathe_body"]["pad"].as_f64()), Some(0.05), "{row:?}");
+    let w2 = reopen(&text);
+    assert_eq!(components(&w2), components(&w), "the row and its padded body");
+    assert_eq!(camcraft_app::project::save_text(&w2).expect("save"), text, "save -> open -> save is byte-stable");
 }

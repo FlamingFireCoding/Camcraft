@@ -114,3 +114,19 @@ again from these facets (`crates/app/src/tool_assembly_lathe.rs`).
 - Dropped: `placed` as grown facets (no exact facet grow exists); the
   app reading `r.clearance` in place of its own bands (it changes
   `tool_body_lathe::build`, which other callers use).
+
+**Merge with #3645 (lathe bodies in the `.camproj`).** Main writes a
+row's lathe body to the project file as its facets only. A padded body
+lost its pad on a save and an open, and its bands became the smaller
+bands of the bare facets.
+- Chosen: `LatheBodyDto` gets an optional `pad` key. It is written only
+  when the pad is above 0, so each file without a meshed body stays
+  byte for byte the same. On open, the pad goes through the checked
+  `LatheBody::padded`: a negative or non-finite pad refuses the file by
+  name. An older build refuses a file with the key (unknown key), which
+  is a refusal and not a smaller body.
+- Pinned by `a_padded_lathe_body_keeps_its_pad_through_save_and_open`
+  and the negative-pad case of
+  `a_corrupt_lathe_body_refuses_the_file_and_a_library_save_refuses_the_row`.
+- Dropped: a refusal to save a padded body (no app path makes one yet,
+  but a refusal would block the mesh wiring later).
