@@ -1,9 +1,13 @@
 ## #4252 - Windows: mcp_live idle_timeout socket test verification
 
-**Decision:** Retain the socket-level idle timeout implementation and test assertions without source modifications. Record the reproduction evidence and environment findings across Windows revisions.
+**Decision:** Retain the socket-level idle timeout implementation and test assertions without source modifications. Record the reproduction evidence and environment findings across Windows revisions. Keep issue #4252 open with `Refs #4252` for further diagnosis on reported CI runners.
 
-**Why:** Investigation on native Windows (`x86_64-pc-windows-msvc`, `rustc 1.99.1`) verified that `idle_timeout::a_configured_finite_window_expires_on_the_listener`, `idle_timeout::zero_idle_window_keeps_a_silent_client_and_stops_promptly`, and `a_client_that_keeps_talking_is_never_dropped_as_idle` pass reliably on HEAD and on historical commit `903e420b3a6443330233d3e58386d84100a21c5e` and `1c0152c91`. All 29 integration tests in `crates/app/tests/mcp_live.rs` pass cleanly. The loopback TCP listener correctly catches socket timeout events on Windows. The previously reported test failure was caused by CI host load and scheduling latency on slow runner environments, not socket API incompatibility.
+**Why:** Investigation on native Windows (`x86_64-pc-windows-msvc`, `rustc 1.99.1`) verified that `idle_timeout::a_configured_finite_window_expires_on_the_listener`, `idle_timeout::zero_idle_window_keeps_a_silent_client_and_stops_promptly`, and `a_client_that_keeps_talking_is_never_dropped_as_idle` pass reliably on HEAD and on historical commits `903e420b3` and `1c0152c91`. All 29 integration tests in `crates/app/tests/mcp_live.rs` pass cleanly. The loopback TCP listener catches socket timeout events on this Windows host.
 
-**Considered and dropped:** Considered loosening duration bounds or replacing the synthetic socket tests with synthetic in-memory channels. Dropped because maintaining live TCP socket verification ensures notification delivery, idle window bounds, and clean connection teardown remain intact across operating systems.
+The root cause of the failures on specific CI hosts (such as `winnie`) remains unconfirmed. We do not have failing test output or native socket error traces from those hosts. Because this PR changes no listener logic and the cause is unconfirmed, this PR references `Refs #4252` and does not close issue #4252.
+
+**Considered and dropped:**
+- Do not mark issue #4252 as resolved without logs from the failing hosts.
+- Do not loosen duration bounds or replace live TCP sockets with in-memory channels. Live sockets ensure notification delivery, idle window bounds, and clean connection teardown remain intact across operating systems.
 
 **Cost to change later:** Minimal. Socket options in `crates/app/src/mcp/listen.rs` remain standard library networking primitives.
