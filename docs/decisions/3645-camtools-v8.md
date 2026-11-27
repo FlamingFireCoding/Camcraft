@@ -33,8 +33,10 @@
 - The import lands the rows and the tools in the ONE `ImportTools` undo
   step. The table changes first on apply and is restored last on undo.
 - **The id rule.** A library row whose id the document already holds:
-  - the same content (name, item and geometry; the library link is not
-    content) - the document row is reused, and the report names it;
+  - the same content (the whole row: name, item, geometry, the #3646
+    cutter facts and running data and the #3643 lathe body; only the
+    library link is left out, as for a link-only edit) - the document
+    row is reused, and the report names it;
   - a different content - the whole import is refused by the id
     ("rename one of them; nothing imported").
   An import never changes or renames a document row.
@@ -45,7 +47,9 @@
     no longer comes from it; undo restores it;
   - the skip of an identical tool compares the stack only when the
     library states one (a version 7 file never clears a stack of a tool
-    that it skips).
+    that it skips). Each row that a skipped tool's stack names goes
+    through the same id rule: a changed row refuses the whole import,
+    also when other tools of the file are added.
 - Holders off (`holders: false`) leaves the stacks and their rows out
   with the bodies: a stack without its holder bodies would derive a
   different tool on the next component edit.
@@ -78,3 +82,14 @@ and the UI is #3648.
 **Cost to change later.** Low. The format is the slice 1 wire form; the
 import law is in `commands/tool_import/components.rs` and is pinned in
 `crates/app/tests/tool_library_holders/camtools_v8.rs`.
+
+**Review fix (mkinney, comment 7211141172).** The first form compared
+only the name, the item and the geometry, and the skip of an identical
+tool did not check the rows of its stack. A same-id row with other
+running data was reused, and the imported tool then derived the
+document's spindle speed, not the file's. A changed seat position of a
+skipped tool's row was ignored. Both now refuse the import by the id,
+with one comparison for each import path. Dropped: let a changed row
+make the tool "not identical", so that it goes through the update path.
+That gives a different answer in each import mode for the same row
+clash.

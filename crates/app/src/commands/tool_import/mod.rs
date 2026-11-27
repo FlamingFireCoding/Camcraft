@@ -225,6 +225,10 @@ impl ImportTools {
                     steps.push(Step::Add(name, tool, body, assigned, cutter, lib_stack));
                 }
                 (Some(_), Some(prev)) if prev == tool && body_same && num_same && cutter_same && stack_same => {
+                    // #3645: the same stack can name rows that differ.
+                    if let Some(a) = &assembly {
+                        components::check_skipped(world, a)?;
+                    }
                     if body.is_some() {
                         report.holders = report.holders.saturating_sub(1);
                     }

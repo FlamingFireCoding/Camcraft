@@ -7,8 +7,13 @@
 //! bad row, a bad link or a row no tool names refuses the file by name
 //! and nothing lands; undo and redo restore the tools and the table; a
 //! document row of the same id is reused when its content is the same and
-//! refuses the import by the id when it differs. Provenance: our own
-//! tests over our own format.
+//! refuses the import by the id when it differs. #3643: a turning stack's
+//! rows keep their lathe bodies through an export and an import, byte for
+//! byte. A same-id row that differs only in its cutter facts, its running
+//! data or its lathe body refuses the import by the id; a skipped
+//! identical tool whose stack names a changed row refuses the import too,
+//! with an added plain tool in the same file. Provenance: our own tests
+//! over our own format.
 
 use camcraft_app::commands::{AddTool, History, ImportMode, UpsertDocumentComponent};
 use camcraft_app::model;
@@ -183,4 +188,77 @@ fn a_document_row_of_the_same_id_is_reused_when_the_same_and_refuses_when_differ
     assert!(e.contains("tool component 'fly-25'") && e.contains("nothing imported"), "{e}");
     assert_eq!(components(&w), before, "the document row is unchanged");
     assert!(model::find_by_name(&w, A).is_none() && model::find_by_name(&w, B).is_none(), "no tool landed");
+}
+
+#[test]
+fn a_turning_stack_with_a_lathe_body_exports_and_imports_identically() {
+    use super::lathe_stack::{HOLDER_M, lathe_shop, snapshot as lathe_snapshot};
+    let (w, _h) = lathe_shop();
+    let text = export_tool_library(&w).expect("export");
+    let file: Value = serde_json::from_str(&text).expect("json");
+    assert_eq!(file["version"], json!(ASSEMBLY_VERSION));
+    let holder = file["components"].as_array().and_then(|r| r.iter().find(|c| c["id"] == json!(HOLDER_M)));
+    let facets = holder.and_then(|r| r["lathe_body"]["facets"].as_array().map(Vec::len));
+    assert_eq!(facets, Some(24), "the holder row writes its lathe body: {holder:?}");
+    let w2 = new_world();
+    let mut h2 = History::default();
+    import(&w2, &mut h2, &text, true).expect("import");
+    assert_eq!(lathe_snapshot(&w2), lathe_snapshot(&w), "the rows, the lathe bodies, the records and the bodies");
+    assert_eq!(export_tool_library(&w2).expect("export"), text, "export -> import -> export is byte-stable");
+}
+
+/// The document row of `id` as the file `text` states it.
+fn file_row(text: &str, id: &str) -> camcraft_app::schema::DocumentComponent {
+    let mut v: Value = serde_json::from_str(text).expect("json");
+    let dto = serde_json::from_value(row_mut(&mut v, id).clone()).expect("row dto");
+    camcraft_app::project::component_from_dto(&dto).expect("row")
+}
+
+#[test]
+fn a_same_id_row_with_other_facts_running_data_or_lathe_body_refuses_the_import() {
+    let text = v8_text();
+    let facet = json!({ "facets": [[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 0.0]]] });
+    let cases: [(&str, &str, Value); 3] = [
+        ("fly-25", "milling", json!({ "dc": 25.0, "kapr_deg": 90.0, "apmx": 5.0, "center_cutting": false })),
+        (INSERT, "running", json!({ "tool_material": "carbide" })),
+        ("fly-25", "lathe_body", facet),
+    ];
+    for (id, key, value) in cases {
+        let w = new_world();
+        let mut h = History::default();
+        let doc = file_row(&text, id);
+        h.execute(&w, UpsertDocumentComponent::with_row(&w, doc).expect("upsert"));
+        let before = components(&w);
+        let file = edited(&text, |v| row_mut(v, id)[key] = value.clone());
+        let Err(e) = import(&w, &mut h, &file, true) else { panic!("a row with another {key} was reused") };
+        assert!(e.contains(&format!("tool component '{id}'")) && e.contains("nothing imported"), "{key}: {e}");
+        assert_eq!(components(&w), before, "{key}: the document row is unchanged");
+        assert!(model::find_by_name(&w, A).is_none() && model::find_by_name(&w, B).is_none(), "{key}: no tool landed");
+    }
+}
+
+#[test]
+fn a_skipped_identical_tool_whose_row_changed_refuses_the_import() {
+    let (w, mut h) = shop();
+    let text = export_tool_library(&w).expect("export");
+    let moved = camcraft_app::project::component_to_dto(&camcraft_app::schema::DocumentComponent::new(
+        fly("fly-25", 14.0).0,
+        fly("fly-25", 14.0).1,
+    ));
+    let file = edited(&text, |v| {
+        *row_mut(v, "fly-25") = serde_json::to_value(&moved).expect("row");
+        let tools = v["tools"].as_array_mut().expect("tools");
+        let mut plain = tools[0].clone();
+        plain["name"] = json!("Plain");
+        if let Some(d) = plain["definition"].as_object_mut() {
+            d.remove("assembly");
+            d.remove("number");
+        }
+        tools.push(plain);
+    });
+    let before = (components(&w), snapshot(&w));
+    let Err(e) = import(&w, &mut h, &file, true) else { panic!("a changed row of a skipped tool imported") };
+    assert!(e.contains("tool component 'fly-25'") && e.contains("nothing imported"), "{e}");
+    assert_eq!((components(&w), snapshot(&w)), before, "nothing changed");
+    assert!(model::find_by_name(&w, "Plain").is_none(), "the plain tool did not land");
 }
