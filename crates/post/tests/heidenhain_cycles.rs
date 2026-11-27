@@ -6,7 +6,8 @@
 //! not controller execution or ISO syntax verification.
 //!
 //! Gate map (#922): covers post::post (engine, cnc, probe_rec), post::machine,
-//! (post::machine), post::heidenhain_dialect, assets/posts/heidenhain.cps.
+//! (post::machine), post::heidenhain_dialect, assets/posts/heidenhain.cps,
+//! post::work_offset (#4088).
 
 use camcraft_post::cl::{CompSide, CycleKind, MoveKind};
 use camcraft_post::post::{cnc::{self, CycleRec, MoveRec, Record}, engine, probe_rec::TouchRec};
@@ -19,6 +20,9 @@ mod levels;
 // #4095: G247 follows the meaning of cycle 247 on the stated control.
 #[path = "heidenhain_cycles/presets.rs"]
 mod presets;
+// #4088: the machine file states the last preset row.
+#[path = "heidenhain_cycles/preset_rows.rs"]
+mod preset_rows;
 
 fn read(rel: &str) -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../").join(rel);
