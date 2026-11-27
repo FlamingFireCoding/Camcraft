@@ -2,7 +2,7 @@
 
 **What was decided.**
 
-- Raise `workOffsetMax` to 500 in `assets/posts/tormach.cps`. Format offsets 10 through 500 as `G54.1 P<n>`. Keep offsets 1 through 6 as `G54` through `G59`, and offsets 7 through 9 as `G59.1` through `G59.3`. Raise `MAX_BOUND` in `camcraft_post::post::work_offset` to 500.
+- Raise `workOffsetMax` to 500 in `assets/posts/tormach.cps`. Format offsets 10 through 500 as `G54.1 P<n>`. Keep offsets 1 through 6 as `G54` through `G59`, and offsets 7 through 9 as `G59.1` through `G59.3`. Raise `MAX_BOUND` in `camcraft_post::post::work_offset` to 1000.
 - Declare `millSpindleReverse = true;` in `assets/posts/tormach.cps`. Start the spindle with `M4` when `PARAM MillSpindle` is `reverse`. Reset the direction to forward (`M3`) for subsequent operations. Remove `Tormach PathPilot` from `M3_ONLY_POSTS` in `tool_gate.rs`.
 - Emit `G74` for left-hand rigid tapping cycles. Right-hand tapping cycles continue to emit `G84`.
 - Implement control cutter compensation (`G41`, `G42`, `G40`) with the `D` word in `assets/posts/tormach.cps`. Disallow cutter compensation engagement on `G0` moves or arcs.
@@ -21,4 +21,4 @@
 - Drop control cutter compensation and record a refusal. Implementing `G41`, `G42`, and `G40` follows the proven Haas and Fanuc post patterns and satisfies user needs on PathPilot machines.
 - Format offsets 10 through 500 as `G54.1 P1` through `G54.1 P491`. PathPilot and LinuxCNC map `G54.1 P<n>` directly to coordinate system index `n`.
 
-**Cost to change later.** The implementation follows the standard LinuxCNC and PathPilot programming manual. The changes are local to `assets/posts/tormach.cps` and `tormach_post.rs` with the global `MAX_BOUND` raised to 500.
+**Cost to change later.** The implementation follows the standard LinuxCNC and PathPilot programming manual. The changes are local to `assets/posts/tormach.cps` and `tormach_post.rs` with the global `MAX_BOUND` raised to 1000.
